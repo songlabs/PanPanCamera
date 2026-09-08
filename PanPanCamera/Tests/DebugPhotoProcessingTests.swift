@@ -149,5 +149,45 @@ final class DebugPhotoProcessingTests: XCTestCase {
         let output = try await DebugPhotoProcessing.process(data: encoded(image()))
         XCTAssertEqual(output.detection.regions.count, 1)
     }
+
+    func testDebugMaskOutputHasWhiteCenterSoftEdgeBlackCornersAndPreservesPhotoData() async throws {
+        let data = try encoded(image(width: 100, height: 100))
+        let photo = try XCTUnwrap(CapturedPhoto(data: data))
+        let preview = try await DebugPhotoProcessing.process(photo, output: .softFaceMask)
+        XCTAssertEqual(preview.image.cgImage.width, 100)
+        XCTAssertEqual(preview.image.cgImage.height, 100)
+        XCTAssertEqual(preview.detection.regions, try MockFaceDetector<ProcessingImage>().detectFaces(in: image()).regions)
+        XCTAssertEqual(photo.data, data)
+        XCTAssertGreaterThan(pixel(preview.image, x: 50, y: 50)[0], 250)
+        let feather = pixel(preview.image, x: 63, y: 50)[0]
+        XCTAssertGreaterThan(feather, 10)
+        XCTAssertLessThan(feather, 245)
+        XCTAssertEqual(pixel(preview.image, x: 31, y: 31), [0, 0, 0, 255])
+        XCTAssertEqual(pixel(preview.image, x: 5, y: 5), [0, 0, 0, 255])
+        // Switching back must not retain a mask mode or a busy admission slot.
+        let processed = try await DebugPhotoProcessing.process(data: data)
+        XCTAssertGreaterThan(pixel(processed.image, x: 50, y: 50)[0], 100)
+        XCTAssertLessThanOrEqual(pixel(processed.image, x: 50, y: 50)[0], 106)
+        XCTAssertEqual(pixel(processed.image, x: 31, y: 31)[0], 100)
+    }
+
+    func testDebugMaskUsesOrientedImageAndSameDownsamplePolicy() async throws {
+        let data = try encoded(image(width: 2050, height: 100), orientation: .rightMirrored)
+        let mask = try await DebugPhotoProcessing.process(data: data, output: .softFaceMask)
+        XCTAssertEqual(mask.image.cgImage.height, 2048)
+        XCTAssertLessThanOrEqual(mask.image.cgImage.width, 100)
+        let center = pixel(mask.image, x: mask.image.cgImage.width / 2, y: mask.image.cgImage.height / 2)
+        XCTAssertGreaterThan(center[0], 250)
+        XCTAssertEqual(pixel(mask.image, x: 0, y: 0), [0, 0, 0, 255])
+    }
+
+    func testDebugMaskWithoutFacesIsOpaqueBlack() async throws {
+        let pipeline = ImageProcessingPipeline<ProcessingImage>(
+            detector: MockFaceDetector(regions: []), steps: [DebugFaceMaskStep()])
+        let output = try await pipeline.process(image())
+        for y in 0..<10 {
+            for x in 0..<10 { XCTAssertEqual(pixel(output.image, x: x, y: y), [0, 0, 0, 255]) }
+        }
+    }
 }
 #endif

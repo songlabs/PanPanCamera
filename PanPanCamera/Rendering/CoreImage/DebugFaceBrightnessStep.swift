@@ -5,11 +5,7 @@ import Foundation
 /// DEVELOPMENT / TEST ONLY: a +0.01 brightness probe, not a beauty feature.
 /// Removing this step restores the unmodified input; the source is never overwritten.
 struct DebugFaceBrightnessStep: ImageProcessingStep {
-    enum Failure: Error { case filterUnavailable, renderFailed }
-
-    // Initialized on first worker use, shared across jobs. CIContext supports reuse;
-    // filters are local to the call and do not retain their input after it returns.
-    private static let context = CIContext(options: [.cacheIntermediates: false])
+    typealias Failure = CoreImageRendering.Failure
 
     func process(_ image: ProcessingImage, regions: [FaceRegion]) throws -> ProcessingImage {
         dispatchPrecondition(condition: .notOnQueue(.main))
@@ -35,15 +31,8 @@ struct DebugFaceBrightnessStep: ImageProcessingStep {
         let white = CIImage(color: CIColor(red: 1, green: 1, blue: 1))
         // Union mask: overlapping faces receive the adjustment once, preserving alpha.
         for rect in rects { mask = white.cropped(to: rect).composited(over: mask) }
-        guard let blend = CIFilter(name: "CIBlendWithMask", parameters: [
-            kCIInputImageKey: adjusted,
-            kCIInputBackgroundImageKey: source,
-            kCIInputMaskImageKey: mask
-        ]), let composite = blend.outputImage?.cropped(to: extent) else { throw Failure.filterUnavailable }
-        guard let rendered = Self.context.createCGImage(composite, from: extent, format: .RGBA8,
-                                                        colorSpace: image.cgImage.colorSpace,
-                                                        deferred: false) else { throw Failure.renderFailed }
-        return ProcessingImage(cgImage: rendered)
+        let composite = try CoreImageRendering.blend(adjusted, over: source, mask: mask)
+        return try CoreImageRendering.render(composite, matching: image)
     }
 }
 #endif

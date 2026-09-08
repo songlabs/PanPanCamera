@@ -4,8 +4,8 @@ The camera still displays `AVCaptureVideoPreviewLayer` and captures original enc
 data with `AVCapturePhotoOutput`. Its existing `VisionFaceDetector` analyzes preview
 buffers and returns landmark-rich `FaceDetectionFrame` values. That existing route is
 unchanged and is not evidence of successful real face detection or device acceptance.
-There was no existing still-image processing interface to reuse. This implementation
-uses the existing FaceTracking/Rendering directories, without changing camera ownership.
+The experimental skin step reuses the existing still-image pipeline and coordinate
+contract without changing camera ownership or the pipeline's step interface.
 
 The explicit development/test entry point is:
 
@@ -13,10 +13,13 @@ The explicit development/test entry point is:
 #if DEBUG
 let output = try await DebugPhotoProcessing.process(photo) // existing CapturedPhoto
 // output.image.cgImage is rendered; output.detection.regions are SYNTHETIC.
+let mask = try await DebugPhotoProcessing.process(photo, output: .softFaceMask)
+// mask.image.cgImage is an opaque black-background, white-coverage preview.
+// Inspect it with the debugger's image viewer or a temporary developer/test view.
 #endif
 ```
 
-Synthetic encoded data can also enter through `process(data:)`, without camera access.
+Synthetic encoded data can also enter through `process(data:output:)`, without camera access.
 There is no automatic capture hook or product UI. Original `CapturedPhoto.data` and its
 normal display path are unchanged. Results are returned to the caller in memory only.
 
@@ -24,10 +27,13 @@ normal display path are unchanged. Results are returned to the caller in memory 
 CapturedPhoto.data / encoded test photo
   -> background ImageIO decode + EXIF orientation/mirroring (maximum 2048 pixels)
   -> ProcessingImage (immutable, upright CGImage)
-  -> ImageProcessingPipeline<ProcessingImage>
-     -> any FaceDetecting<ProcessingImage> (injected MockFaceDetector in DEBUG)
+  -> existing ImageProcessingPipeline (private DEBUG job carries image + output mode)
+     -> MockFaceDetector<ProcessingImage> in DEBUG
      -> FaceDetectionResult.regions -> FaceRegion.boundingBox
-     -> ordered ImageProcessingStep values (DebugFaceBrightnessStep in DEBUG)
+     -> NaturalSkinProcessingStep
+        -> SoftFaceMaskGenerator -> merged soft ellipse mask
+        -> CIColorControls -> one CIBlendWithMask -> rendered ProcessingImage
+     OR DebugFaceMaskStep -> rendered black/white mask
   -> ImageProcessingOutput (rendered image + detection result)
 ```
 
@@ -53,8 +59,14 @@ Loader/detector/step errors propagate unchanged, including the original error ob
 Failures release the slot. Cancellation is checked before admission and after successful
 work; synchronous work finishes before freeing its slot, and an operation error retains
 priority. Steps preserve dimensions/orientation so all steps receive the same regions.
-Empty detection is successful: steps receive an empty list; the regional probe returns
+Empty detection is successful: steps receive an empty list; the regional skin/probe step returns
 the exact input CGImage. An empty step list also returns the original image.
+The explicit mask visualization instead returns opaque black when there is no coverage.
+
+Both DEBUG output modes use one static pipeline and the same admission slot. A private,
+immutable job value carries the mode through decoding/detection/processing; there is no
+mutable global switch and no second queue for mask previews. The pipeline implementation
+and `ImageProcessingStep` contract remain unchanged. Neither depends on a mask algorithm.
 
 No image is retained in pipeline state. Jobs use an autorelease pool on Apple platforms;
 the shared CIContext disables intermediate caching. Debug decoding uses the existing
@@ -63,10 +75,17 @@ photo export or a memory/performance result from hardware. The caller owns retur
 images and must release them when finished. Metal remains a placeholder; no custom
 Metal, Core ML, third-party SDK, file storage or network API is introduced.
 
-`MockFaceDetector`, the brightness probe and the developer entry point are entirely
+`MockFaceDetector`, the brightness/mask probes and the developer entry point are entirely
 inside `#if DEBUG`; the production contract has no default detector. Release has no
 Mock construction or developer entry point. Static tests also reject product call sites
 and compile a Release redeclaration probe to verify that these types are absent.
+`FaceMaskGenerating`, `SoftFaceMaskGenerator`, `NaturalSkinProcessingStep` and the shared
+Core Image renderer are reusable internal types, but have no camera/product call site.
+The old rectangular brightness probe remains available only for its existing DEBUG tests;
+it is no longer the developer entry point's default processing step.
+
+See [CoreImage/README.md](CoreImage/README.md) for ellipse geometry, feather parameters,
+multi-face union, adjustment values, replacement boundary and image tests.
 
 Validation commands:
 
@@ -74,12 +93,16 @@ Validation commands:
 - `python -m unittest discover -s scripts/tests -v`: static/Release isolation and existing script tests.
 - `powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check_swift_syntax.ps1`: syntax and existing pure Swift checks.
 - `python scripts/run_pipeline_tests.py`: actual Foundation XCTest on a complete host Swift SDK; uses unchanged app/test sources in `.verification`.
-- Existing Xcode Debug XCTest runs both `ImageProcessingPipelineTests` and `DebugPhotoProcessingTests`.
+- Existing Xcode Debug XCTest discovers `ImageProcessingPipelineTests`, `DebugPhotoProcessingTests`,
+  `SoftFaceMaskTests` and `NaturalSkinProcessingTests` in the shared test target.
 
-Windows in this task lacks Xcode and the C/Windows SDK needed by Foundation (`errno.h`
-is missing); the host XCTest harness also cannot link its manifest because `msvcrt.lib`,
-`oldnames.lib` and `msvcprt.lib` are missing. Static checks are distinct from executing
-Foundation/XCTest or Core Image.
-The Apple tests cover localized pixel changes, outside-region preservation, alpha,
-overlap, image edges, EXIF rotations/mirrors, bounded decoding and the CapturedPhoto bridge.
+Local verification for this change: 34 Python tests passed, including seven processing
+scope/Release-isolation tests; project checks passed for 47 app and 12 XCTest source files;
+all 59 Swift files parsed both with and without `DEBUG`. The existing four pure Swift
+domain files and three camera control helpers passed host typechecking. Parsing emits
+Windows-SDK/iPhone-target warnings and is not an Apple SDK typecheck or build.
+The host XCTest harness was attempted but could not link its manifest because `msvcrt.lib`,
+`oldnames.lib` and `msvcprt.lib` are missing. No host XCTest ran. Xcode, Apple Core Image
+pixel tests, Simulator image inspection and device acceptance remain unexecuted here.
+Soft Face Mask 和 NaturalSkinProcessingStep 的实际 Core Image 图像效果尚未在 Apple 平台执行验证。
 真实 Vision 人脸检测尚未验证。尚未完成 Apple 平台 / 真机验收。

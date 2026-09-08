@@ -15,6 +15,7 @@ DEVELOPMENT = (
     APP / 'FaceTracking/MockFaceDetector.swift',
     APP / 'Rendering/DebugPhotoProcessing.swift',
     APP / 'Rendering/CoreImage/DebugFaceBrightnessStep.swift',
+    APP / 'Rendering/CoreImage/DebugFaceMaskStep.swift',
 )
 CORE = (
     APP / 'FaceTracking/FaceDetecting.swift',
@@ -34,6 +35,7 @@ class ImageProcessingScopeTests(unittest.TestCase):
             probe.write_text('''struct MockFaceDetector<Image: Sendable> {}
 struct DebugPhotoProcessing {}
 struct DebugFaceBrightnessStep {}
+struct DebugFaceMaskStep {}
 ''', encoding='utf-8')
             result = subprocess.run([swiftc, '-typecheck', '-swift-version', '5',
                                      *map(str, DEVELOPMENT), str(probe)], capture_output=True, text=True)
@@ -50,7 +52,7 @@ struct DebugFaceBrightnessStep {}
                 self.assertNotRegex(str(settings.get(key, '')), r'\bDEBUG\b')
 
     def test_mock_and_probe_have_no_product_call_sites(self):
-        symbols = r'\b(?:MockFaceDetector|DebugPhotoProcessing|DebugFaceBrightnessStep)\b'
+        symbols = r'\b(?:MockFaceDetector|DebugPhotoProcessing|DebugFaceBrightnessStep|DebugFaceMaskStep)\b'
         for path in APP.rglob('*.swift'):
             if 'Tests' in path.parts or path in DEVELOPMENT:
                 continue
@@ -63,9 +65,20 @@ struct DebugFaceBrightnessStep {}
             self.assertIsNone(re.search(r'\b(?:Vision|VisionFaceDetector|MockFaceDetector|VN\w+|DetectedFace)\b', code), str(path))
 
     def test_new_processing_sources_remain_local_and_without_model_or_camera_apis(self):
-        for path in (*CORE, *DEVELOPMENT, APP / 'Rendering/CoreImage/ProcessingImage.swift'):
+        for path in set((*CORE, *DEVELOPMENT, *(APP / 'Rendering').rglob('*.swift'))):
             code = '\n'.join(line.split('//')[0] for line in path.read_text(encoding='utf-8').splitlines())
             self.assertIsNone(re.search(r'\b(?:URLSession|URLRequest|Network|Vision|CoreML|Metal|AVCapture\w+|VN\w+)\b', code), str(path))
+
+    def test_experimental_skin_step_has_no_camera_or_product_call_sites(self):
+        for path in APP.rglob('*.swift'):
+            if 'Tests' in path.parts or 'Rendering' in path.parts:
+                continue
+            self.assertNotRegex(path.read_text(encoding='utf-8'),
+                                r'\b(?:NaturalSkinProcessingStep|SoftFaceMaskGenerator|FaceMaskGenerating)\b', str(path))
+
+    def test_pipeline_does_not_depend_on_a_mask_algorithm(self):
+        code = (APP / 'Rendering/ImageProcessingPipeline.swift').read_text(encoding='utf-8')
+        self.assertNotRegex(code, r'\b(?:FaceMaskGenerating|SoftFaceMaskGenerator|NaturalSkinProcessingStep|CoreImage)\b')
 
 
 if __name__ == '__main__':

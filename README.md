@@ -8,7 +8,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 
 - iPhone、iOS 17.0+；首版 UI 固定竖屏，照片方向跟随设备物理旋转。
 - Xcode 15+ / Swift 5.9+ 工具链，以 Swift 5 语言模式编译。
-- SwiftUI、AVFoundation、Vision、Foundation、Combine、UIKit 和 ImageIO，全部为 Apple 原生框架。
+- SwiftUI、AVFoundation、Vision、Core Image、Foundation、Combine、UIKit 和 ImageIO，全部为 Apple 原生框架。
 - 直接打开 `PanPanCamera.xcodeproj`，选择共享的 `PanPanCamera` scheme。
 - 没有 CocoaPods、Carthage、Swift Package 依赖、工程生成器安装步骤或服务器。
 - 真机开发时，在 Signing & Capabilities 选择自己的 Team。仓库不包含个人 Team、证书、描述文件或 Secrets。当前工程实际 bundle identifier 为 `com.songlabs.PanPanCamera`；发布配置与 Apple App ID 必须匹配这个值。
@@ -37,6 +37,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 | 未实现入口 | 比例、Timer、相册点击后说明当前限制；视频、人像显示未支持且禁用 |
 | 五语言 | UI、无障碍文字、权限说明与品牌名称 |
 | Debug Screenshot Mode | 固定 SwiftUI 测试背景和页面参数；绕过真实相机与权限 |
+| DEBUG 照片处理 | Mock FaceRegion → 柔边椭圆 Mask → 实验性 NaturalSkinProcessingStep → 单次 Blend；可输出黑底白 Mask，未接入正式照片流程 |
 | GitHub Actions | iOS CI、手动 Simulator Screenshot、TestFlight 交付基础设施；TestFlight 尚未实际执行 |
 
 美肌／美型的 **19 个参数仅改变界面状态，不改变相机预览或照片**。Auto 不执行自动算法。滤镜／美妆也不渲染效果，各面板提供五语言说明。关闭面板再打开保留本次运行参数，重启 App 后恢复默认值。
@@ -64,7 +65,7 @@ PanPanCamera/
 │   └── Shared/               PanPan 视觉组件和本地化键映射
 ├── Domain/                   不依赖 SwiftUI/AVFoundation 的参数与状态
 ├── BeautyEngine/             Skin / FaceWarp / Makeup / Filters，仅说明
-├── Rendering/                CoreImage / Metal，仅说明
+├── Rendering/                后台串行照片 Pipeline、Core Image 柔边 Mask / 实验性调整；Metal 仅说明
 ├── Resources/                Info.plist、颜色资源、两个 String Catalog
 └── Tests/                    参数、模式/能力状态、本地化的 XCTest
 docs/                         架构与 Apple/真机验收清单
@@ -73,7 +74,7 @@ scripts/                      无第三方依赖的静态检查
 
 更详细的线程、生命周期、方向、照片数据和未来模块边界见 [Architecture.md](docs/Architecture.md)。
 
-依赖原则如下；FaceTracking 当前仅实现检测与 landmarks，BeautyEngine 处理和 Rendering 管线仍为下一阶段计划：
+依赖原则如下；FaceTracking 当前实现检测与 landmarks，Rendering 已有独立开发处理链路，BeautyEngine 正式处理仍为后续计划。柔边 Mask 参数、DEBUG 检查入口、测试及平台证据边界见 [Rendering/README.md](PanPanCamera/Rendering/README.md)：
 
 ```text
 Presentation（本地化、View）
@@ -82,7 +83,7 @@ Application / State（当前由 CameraService 等状态边界承担）
     ↓
 Camera / FaceTracking / BeautyEngine（计划）
     ↓
-Rendering（计划）
+Rendering（独立开发链路）
 ```
 
 **Camera 层不依赖 Presentation / L10n / SwiftUI UI 文案。** Camera 只输出 state、events、failures 和 capture data。`CameraFailure` 是 Domain 中的语义错误；Presentation 将其映射到既有本地化 key。参数、相机状态和面板状态保持分离。
