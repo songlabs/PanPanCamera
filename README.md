@@ -8,7 +8,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 
 - iPhone、iOS 17.0+；首版 UI 固定竖屏，照片方向跟随设备物理旋转。
 - Xcode 15+ / Swift 5.9+ 工具链，以 Swift 5 语言模式编译。
-- SwiftUI、AVFoundation、Foundation、Combine、UIKit 和 ImageIO，全部为 Apple 原生框架。
+- SwiftUI、AVFoundation、Vision、Foundation、Combine、UIKit 和 ImageIO，全部为 Apple 原生框架。
 - 直接打开 `PanPanCamera.xcodeproj`，选择共享的 `PanPanCamera` scheme。
 - 没有 CocoaPods、Carthage、Swift Package 依赖、工程生成器安装步骤或服务器。
 - 真机开发时，在 Signing & Capabilities 选择自己的 Team。仓库不包含个人 Team、证书、描述文件或 Secrets。当前工程实际 bundle identifier 为 `com.songlabs.PanPanCamera`；发布配置与 Apple App ID 必须匹配这个值。
@@ -22,6 +22,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 | --- | --- |
 | 启动入口 | 直接进入 CameraView，没有首页、内容流或额外引导页 |
 | 实时预览 | AVCaptureSession + AVCaptureVideoPreviewLayer，全屏 aspect fill |
+| 人脸检测 | 本地 Vision 视频帧限频检测，输出全部人脸框及可选基础 landmarks；Apple Build 和真机验收待当前提交验证 |
 | 相机权限 | 请求、授权、拒绝、系统限制说明；拒绝后可打开系统设置 |
 | 前后切换 | 实际替换 AVCaptureDeviceInput；检查硬件、切换期间禁用竞争操作、失败回退 |
 | 前后台 | 复用一个会话；非活跃或结果预览时停止，返回时恢复；处理中断与运行错误 |
@@ -53,6 +54,7 @@ PanPanCamera/
 │   ├── Session/              串行队列上的真实 AVFoundation 会话
 │   ├── Capture/              拍照 delegate、原始数据和结果缩略图
 │   └── Permission/           相机授权状态与请求
+├── FaceTracking/             Vision 检测、最新帧模型、坐标转换和有界结果交付；尚无跨帧追踪
 ├── Presentation/
 │   ├── Camera/               Preview 桥接、主界面、错误/结果界面
 │   ├── Beauty/               美肌与美型参数面板、独立 BeautyState
@@ -71,14 +73,14 @@ scripts/                      无第三方依赖的静态检查
 
 更详细的线程、生命周期、方向、照片数据和未来模块边界见 [Architecture.md](docs/Architecture.md)。
 
-依赖原则如下；FaceTracking、BeautyEngine 处理和 Rendering 管线均为下一阶段计划，不是当前已实现模块：
+依赖原则如下；FaceTracking 当前仅实现检测与 landmarks，BeautyEngine 处理和 Rendering 管线仍为下一阶段计划：
 
 ```text
 Presentation（本地化、View）
     ↓
 Application / State（当前由 CameraService 等状态边界承担）
     ↓
-Camera / FaceTracking（计划）/ BeautyEngine（计划）
+Camera / FaceTracking / BeautyEngine（计划）
     ↓
 Rendering（计划）
 ```
@@ -86,6 +88,8 @@ Rendering（计划）
 **Camera 层不依赖 Presentation / L10n / SwiftUI UI 文案。** Camera 只输出 state、events、failures 和 capture data。`CameraFailure` 是 Domain 中的语义错误；Presentation 将其映射到既有本地化 key。参数、相机状态和面板状态保持分离。
 
 相机行为测试使用最小权限／Session 命令注入，以及生产路径实际调用的 `CameraInputReplacement`、`PhotoCaptureRegistry`、`CameraSessionLifecycle`。输入事务、delegate 生命周期和恢复决策仍由原有串行 Session 队列调用；不模拟完整 AVFoundation 硬件。
+
+人脸检测的 buffer／Vision／Preview 坐标契约、限频与生命周期说明见 [FaceDetection.md](docs/FaceDetection.md)。Debug scheme 添加启动参数 `-PanPanFaceDebugOverlay` 可绘制人脸框和 landmark 点；Release 不包含绘制代码。检测不修改 Preview 或照片像素，不保存或上传人脸数据。
 
 ## 五语言
 
@@ -108,7 +112,7 @@ Rendering（计划）
 | 纯 Swift host typecheck | 4 个 Domain 文件和 3 个相机控制辅助类型，Windows Swift 5 语言模式类型检查，无硬件执行 |
 | git diff --check | 已实际执行通过 |
 | Xcode Build / Apple SDK typecheck | 由 iOS CI 的 Debug XCTest / Release Simulator Build 验证；以对应 commit 的 run 为准 |
-| XCTest | 当前集合为 33 个 Debug 方法；Release 单独执行 5 个截图隔离方法；实际 passed / failed / skipped 数见下方当前 SHA 的 `.xcresult` |
+| XCTest | 当前集合为 45 个 Debug 方法，含 12 个新增人脸检测相关方法；Release 单独执行 5 个截图隔离方法；新增测试尚未在 Apple 平台执行，实际结果以当前 SHA 的 `.xcresult` 为准 |
 | Delivery script tests | 27 个 Python 测试，覆盖版本格式、PNG 数据流、Simulator 选择、CI gate、Profile 和上传失败传播 |
 | Simulator UI | 手动 Simulator Screenshot 生成 10 张实际 UI 截图，需下载查看；不能证明真实相机 |
 | Real Device Camera | 尚未执行；预览、拍照、闪光灯、方向、镜像与生命周期均待真机验收 |
@@ -160,7 +164,7 @@ xcodebuild -project PanPanCamera.xcodeproj -scheme PanPanCamera \
   -resultBundlePath .verification/PanPanCameraTests.xcresult CODE_SIGNING_ALLOWED=NO test
 ```
 
-33 个 Debug 方法覆盖参数、模式／能力状态、五语言编译资源、Screenshot 参数隔离，以及权限 await 跨越 inactive、Settings 返回、迟到 running 事件、输入替换的三种结果、processor 成功／失败释放、reset 后旧回调隔离和语义错误映射。Release 运行其中 5 个 Screenshot 隔离方法。这里的行为测试执行生产协调逻辑，不创建真实摄像头；`CameraPosition.opposite` 测试只描述值类型，不声称验证硬件。详细边界和人工步骤见 [DeviceValidation.md](docs/DeviceValidation.md)。
+45 个 Debug 方法覆盖参数、模式／能力状态、五语言编译资源、Screenshot 参数隔离、权限与 Session 协调、输入回退、拍照 delegate 生命周期，以及新增人脸坐标、可选 landmarks、多人脸映射、结果失效和限频逻辑。Release 运行其中 5 个 Screenshot 隔离方法。这里的行为测试不创建真实摄像头；新增测试尚未在 Apple 平台执行。详细边界和人工步骤见 [DeviceValidation.md](docs/DeviceValidation.md)。
 
 ## GitHub Actions
 
@@ -248,15 +252,15 @@ inventory 输出尺寸、大小、SHA256 和两种验证结果。下载后仍需
 
 以下均未进入当前实现，不存在伪装的效果或隐式调用：
 
-1. Vision Face Detection、Face Landmarks、Stable Face Tracking。
-2. AVCaptureVideoDataOutput 与实时帧数据管线。
+1. 在现有 Vision 检测和 landmarks 基础上实现 Stable Face Tracking。
+2. 在现有 AVCaptureVideoDataOutput 检测路径基础上设计后续效果处理输入。
 3. BeautyEngine、Skin Processing、Face Warp，及真正的磨皮／美白／瘦脸算法。
 4. Metal Rendering、Core ML、真实 Filter Rendering、真实 Makeup Rendering。
 5. Video Recording、Video Beauty、Photo Editor。
 6. System Photos Save、照片导入、持久化照片存储。
 7. 比例裁切、Timer、人像模式与发行用 App Icon；发行凭据仍需单独配置。
 
-下一阶段顺序为：Vision Face Detection → Face Landmarks → Stable Face Tracking → BeautyEngine input model → Metal rendering。`check_project.py` 当前仍禁止 Vision、Metal、CoreImage 和 AVCaptureVideoDataOutput 等 0.1 范围外 API；开始对应阶段时必须同步调整 scope guard。本次保留这些 guard，不提前实现下一阶段。
+当前已经接入 Vision Face Detection、Face Landmarks 和限频视频帧检测；后续顺序为 Stable Face Tracking → BeautyEngine input model → Metal rendering。`check_project.py` 仅在 FaceTracking 放开 Vision、在 Camera 放开视频帧获取，继续禁止 Metal、CoreML、CoreImage、网络和其他范围外 API。
 
 ## Real Device Validation Pending
 

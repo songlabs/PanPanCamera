@@ -6,6 +6,8 @@ enum CameraSessionEvent {
     case switching(Bool)
     case captureFinished(CapturedPhoto?)
     case switchFailed
+    case faceDetection(FaceDetectionDelivery?)
+    case faceDetectionAvailability(Bool)
 }
 
 /// Commands consumed by CameraService. Hardware work remains inside CameraSession.
@@ -22,6 +24,12 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "camera.panpan.session", qos: .userInitiated)
     private let output = AVCapturePhotoOutput()
+    private let videoOutput = AVCaptureVideoDataOutput()
+    private let videoQueue = DispatchQueue(label: "camera.panpan.faces", qos: .utility)
+    private let faceDetector = VisionFaceDetector()
+    private var faceProcessor: CameraFaceFrameProcessor?
+    private var faceRotationObservation: NSKeyValueObservation?
+    private var videoOutputReady = false
     private let onEvent: (CameraSessionEvent) -> Void
     private var input: AVCaptureDeviceInput?
     private var rotation: AVCaptureDevice.RotationCoordinator?
@@ -38,6 +46,8 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     }
 
     deinit {
+        faceProcessor?.delivery.invalidate()
+        queue.async { [videoOutput] in videoOutput.setSampleBufferDelegate(nil, queue: nil) }
         observers.forEach(NotificationCenter.default.removeObserver)
     }
 
@@ -46,6 +56,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             lifecycle.wantsRunning = shouldRun
             if shouldRun { startIfNeeded() }
             else {
+                stopFaceDetection()
                 if session.isRunning { session.stopRunning() }
                 onEvent(.status(.idle))
             }
@@ -65,6 +76,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
                 onEvent(.switchFailed)
                 return
             }
+            stopFaceDetection()
             let replacement = CameraInputReplacement<AVCaptureDeviceInput>.perform(
                 current: oldInput, replacement: newInput,
                 begin: { session.beginConfiguration() },
@@ -76,8 +88,11 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             input = replacement.input
             configured = replacement.isConfigured
             if let active = input {
+                configureVideoConnection()
+                onEvent(.faceDetectionAvailability(videoOutputReady))
                 observeDevice(active.device)
                 publishConfiguration()
+                updateFaceDetection()
             } else {
                 session.stopRunning()
                 onEvent(.status(.failed))
@@ -128,6 +143,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         dispatchPrecondition(condition: .onQueue(queue))
         guard lifecycle.wantsRunning else { return }
         guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
+            stopFaceDetection()
             onEvent(.status(.idle))
             return
         }
@@ -135,16 +151,24 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         if !configured {
             guard configure() else { return }
         }
+        // Reassert the raw-buffer contract after a stop/reset as well as initial setup.
+        configureVideoConnection()
+        onEvent(.faceDetectionAvailability(videoOutputReady))
         if session.isInterrupted {
+            stopFaceDetection()
             onEvent(.status(.interrupted))
             return
         }
         if !session.isRunning { session.startRunning() }
         publishConfiguration()
         onEvent(.status(session.isRunning ? .running : .failed))
+        updateFaceDetection()
     }
 
     private func configure() -> Bool {
+        stopFaceDetection()
+        videoOutputReady = false
+        onEvent(.faceDetectionAvailability(false))
         guard let device = device(for: .front) ?? device(for: .back) else {
             onEvent(.status(.unavailable))
             return false
@@ -172,6 +196,21 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         }
         session.addOutput(output)
         output.maxPhotoQualityPrioritization = .balanced
+        // Optional analysis output: failure must leave photo capture and preview usable.
+        videoOutput.alwaysDiscardsLateVideoFrames = true
+        videoOutput.automaticallyConfiguresOutputBufferDimensions = true
+        videoOutputReady = session.canAddOutput(videoOutput)
+        if videoOutputReady {
+            session.addOutput(videoOutput)
+            // Prefer camera-native YUV over an unnecessary full-frame BGRA conversion.
+            let formats = videoOutput.availableVideoPixelFormatTypes
+            if let format = [kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
+                             kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange].first(where: { formats.contains($0) }) {
+                videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: format]
+            }
+            configureVideoConnection()
+        }
+        onEvent(.faceDetectionAvailability(videoOutputReady))
         input = newInput
         session.commitConfiguration()
         configured = true
@@ -208,10 +247,59 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     }
 
     private func observeDevice(_ device: AVCaptureDevice) {
+        faceRotationObservation = nil
         rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: nil)
+        faceRotationObservation = rotation?.observe(\.videoRotationAngleForHorizonLevelCapture,
+                                                    options: [.new]) { [weak self] _, _ in
+            self?.queue.async { [weak self] in self?.updateFaceDetection() }
+        }
         flashObservation = device.observe(\.isFlashAvailable, options: [.new]) { [weak self] _, _ in
             self?.queue.async { [weak self] in self?.publishConfiguration() }
         }
+    }
+
+    private func configureVideoConnection() {
+        guard session.outputs.contains(where: { $0 === videoOutput }),
+              let connection = videoOutput.connection(with: .video),
+              connection.isVideoRotationAngleSupported(0) else {
+            videoOutputReady = false
+            return
+        }
+        // Vision receives sensor-native orientation; only Preview/photos are mirrored.
+        connection.videoRotationAngle = 0
+        if connection.isVideoMirroringSupported {
+            connection.automaticallyAdjustsVideoMirroring = false
+            connection.isVideoMirrored = false
+        }
+        if connection.isVideoStabilizationSupported { connection.preferredVideoStabilizationMode = .off }
+        videoOutputReady = true
+    }
+
+    private func updateFaceDetection() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard videoOutputReady, lifecycle.wantsRunning, session.isRunning, !session.isInterrupted,
+              AVCaptureDevice.authorizationStatus(for: .video) == .authorized,
+              let device = input?.device, let rotation,
+              let orientation = FaceImageOrientation(captureAngle: rotation.videoRotationAngleForHorizonLevelCapture) else {
+            stopFaceDetection()
+            return
+        }
+        guard faceProcessor?.deviceID != device.uniqueID || faceProcessor?.orientation != orientation else { return }
+        stopFaceDetection()
+        // Replacing the immutable delegate also rejects queued buffers from the old input.
+        let processor = CameraFaceFrameProcessor(deviceID: device.uniqueID, orientation: orientation,
+                                                 detector: faceDetector) { [weak self] delivery in
+            self?.onEvent(.faceDetection(delivery))
+        }
+        faceProcessor = processor
+        videoOutput.setSampleBufferDelegate(processor, queue: videoQueue)
+    }
+
+    private func stopFaceDetection() {
+        faceProcessor?.delivery.invalidate()
+        faceProcessor = nil
+        videoOutput.setSampleBufferDelegate(nil, queue: nil)
+        onEvent(.faceDetection(nil))
     }
 
     private func observeSession() {
@@ -220,7 +308,15 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
                                              object: session, queue: nil) { [weak self] _ in
             self?.queue.async { [weak self] in
                 guard let self, self.lifecycle.wantsRunning else { return }
+                self.stopFaceDetection()
                 self.onEvent(.status(.interrupted))
+            }
+        })
+        observers.append(center.addObserver(forName: AVCaptureSession.didStopRunningNotification,
+                                             object: session, queue: nil) { [weak self] _ in
+            self?.queue.async { [weak self] in
+                guard let self, !self.session.isRunning else { return }
+                self.stopFaceDetection()
             }
         })
         observers.append(center.addObserver(forName: AVCaptureSession.interruptionEndedNotification,
@@ -233,6 +329,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             let wasReset = error?.code == .mediaServicesWereReset
             self?.queue.async { [weak self] in
                 guard let self else { return }
+                self.stopFaceDetection()
                 if self.captures.invalidateActive() {
                     self.onEvent(.captureFinished(nil))
                 }

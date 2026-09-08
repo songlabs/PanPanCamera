@@ -6,6 +6,8 @@ import Combine
 final class CameraService: ObservableObject {
     @Published private(set) var state = CameraState()
     @Published private(set) var previewDevice: AVCaptureDevice?
+    @Published private(set) var faceDetection: FaceDetectionFrame?
+    @Published private(set) var isFaceDetectionAvailable = false
     @Published var capturedPhoto: CapturedPhoto?
     @Published var failure: CameraFailure?
 
@@ -14,7 +16,7 @@ final class CameraService: ObservableObject {
     private let permission: CameraPermissionProvider
     private let makeSession: (@escaping (CameraSessionEvent) -> Void) -> any CameraSessionControlling
     private lazy var captureSession: any CameraSessionControlling = makeSession { [weak self] event in
-        // Preserve event order from the serial session queue.
+        // Session events are FIFO. Face results have an invalidatable, bounded mailbox.
         DispatchQueue.main.async { [weak self] in self?.handle(event) }
     }
 
@@ -32,6 +34,7 @@ final class CameraService: ObservableObject {
     func setActive(_ active: Bool) async {
         isActive = active
         guard active else {
+            faceDetection = nil
             captureSession.setRunning(false)
             state.status = .idle
             return
@@ -46,11 +49,13 @@ final class CameraService: ObservableObject {
         }
         // A permission prompt or background transition can change activity while awaiting.
         captureSession.setRunning(isActive && state.access == .authorized)
+        if state.access != .authorized { faceDetection = nil }
     }
 
     func switchCamera() {
         guard state.canCapture, state.canSwitchCamera else { return }
         state.isSwitching = true
+        faceDetection = nil
         captureSession.switchCamera()
     }
 
@@ -77,6 +82,7 @@ final class CameraService: ObservableObject {
             state.updateFlashCapabilities(flashModes)
         case let .status(status):
             state.status = isActive ? status : .idle
+            if state.status != .running { faceDetection = nil }
         case let .switching(value):
             state.isSwitching = value
         case let .captureFinished(photo):
@@ -86,6 +92,18 @@ final class CameraService: ObservableObject {
         case .switchFailed:
             state.isSwitching = false
             failure = .switchFailed
+        case let .faceDetection(delivery):
+            guard let delivery else {
+                faceDetection = nil
+                return
+            }
+            // Always consume, including while inactive, to release the producer's gate.
+            guard let frame = delivery.consume(), isActive, state.access == .authorized,
+                  state.status == .running, !state.isSwitching else { return }
+            faceDetection = frame
+        case let .faceDetectionAvailability(available):
+            isFaceDetectionAvailable = available
+            if !available { faceDetection = nil }
         }
     }
 }

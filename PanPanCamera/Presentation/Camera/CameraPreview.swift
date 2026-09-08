@@ -4,6 +4,7 @@ import SwiftUI
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let device: AVCaptureDevice?
+    let faceDetection: FaceDetectionFrame?
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
@@ -14,6 +15,7 @@ struct CameraPreview: UIViewRepresentable {
 
     func updateUIView(_ uiView: PreviewView, context: Context) {
         uiView.updateDevice(device)
+        uiView.updateFaces(faceDetection)
     }
 
     static func dismantleUIView(_ uiView: PreviewView, coordinator: ()) {
@@ -27,6 +29,9 @@ final class PreviewView: UIView {
     private var deviceID: String?
     private var rotation: AVCaptureDevice.RotationCoordinator?
     private var observation: NSKeyValueObservation?
+    #if DEBUG
+    private var faceOverlay: FaceDebugOverlay?
+    #endif
 
     func updateDevice(_ device: AVCaptureDevice?) {
         guard let device else { return }
@@ -56,12 +61,26 @@ final class PreviewView: UIView {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = rotation.device?.position == .front
         }
+        #if DEBUG
+        faceOverlay?.redraw(deviceID: deviceID)
+        #endif
+    }
+
+    func updateFaces(_ frame: FaceDetectionFrame?) {
+        #if DEBUG
+        guard FaceDebugOverlay.isEnabled else { return }
+        if faceOverlay == nil { faceOverlay = FaceDebugOverlay(previewLayer: previewLayer) }
+        faceOverlay?.update(frame, deviceID: deviceID)
+        #endif
     }
 
     func detach() {
         observation = nil
         rotation = nil
         deviceID = nil
+        #if DEBUG
+        faceOverlay?.update(nil, deviceID: nil)
+        #endif
         previewLayer.session = nil
     }
 }

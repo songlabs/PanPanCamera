@@ -141,4 +141,74 @@ final class CameraServiceTests: XCTestCase {
         XCTAssertEqual(CameraFailure.captureFailed.localizedKey, .captureFailed)
         XCTAssertEqual(CameraFailure.switchFailed.localizedKey, .switchFailed)
     }
+
+    private func faceDelivery(faces: [DetectedFace], outcome: FaceDetectionFrame.Outcome = .detected) -> FaceDetectionDelivery {
+        let delivery = FaceDetectionDelivery()
+        XCTAssertTrue(delivery.begin(at: 1))
+        XCTAssertTrue(delivery.complete(FaceDetectionFrame(faces: faces, orientation: .right,
+                                                           deviceID: "test-camera", pixelSize: .zero,
+                                                           timestamp: 1, outcome: outcome), at: 1.01))
+        return delivery
+    }
+
+    func testFaceResultsReplaceOldFacesWithZeroFacesAndFailureWithoutStoppingPreview() async {
+        let commands = SessionCommands()
+        let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
+        await camera.setActive(true)
+        await deliver(.status(.running), to: commands)
+        let face = DetectedFace(boundingBox: CGRect(x: 0.1, y: 0.2, width: 0.3, height: 0.4),
+                                confidence: 0.9, landmarks: [:])
+        await deliver(.faceDetection(faceDelivery(faces: [face, face])), to: commands)
+        XCTAssertEqual(camera.faceDetection?.faces.count, 2)
+        await deliver(.faceDetection(faceDelivery(faces: [])), to: commands)
+        XCTAssertEqual(camera.faceDetection?.faces, [])
+        XCTAssertEqual(camera.faceDetection?.outcome, .detected)
+        await deliver(.faceDetection(faceDelivery(faces: [face])), to: commands)
+        await deliver(.faceDetection(faceDelivery(faces: [], outcome: .visionFailed)), to: commands)
+        XCTAssertEqual(camera.faceDetection?.faces, [])
+        XCTAssertEqual(camera.faceDetection?.outcome, .visionFailed)
+        XCTAssertTrue(camera.state.canCapture)
+        XCTAssertNil(camera.failure)
+    }
+
+    func testFacesClearOnInterruptionAndInactivityAndRejectLateResults() async {
+        let commands = SessionCommands()
+        let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
+        await camera.setActive(true)
+        await deliver(.status(.running), to: commands)
+        await deliver(.faceDetection(faceDelivery(faces: [])), to: commands)
+        XCTAssertNotNil(camera.faceDetection)
+        await deliver(.status(.interrupted), to: commands)
+        XCTAssertNil(camera.faceDetection)
+        await deliver(.faceDetection(faceDelivery(faces: [])), to: commands)
+        XCTAssertNil(camera.faceDetection)
+        await deliver(.status(.running), to: commands)
+        let obsolete = faceDelivery(faces: [])
+        obsolete.invalidate()
+        await deliver(.faceDetection(obsolete), to: commands)
+        XCTAssertNil(camera.faceDetection)
+        await deliver(.faceDetection(faceDelivery(faces: [])), to: commands)
+        await camera.setActive(false)
+        XCTAssertNil(camera.faceDetection)
+        await deliver(.faceDetection(faceDelivery(faces: [])), to: commands)
+        XCTAssertNil(camera.faceDetection)
+    }
+
+    func testUnavailableAnalysisOutputKeepsCameraRunningAndSwitchIgnoresOldFaces() async {
+        let commands = SessionCommands()
+        let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
+        await camera.setActive(true)
+        await deliver(.status(.running), to: commands)
+        await deliver(.faceDetectionAvailability(true), to: commands)
+        XCTAssertTrue(camera.isFaceDetectionAvailable)
+        await deliver(.faceDetection(faceDelivery(faces: [])), to: commands)
+        await deliver(.faceDetection(nil), to: commands)
+        await deliver(.switching(true), to: commands)
+        await deliver(.faceDetection(faceDelivery(faces: [])), to: commands)
+        XCTAssertNil(camera.faceDetection)
+        await deliver(.switching(false), to: commands)
+        await deliver(.faceDetectionAvailability(false), to: commands)
+        XCTAssertFalse(camera.isFaceDetectionAvailable)
+        XCTAssertTrue(camera.state.canCapture)
+    }
 }

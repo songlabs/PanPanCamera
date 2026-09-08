@@ -5,6 +5,87 @@
 	};
 	"objectVersion" = 56;
 	"objects" = {
+		"4CE0178B52F669480EA58FE4" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FaceDetectionTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"1719F6806FCD6DABB593996B" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "4CE0178B52F669480EA58FE4";
+		};
+		"A78F408E0F41AD6445F5C41A" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FaceDebugOverlay.swift";
+			"sourceTree" = "<group>";
+		};
+		"52275569ED6395CE7CFDA193" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A78F408E0F41AD6445F5C41A";
+		};
+		"BE4399DC740038C1DBC36CC4" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "CameraFaceFrameProcessor.swift";
+			"sourceTree" = "<group>";
+		};
+		"4CF97322AFCA9AF2CF8D5BC4" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "BE4399DC740038C1DBC36CC4";
+		};
+		"574898515755F4696594ADA2" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "VisionFaceDetector.swift";
+			"sourceTree" = "<group>";
+		};
+		"3A1C594FA778B98290ACD09B" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "574898515755F4696594ADA2";
+		};
+		"8C99F30FC2B23E8D90098CDA" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FaceDetectionFrame.swift";
+			"sourceTree" = "<group>";
+		};
+		"74F88379466F56978AA29DED" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "8C99F30FC2B23E8D90098CDA";
+		};
+		"E9505FCE65E5DDBE7CBA71E0" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FaceDetectionDelivery.swift";
+			"sourceTree" = "<group>";
+		};
+		"CFCB796710F1E90B5F8A90E1" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E9505FCE65E5DDBE7CBA71E0";
+		};
+		"7225E7603925A280182FF527" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FaceCoordinates.swift";
+			"sourceTree" = "<group>";
+		};
+		"B91676EC7FB66529D91F0690" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "7225E7603925A280182FF527";
+		};
+		"03BB2ACE7F2EBCE68EAEDB4A" = {
+			"isa" = "PBXGroup";
+			"children" = (
+				"574898515755F4696594ADA2",
+				"8C99F30FC2B23E8D90098CDA",
+				"E9505FCE65E5DDBE7CBA71E0",
+				"7225E7603925A280182FF527",
+			);
+			"path" = "FaceTracking";
+			"sourceTree" = "<group>";
+		};
 		"E3764BCBDBEB034EE1107F22" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -221,6 +302,7 @@
 		"B7BC98AC6C6124FAB19C4BBF" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"BE4399DC740038C1DBC36CC4",
 				"4B187487F6081294F51B53D6",
 				"842CBEB0C2E4C21556F7EC1D",
 				"33B056C001F1173471B7C512",
@@ -432,6 +514,7 @@
 		"B365BA7AF52893E9DE0DE153" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"A78F408E0F41AD6445F5C41A",
 				"CC7B9F6FE4078D3C09195D15",
 				"C62D96C6F5C44C1A27F6431D",
 				"8E965BB166B8C82134141736",
@@ -670,6 +753,7 @@
 		"A9F99B2CD4B4341BBBB50D75" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"4CE0178B52F669480EA58FE4",
 				"EDE139213C44372A0EC0A489",
 				"73F1327618E41FED0B5FDFFB",
 				"78DE2105F7B3A7AE04C5A403",
@@ -684,6 +768,7 @@
 		"798C3EE8ECED8AA3F877905E" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"03BB2ACE7F2EBCE68EAEDB4A",
 				"DCE7BF4446DDFA1D7C5D0E3A",
 				"061EB7E84172C1EE1C277969",
 				"E5EEE264FA2B57F399610715",
@@ -738,6 +823,12 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"52275569ED6395CE7CFDA193",
+				"4CF97322AFCA9AF2CF8D5BC4",
+				"3A1C594FA778B98290ACD09B",
+				"74F88379466F56978AA29DED",
+				"CFCB796710F1E90B5F8A90E1",
+				"B91676EC7FB66529D91F0690",
 				"E0EF3BB32A332E7D5376741E",
 				"F798F871BA06588BF31CB2B3",
 				"1AC212FE5509514CD5749F99",
@@ -791,6 +882,7 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"1719F6806FCD6DABB593996B",
 				"193FFEAB467DECEDD9F0E6A1",
 				"41EDBC3B8A20E2D30C386F4C",
 				"F7A6E7088BB8EFCC962F6A32",

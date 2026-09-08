@@ -8,7 +8,7 @@ The [iOS CI](https://github.com/songlabs/PanPanCamera/actions/workflows/ci.yml?q
 
 | Verification | Current suite / required evidence |
 | --- | --- |
-| Debug XCTest | 33 methods: BeautyParameters 5, CameraState 6, Localization 1, ScreenshotConfiguration 5, CameraService 7, CameraSessionControl 5, PhotoCaptureLifecycle 4. Read actual passed/failed/skipped totals from PanPanCameraTests.xcresult summary. |
+| Debug XCTest | 45 methods: BeautyParameters 5, CameraState 6, Localization 1, ScreenshotConfiguration 5, CameraService 10, CameraSessionControl 5, PhotoCaptureLifecycle 4, FaceDetection 9. New face tests are pending Apple execution; read actual totals from PanPanCameraTests.xcresult. |
 | Release Screenshot isolation XCTest | 5 methods; read ReleaseScreenshotTests.xcresult summary, not the Debug result. |
 | Release Simulator Build | Require the dedicated xcodebuild build step to succeed. This is not a device Archive. |
 | Delivery scripts | 27 Python tests, including strict three-part versions and dynamically generated PNG corruption cases. |
@@ -25,7 +25,7 @@ Permission tests deterministically suspend authorization across inactivity and r
 ## Additional Xcode / Simulator checks
 
 1. Open PanPanCamera.xcodeproj and the shared scheme. The deployment target is iOS 17; CI pins Xcode 26.3 and selects an available iOS 26.x iPhone. Running on iOS 17 and building with the minimum documented Xcode toolchain remain separate, unexecuted checks.
-2. Run the current 33-method Debug suite and 5 Release isolation methods, preserving the .xcresult outside tracked files.
+2. Run the current 45-method Debug suite and 5 Release isolation methods, preserving the .xcresult outside tracked files.
 3. Check ja, zh-Hans, zh-Hant, en and ko compiled resources; confirm PanPan is untranslated. System permission dialogs and every panel in every language still need visual acceptance.
 4. Check small and large iPhones, default/accessibility text sizes, VoiceOver, safe areas, scrolling and long English/Korean text. Screenshot Mode uses large sheets; separately inspect ordinary medium sheets.
 5. Simulator Screenshot uses a Debug-only SwiftUI testing background and bypasses CameraSession creation and permission requests. It cannot validate real preview, flash, captures or switching. Release/TestFlight ignore screenshot arguments.
@@ -94,6 +94,34 @@ If these conditions cannot be produced, retain Pending rather than treating unit
 - [ ] Pending — beauty/filter/makeup notices remain visible; current selections do not alter pixels.
 - [ ] Pending — video/portrait/album/timer/ratio remain explicitly unavailable; no simulated effects.
 - [ ] Pending — no camera/photo upload or Photos-library save; only the current in-memory capture is retained.
+
+## Vision face detection — all device checks Pending
+
+Use a physical iPhone with a Debug build and `-PanPanFaceDebugOverlay` launch argument.
+Green outlines are face boxes; yellow points are available landmarks. Inspect
+`CameraService.faceDetection` for face count, frame outcome, orientation, dimensions and timestamp,
+and `isFaceDetectionAvailable` for output support. Do not log/export face coordinates or images.
+
+- [ ] Front and rear: zero, one and multiple faces; all faces returned without primary-face selection.
+- [ ] Boxes and eye/nose/noseCrest/lip/contour points align at center and each cropped preview edge.
+- [ ] Front mirror: move an identifiable feature to each side and confirm exactly one reflection.
+- [ ] Portrait plus physical landscape left/right and upside down on both cameras. UI remains portrait;
+      this check exercises physical camera rotation, including horizon tilt and face-up/down transitions.
+- [ ] Face enters/leaves, turns/profile/occlusion, rapid motion and optional/absent landmarks.
+- [ ] Repeated lens switches and rotation during an active request do not display old-camera results.
+- [ ] First permission prompt, denied/restricted access, Settings return, Home/lock and foreground return.
+- [ ] Session interruption, stop/resume and media-services reset; no new Vision work while stopped.
+- [ ] Shutter, front-photo mirror, back-photo orientation, flash and result dismissal still work.
+- [ ] Profile Preview FPS, main-thread responsiveness, Vision durations, CPU, allocations/RSS,
+      frame drops, switch latency and thermal state on a supported older iPhone and a current iPhone.
+      Compare the previous commit with this commit under the same scene/light/camera for at least
+      five minutes; repeat with multiple faces. Record device, OS, SHA, duration and measurements.
+- [ ] With Instruments, confirm one Vision request at a time, cooldown between requests, no increasing
+      frame/result queue, and memory reaches a plateau over repeated background/switch cycles.
+- [ ] Confirm Release ignores `-PanPanFaceDebugOverlay` and normal Camera controls/layout are unchanged.
+
+**尚未完成 Apple 平台 / 真机验收。** Simulator and pure-logic tests cannot satisfy these checks.
+The implementation and known validation limits are described in [FaceDetection.md](FaceDetection.md).
 
 ## TestFlight — Pending
 

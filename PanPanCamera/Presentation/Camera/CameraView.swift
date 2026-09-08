@@ -80,7 +80,8 @@ struct CameraView: View {
     }
 
     private var livePreview: some View {
-        CameraPreview(session: camera.previewSession, device: camera.previewDevice)
+        CameraPreview(session: camera.previewSession, device: camera.previewDevice,
+                      faceDetection: camera.faceDetection)
             .ignoresSafeArea()
             .accessibilityLabel(Text(L10n.livePreview))
     }
