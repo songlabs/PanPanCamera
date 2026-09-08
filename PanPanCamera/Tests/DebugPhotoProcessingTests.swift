@@ -106,7 +106,8 @@ final class DebugPhotoProcessingTests: XCTestCase {
         XCTAssertEqual(output.image.cgImage.width, 20)
         XCTAssertEqual(output.image.cgImage.height, 10)
         XCTAssertEqual(photo.data, data, "Development processing never replaces the original photo")
-        XCTAssertGreaterThan(pixel(output.image, x: 10, y: 5)[0], 100)
+        XCTAssertLessThanOrEqual(abs(Int(pixel(output.image, x: 10, y: 5)[0]) - 100), 1,
+                                 "Texture-only default must not add the old tone lift to a flat patch")
     }
 
     func testDebugLoaderAppliesAllExifRotationsAndMirrorsBeforeDetection() async throws {
@@ -166,8 +167,7 @@ final class DebugPhotoProcessingTests: XCTestCase {
         XCTAssertEqual(pixel(preview.image, x: 5, y: 5), [0, 0, 0, 255])
         // Switching back must not retain a mask mode or a busy admission slot.
         let processed = try await DebugPhotoProcessing.process(data: data)
-        XCTAssertGreaterThan(pixel(processed.image, x: 50, y: 50)[0], 100)
-        XCTAssertLessThanOrEqual(pixel(processed.image, x: 50, y: 50)[0], 106)
+        XCTAssertLessThanOrEqual(abs(Int(pixel(processed.image, x: 50, y: 50)[0]) - 100), 1)
         XCTAssertEqual(pixel(processed.image, x: 31, y: 31)[0], 100)
     }
 
@@ -188,6 +188,34 @@ final class DebugPhotoProcessingTests: XCTestCase {
         for y in 0..<10 {
             for x in 0..<10 { XCTAssertEqual(pixel(output.image, x: x, y: y), [0, 0, 0, 255]) }
         }
+    }
+
+    func testDebugABConfigurationsAreJobLocalAndZeroMatchesDecodedOriginal() async throws {
+        let data = try encoded(SkinRetouchTestImage.texture())
+        let original = try await DebugPhotoProcessing.process(data: data, output: .original)
+        for intensity: SkinRetouchIntensity in [.original, .natural, .stronger] {
+            let configuration = SkinRetouchConfiguration.naturalDefault.withIntensity(intensity)
+            let result = try await DebugPhotoProcessing.process(data: data, configuration: configuration)
+            let reference = ImageProcessingPipeline<ProcessingImage>(detector: MockFaceDetector(),
+                steps: [TexturePreservingSkinSmoothingStep(configuration: configuration)])
+            let expected = try await reference.process(original.image)
+            XCTAssertEqual(ProcessingTestPixels.rgba(result.image), ProcessingTestPixels.rgba(expected.image))
+            if intensity == .original {
+                XCTAssertEqual(ProcessingTestPixels.rgba(result.image), ProcessingTestPixels.rgba(original.image))
+            }
+        }
+        // Masks/difference are explicitly requested diagnostics, never stored modes.
+        let protection = try await DebugPhotoProcessing.process(data: data, output: .detailProtectionMask)
+        XCTAssertEqual(protection.image.cgImage.width, original.image.cgImage.width)
+        let difference = try await DebugPhotoProcessing.process(data: data, output: .difference,
+            configuration: .naturalDefault.withIntensity(.original))
+        let pixels = ProcessingTestPixels.rgba(difference.image)
+        for i in stride(from: 0, to: pixels.count, by: 4) {
+            XCTAssertEqual(Array(pixels[i..<(i + 4)]), [0, 0, 0, 255])
+        }
+        let defaultAgain = try await DebugPhotoProcessing.process(data: data)
+        let explicitNatural = try await DebugPhotoProcessing.process(data: data, configuration: .naturalDefault)
+        XCTAssertEqual(ProcessingTestPixels.rgba(defaultAgain.image), ProcessingTestPixels.rgba(explicitNatural.image))
     }
 }
 #endif

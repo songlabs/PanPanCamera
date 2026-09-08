@@ -74,11 +74,27 @@ struct DebugFaceMaskStep {}
             if 'Tests' in path.parts or 'Rendering' in path.parts:
                 continue
             self.assertNotRegex(path.read_text(encoding='utf-8'),
-                                r'\b(?:NaturalSkinProcessingStep|SoftFaceMaskGenerator|FaceMaskGenerating)\b', str(path))
+                                r'\b(?:NaturalSkinProcessingStep|SoftFaceMaskGenerator|FaceMaskGenerating|'
+                                r'TexturePreservingSkinSmoothingStep|DetailProtectionMaskGenerator|'
+                                r'SkinRetouchConfiguration|SkinRetouchIntensity)\b', str(path))
 
     def test_pipeline_does_not_depend_on_a_mask_algorithm(self):
         code = (APP / 'Rendering/ImageProcessingPipeline.swift').read_text(encoding='utf-8')
-        self.assertNotRegex(code, r'\b(?:FaceMaskGenerating|SoftFaceMaskGenerator|NaturalSkinProcessingStep|CoreImage)\b')
+        self.assertNotRegex(code, r'\b(?:FaceMaskGenerating|SoftFaceMaskGenerator|NaturalSkinProcessingStep|'
+                                 r'TexturePreservingSkinSmoothingStep|SkinRetouchConfiguration|CoreImage)\b')
+
+    def test_retouch_reuses_one_renderer_context_without_new_queues_or_tasks(self):
+        sources = list((APP / 'Rendering').rglob('*.swift'))
+        contexts = [path for path in sources if re.search(r'\bCIContext\s*\(', path.read_text(encoding='utf-8'))]
+        self.assertEqual(contexts, [APP / 'Rendering/CoreImage/CoreImageRendering.swift'])
+        for name in ('TexturePreservingSkinSmoothingStep', 'DetailProtectionMaskGenerator', 'SkinRetouchConfiguration'):
+            code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
+            self.assertNotRegex(code, r'\b(?:DispatchQueue|Task)\s*[({.]')
+
+    def test_debug_default_does_not_stack_tone_and_texture(self):
+        code = (APP / 'Rendering/DebugPhotoProcessing.swift').read_text(encoding='utf-8')
+        self.assertNotRegex(code, r'\bNaturalSkinProcessingStep\s*\(')
+        self.assertEqual(len(re.findall(r'ImageProcessingPipeline<JobImage>\s*\(', code)), 1)
 
 
 if __name__ == '__main__':

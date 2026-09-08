@@ -1,111 +1,208 @@
-# Experimental local face tone processing
+# Texture-Preserving Natural Skin Retouch v1
 
-`ProcessingImage` remains an immutable, fully rendered CGImage in display orientation.
-The ImageIO loader applies EXIF rotations and mirrors once, before detection. Face boxes
-remain normalized to this exact image, with a bottom-left origin; `imageRect(in:)` also
-preserves nonzero extent origins. No preview coordinates or landmarks are used here.
+Experimental local Core Image implementation, reached through DebugPhotoProcessing
+and MockFaceDetector only. The official capture/save path and product UI do not invoke
+it. This is an explainable two-scale approximation, not a copy of a closed-source app,
+semantic skin detection, identity verification or visually accepted beauty feature.
 
-## Soft face mask
+## Architecture retained
 
-`FaceMaskGenerating.makeMask(regions:in:)` is the only replacement boundary. It returns
-an opaque grayscale CIImage with RGB weights in 0...1 and exactly the supplied finite
-image extent, or nil for no usable coverage. A later mask implementation can be injected
-into `NaturalSkinProcessingStep(maskGenerator:)` without changing the pipeline.
+ImageProcessingPipeline still admits one job under its lock, rejects competing requests
+with busy before decode, and executes loading/detection/steps on its serial background
+queue. ProcessingImage remains an immutable, eagerly rendered CGImage in display
+orientation; FaceRegion is normalized with a bottom-left origin.
 
-`SoftFaceMaskGenerator` makes one portrait ellipse per usable bounding box:
+CoreImageRendering still owns one lazily initialized shared CIContext with
+cacheIntermediates: false. Working color space is unchanged; output remains RGBA8 in the
+source CGImage color space. Only bounded filter/mask helpers were added to this renderer.
+All CIImages are job-local. No per-face context, new queue, Task, photo cache or history
+is introduced. Errors propagate through the unchanged pipeline.
 
-- Center: bounding-box center, with no coordinate reinterpretation or translation bias.
-- Vertical radius: `0.48 * box.height` (96% of box height).
-- Horizontal radius: `min(0.45 * box.width, 0.8 * verticalRadius)` (at most 90% of box width,
-  and at most 80% of the vertical radius, including unusually wide boxes).
-- `CIRadialGradient`: opaque white at reference radius 65 and inside, transitioning to
-  opaque black at reference radius 100 and outside. Scale the reference circle to the
-  ellipse with one affine transform. The outer 35% of each radius is a continuous feather.
-- Crop the transformed gradient immediately to the image extent. The infinite generator
-  is black outside its outer radius; it is never rendered/exported with infinite extent.
-  The ellipse falls to zero inside the box, keeping corners and surrounding pixels black.
-- Merge faces with `CIMaximumCompositing` and crop after each merge. This is `max(a, b)`,
-  including overlapping feather values; duplicates/order do not amplify weights. Inputs
-  already in 0...1 stay in that range, with alpha 1. No repeated photo blend per face.
+NaturalSkinProcessingStep is retained (brightness +0.008, saturation 1.005, contrast 1),
+but is absent from the default DEBUG chain. Its tests and the older rectangular DEBUG
+brightness probe remain. Texture and tone are not stacked.
 
-No faces return nil before any Core Image construction. Subpixel boxes (either mapped
-dimension below one pixel) are skipped without enlarging them. If every box is skipped,
-the processing step returns the original CGImage. A one-pixel box is allowed, with no
-guarantee of a visible adjustment at that sampling resolution. Invalid image extents
-throw before filter creation. The real image always supplies a finite CGImage extent.
+## Decomposition and reconstruction
 
-The approximation covers central face, cheeks, main forehead and chin while lowering
-corner/background/hair-periphery weights. It is not skin segmentation: it cannot reliably
-exclude eyes, lips, brows, nostrils or hair within the ellipse. No blur, custom kernel,
-Metal, learned model, third-party dependency or cached mask is introduced.
+For original working-space RGB O, independently compute:
 
-## NaturalSkinProcessingStep
+    S = Gaussian(O, smallRadius)
+    L = Gaussian(O, largeRadius)
+    N = CINoiseReduction(L, noiseLevel, sharpness: 0)
+    H = O - S                              original high-frequency detail
+    M = S - L                              original mid-frequency texture
+    d = detailRetention
+    m = 1 - 0.5 * (1 - d)
+    R = N + m * M + d * H
+    candidate = O + clamp(R - O, -0.02, +0.02)   per working-space RGB channel
+    output = blend(original, candidate, effectiveMask)
 
-The step returns the exact input for no faces, before making a CIImage or calling the
-generator. Otherwise it obtains the final mask, applies one `CIColorControls` graph,
-blends once with the source through `CIBlendWithMask`, then eagerly renders RGBA8 using
-the original image color space and dimensions. The input CGImage is never modified.
+Zero noiseReductionStrength bypasses CINoiseReduction, giving N = L. With d = 1
+and noise reduction disabled, the signed bands reconstruct O. Gaussian images are
+internal bases only; neither is the final adjusted photo. Small-scale attenuation
+reduces fine random variation; the larger base and limited mid-band attenuation address
+mild regional variation. Neither component identifies blemishes. Texture is retained
+from the original rather than generated.
 
-| Control | Value | Purpose |
+One small pointwise CIColorKernel implements signed subtraction/reconstruction and the
+delta bound. This avoids treating absolute differences or clamping blend modes as signed
+detail, and keeps alpha explicit. It uses Apple's legacy CIColorKernel(source:) API
+(deprecated since iOS 12, still available). Kernel compilation/execution requires Apple
+validation. There is no custom Metal/MPS renderer or shader framework; no MPS spike was
+needed or implemented.
+
+The 0.02 bound is an engineering guard in the existing working space, not a fixed 8-bit
+increment, exposure-stop value or proven perceptual safety threshold. Default intensity
+further scales it by at most 0.25. Changes can be very small or quantize away in RGBA8.
+Real photos must determine future tuning.
+
+## Configuration and adaptive scale
+
+All adjustable parameters and fixed v1 policy live in SkinRetouchConfiguration.swift.
+
+| Parameter | Initial value | Throwing validation |
 | --- | --- | --- |
-| Brightness | `+0.008` | Small tonal lift in Core Image's working color space |
-| Saturation | `1.005` | Only a 0.5% saturation adjustment |
-| Contrast | `1.0` | Neutral contrast, avoiding extra texture/shadow emphasis |
+| intensity | 0.25 | Finite 0...1 via SkinRetouchIntensity |
+| detailRetention | 0.9 | Finite 0...1; 1 retains all high/mid detail |
+| noiseReductionStrength | 0.015 | Finite 0...0.03, a conservative v1 cap |
+| edgeProtectionStrength | 1.0 | Finite 0...1 |
 
-The defaults intentionally stay near identity, and the feather reduces their weight
-toward the edge. These numbers are not an exposure-stop or fixed 8-bit increment claim:
-color management and source tone affect the rendered change. There is no spatial blur,
-neighbor mixing, facial deformation, whitening algorithm or product beauty control.
-These facts constrain the effect, but natural appearance across skin tones and lighting
-still requires Apple pixel execution and visual inspection of local real photos.
+NaN/infinity/out-of-range values are rejected, never silently clamped. Use
+SkinRetouchConfiguration.naturalDefault and withIntensity. Intensity constants original,
+natural and stronger are 0, 0.25 and 0.5. These are engineering starting values, not
+settings that have passed real-photo visual review.
 
-## Shared rendering and DEBUG inspection
+Map each FaceRegion to image pixels and ignore boxes with either dimension below one
+pixel, as the existing mask generator does. Let f be the smallest usable face short side:
 
-`CoreImageRendering` minimally extracts the previous probe's `CIBlendWithMask`, eager
-render, failure cases and static CIContext. The context initializes on its first worker
-render and is reused by the natural step, old probe and mask preview, with
-`cacheIntermediates: false`. No per-face context, thread, task, mask cache or history exists.
-Each job holds only its own filters/graphs until rendering completes. Calls assert the
-existing off-main contract; the pipeline keeps its serial queue and busy rejection.
-Filter/render errors throw; mask errors propagate unchanged through the step/pipeline.
+    smallRadius = clamp(0.003 * f, 0.6, 3.0) pixels
+    largeRadius = 3 * smallRadius           // 1.8...9.0 pixels
+    protection dilation radius = smallRadius
 
-The DEBUG-only `DebugFaceBrightnessStep` keeps its old inward-rounded rectangular mask
-and +0.01 probe behavior. Only its blend/context/render plumbing is shared. It is no
-longer the default DEBUG output and is not the soft-mask implementation.
+One scale pair serves the combined photo mask. Face order and duplicates cannot change
+scale. A large face cannot over-smooth a small face; mixed-size groups deliberately
+under-process the larger face. This is not independent per-person tuning. Decomposition
+and reconstruction run once regardless of face count.
 
-Use `DebugPhotoProcessing.process(photo, output: .softFaceMask)` or
-`DebugPhotoProcessing.process(data: encodedData, output: .softFaceMask)` for an opaque
-black-background, white-mask `ProcessingImage`. Inspect `result.image.cgImage` with an
-Xcode image viewer or a temporary developer/test view, checking center placement, smooth
-gray boundary, black corners/exterior and all four image edges. For comparisons, call
-the default `.processedPhoto` mode sequentially on the same data. Both modes apply the
-same orientation/2048-pixel policy and share one admission slot. No product button,
-camera hook, saving, logging or uploading is added. These entry/probe types are absent
-from Release; the reusable mask/natural-step types have no production camera call sites.
+## Face mask and detail protection
 
-## Tests and evidence
+FaceMaskGenerating and SoftFaceMaskGenerator are unchanged. For each face:
 
-New Apple XCTest coverage consists of:
+    radiusY = 0.48 * height
+    radiusX = min(0.45 * width, 0.8 * radiusY)
 
-- Nine `SoftFaceMaskTests`: center/feather/exterior/corners; gradual radial falloff;
-  empty and subpixel boxes; one-pixel face; all four edges with nonzero origin; portrait
-  shape for wide boxes; disjoint faces; maximum union/duplicate/order behavior; invalid
-  extents. Full RGBA float masks check finiteness, range, grayscale, alpha and exact extent,
-  so 8-bit output clamping cannot conceal invalid weights.
-- Nine `NaturalSkinProcessingTests`: no-face identity without calling the generator;
-  nil/tiny coverage identity; weak center/feather/exterior behavior and input immutability;
-  colored one-pixel detail across tones; duplicate/partial overlap; disjoint faces;
-  all four edges/one-pixel box without black borders; transparent/translucent alpha;
-  injected mask error identity and release of pipeline admission after failure.
-- Three additional `DebugPhotoProcessingTests`: mask pixels and mode switching without
-  altering CapturedPhoto data; oriented/downsampled mask output; opaque-black empty mask.
-  Existing rectangle-probe, all-eight-EXIF, decode-error and pipeline tests remain.
+Transform an opaque radial gradient from radius 65 (white) to 100 (black) into this ellipse
+at the face center, then crop to source extent. CIMaximumCompositing merges faces with
+max(a, b), including feather overlaps. Weights stay in 0...1, outside is black, and the
+photo is not repeatedly processed for each face.
 
-The Xcode project registers these tests under the existing shared scheme/CI Debug test
-target. Added Python scope guards ensure there are no camera/product call sites or
-concrete mask dependencies in the pipeline, and include the new preview in actual Release
-exclusion compilation. Windows static validation results are in the parent README.
+DetailProtectionMaskGenerator returns opaque grayscale: white means protect, black
+means allow. It runs CIEdges(O, intensity: 1), takes maximum RGB, multiplies by 4, clamps
+0...1 and expands protection with CIMorphologyMaximum at smallRadius. This covers thin
+structures and nearby edge pixels without weakening peaks. It uses chromatic/neutral
+contrast, not absolute skin RGB/HSV thresholds, and does not semantically locate eyes,
+lips, hair, moles or identity. Fixed skin-color thresholds cannot reliably cover different
+complexions and lighting, so there is no such classifier or complexion exclusion.
 
-真实 Vision 人脸检测尚未验证。
-Soft Face Mask 和 NaturalSkinProcessingStep 的实际 Core Image 图像效果尚未在 Apple 平台执行验证。
-尚未完成 Apple 平台 / 真机验收。
+    P = detailProtectionMask
+    effectiveMask = clamp(faceMask * clamp(1 - edgeProtectionStrength * P, 0, 1)
+                          * intensity, 0, 1)
+
+Grayscale matrix arithmetic, multiplication and clamping keep mask alpha 1. One photo
+blend follows union/protection/intensity. The generator is a small concrete type
+returning a CIImage: a future landmark mask can replace that result or max-combine with
+it. No speculative landmark/segmentation abstraction is added.
+
+## Complete filter/kernel inventory for the new chain
+
+| Operation | Explicit parameters |
+| --- | --- |
+| CIRadialGradient, existing face mask | center (0,0), radius0 65, radius1 100, opaque white/black, ellipse transform above |
+| CIMaximumCompositing, existing union | next face mask + previous combined mask |
+| CIGaussianBlur, two internal bases | original clamped to extent; smallRadius and largeRadius |
+| CINoiseReduction, low base only | clamped large base, inputNoiseLevel 0.015 default, inputSharpness 0 |
+| CIEdges | clamped original, inputIntensity 1 |
+| CIMaximumComponent | edge image, no adjustable parameters |
+| CIColorMatrix, scalar arithmetic | R/G/B vectors (scale,0,0,0), A vector zero, bias (bias,bias,bias,1); scale/bias pairs (4,0), (-edgeProtectionStrength,1), (intensity,0) |
+| CIColorClamp, after each matrix | min (0,0,0,1), max (1,1,1,1) |
+| CIMorphologyMaximum | clamped protection, inputRadius smallRadius |
+| CIMultiplyCompositing | faceMask and inverted/scaled protection weight |
+| CIColorKernel reconstruction | original, small, large, low; d, 1-0.5*(1-d), delta bound 0.02, opaque threshold 0.9999 |
+| CIBlendWithMask | candidate over original using effectiveMask |
+| CIDifferenceBlendMode, DEBUG only | processed graph + original, no gain |
+
+Neighborhood inputs are clamped before filtering; every result is cropped to exact
+source extent. The retouch never warps, translates or resizes image coordinates. Graphs
+support nonzero origins; ProcessingImage supplies CGImage's zero-origin extent as before.
+DEBUG ImageIO applies EXIF rotation/mirroring exactly once before detection and retains
+the existing maximum preview dimension of 2048.
+
+Reconstruction keeps original alpha and explicitly unpremultiplies/premultiplies RGB.
+If original, small, large or low alpha is below 0.9999, it returns the original sample.
+This conservatively bypasses translucent pixels and transparent neighborhoods, avoiding
+cross-alpha contamination. Diagnostic masks are opaque; difference is a visualization,
+not the alpha acceptance output. Nonzero processing still uses the existing RGBA8 render;
+Apple tests allow one code value for color roundtrip and require unchanged alpha.
+
+Intensity zero and no faces return the exact input CGImage before any CIImage, filter,
+mask or render. All subpixel/nil coverage also returns the input. Explicit diagnostic
+modes may render masks/difference even at zero; original and processed-at-zero are the
+bypass comparison outputs.
+
+## DEBUG A/B inspection
+
+Run sequentially from one developer task; all requests share one busy slot:
+
+    let original = try await DebugPhotoProcessing.process(data: data, output: .original)
+    let zero = try await DebugPhotoProcessing.process(data: data,
+        configuration: .naturalDefault.withIntensity(.original))
+    let natural = try await DebugPhotoProcessing.process(data: data,
+        configuration: .naturalDefault) // 0.25; no NaturalSkinProcessingStep
+    let stronger = try await DebugPhotoProcessing.process(data: data,
+        configuration: .naturalDefault.withIntensity(.stronger)) // 0.5
+    let face = try await DebugPhotoProcessing.process(data: data, output: .faceMask)
+    let protection = try await DebugPhotoProcessing.process(data: data, output: .detailProtectionMask)
+    let difference = try await DebugPhotoProcessing.process(data: data, output: .difference)
+
+The methods also accept CapturedPhoto. Existing processedPhoto/softFaceMask spellings
+remain aliases. Inspect returned CGImages in Xcode/local developer code; release outputs
+when finished. No UI, slider, saving, upload, logging or image history is added.
+Original here means the common oriented/downsampled decoded preview, not original file
+bytes. Immutable output/configuration travels with each job through the one static
+pipeline. The caller serializes A/B requests.
+
+## Tests and current evidence
+
+Added 20 XCTest methods: five Foundation configuration/scale cases, thirteen texture
+cases, one detail-mask case, one DEBUG A/B/mode case. Coverage includes exact zero/no-face
+identity, parameter rejection, scale limits/adaptation, signed reconstruction, high-detail
+retention, lower flat noise variance, edge/one-pixel-line/dark-spot preservation, exterior,
+duplicate/order/overlap/disjoint faces, alpha/transparent neighborhoods, flat colors
+across tones, four borders, nonzero extent, one-pixel face, error propagation, protection/
+feather relationships and job-local modes. Existing soft-mask/tone/EXIF tests remain;
+former default-tone expectations now require texture-only flat patches to stay stable.
+
+The deterministic noise fixture contains a hard edge and fine line. Gaussian baseline
+code exists only in tests, uses the same SMALL radius, mask, intensity and renderer, and
+requires both outputs to smooth while retouch retains more edge/line contrast. This is
+not a comparison at matched residual noise variance or proof of real-photo superiority.
+
+Windows checks: 36 Python tests passed (nine processing scope/Release isolation checks);
+project checks passed for 50 app and 15 XCTest files; 65 Swift files parsed both with and
+without DEBUG; four existing pure Swift domain types and three camera control helpers
+passed host typechecking. No Apple framework typecheck occurred. The host Foundation
+XCTest harness includes the new configuration tests but was blocked before execution by
+missing msvcrt.lib, oldnames.lib and msvcprt.lib. Separate Foundation typecheck/module
+emission was blocked by missing errno.h in the Windows C SDK. These attempts are not
+passing XCTest/typecheck evidence.
+
+Texture-Preserving Natural Skin Retouch v1 已完成代码实现和当前环境可执行验证，
+但实际 Core Image 图像效果尚未在 Apple 平台验证。
+真实 Vision 人脸检测尚未验证。尚未完成 Apple 平台 / 真机验收。
+Apple XCTest, Xcode Build, Simulator, real photos, device performance, GPU, memory and
+thermals remain unverified. No identity-model validation claim is made.
+
+References: Apple's [Core Image filter reference](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CoreImageFilterReference/index.html)
+and [kernel language reference](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CIKernelLangRef/ci_gslang_ext.html)
+document APIs, not PanPan image quality. MPS guided filtering, Vision feature masks,
+semantic segmentation and temporary-blemish research remain future separate tasks.

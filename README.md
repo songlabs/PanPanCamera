@@ -37,7 +37,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 | 未实现入口 | 比例、Timer、相册点击后说明当前限制；视频、人像显示未支持且禁用 |
 | 五语言 | UI、无障碍文字、权限说明与品牌名称 |
 | Debug Screenshot Mode | 固定 SwiftUI 测试背景和页面参数；绕过真实相机与权限 |
-| DEBUG 照片处理 | Mock FaceRegion → 柔边椭圆 Mask → 实验性 NaturalSkinProcessingStep → 单次 Blend；可输出黑底白 Mask，未接入正式照片流程 |
+| DEBUG 照片处理 | Mock FaceRegion → 柔边 Mask / 梯度保护 → 两尺度纹理重建 → 单次 Blend；支持原图、两种 Mask、处理图、Difference 与 0 / 0.25 / 0.5 A/B，未接入正式照片流程 |
 | GitHub Actions | iOS CI、手动 Simulator Screenshot、TestFlight 交付基础设施；TestFlight 尚未实际执行 |
 
 美肌／美型的 **19 个参数仅改变界面状态，不改变相机预览或照片**。Auto 不执行自动算法。滤镜／美妆也不渲染效果，各面板提供五语言说明。关闭面板再打开保留本次运行参数，重启 App 后恢复默认值。
@@ -261,7 +261,7 @@ inventory 输出尺寸、大小、SHA256 和两种验证结果。下载后仍需
 6. System Photos Save、照片导入、持久化照片存储。
 7. 比例裁切、Timer、人像模式与发行用 App Icon；发行凭据仍需单独配置。
 
-当前已经接入 Vision Face Detection、Face Landmarks 和限频视频帧检测；后续顺序为 Stable Face Tracking → BeautyEngine input model → Metal rendering。`check_project.py` 仅在 FaceTracking 放开 Vision、在 Camera 放开视频帧获取，继续禁止 Metal、CoreML、CoreImage、网络和其他范围外 API。
+当前已有 Vision Face Detection、Face Landmarks 和限频视频帧检测代码，但真实检测尚未验证。Rendering 的独立 DEBUG 照片入口已实现 Texture-Preserving Natural Skin Retouch v1，默认 intensity 0.25、detailRetention 0.9；这些是工程初始值，实际 Core Image 效果尚未在 Apple 平台验证。参数、算法、A/B 和验证边界见 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。`check_project.py` 仅在 FaceTracking 放开 Vision、在 Camera 放开视频帧获取、在 Rendering 和 Tests 放开 Core Image，继续禁止 Metal、CoreML、网络和其他范围外 API。尚未完成 Apple 平台 / 真机验收。
 
 ## Real Device Validation Pending
 
