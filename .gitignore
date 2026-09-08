@@ -1,0 +1,33 @@
+# Xcode / Swift / macOS
+.DS_Store
+._*
+DerivedData/
+build/
+Build/
+.build/
+*.xcuserstate
+xcuserdata/
+*.xccheckout
+*.xcscmblueprint
+*.moved-aside
+*.ipa
+*.dSYM
+*.dSYM.zip
+*.xcarchive
+*.xcresult
+.swiftpm/
+.verification/
+__pycache__/
+*.pyc
+
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+Secrets/
+secrets/
+*.p12
+*.p8
+*.mobileprovision
+*.key
+*.pem
