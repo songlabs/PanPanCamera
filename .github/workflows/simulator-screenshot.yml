@@ -1,0 +1,81 @@
+name: Simulator Screenshot
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simulator-screenshot-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  capture:
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      APP_BUNDLE_ID: com.songlabs.PanPanCamera
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Select and verify Xcode 26.3
+        run: bash scripts/select_xcode.sh
+
+      - name: Select iOS 26 iPhone simulator
+        run: |
+          set -euo pipefail
+          xcrun simctl list devices available -j | tee "$RUNNER_TEMP/available-simulators.json"
+          python3 scripts/select_simulator.py "$RUNNER_TEMP/available-simulators.json"
+
+      - name: Boot Simulator
+        run: |
+          set -euo pipefail
+          state=$(xcrun simctl list devices -j | python3 -c \
+            'import json, os, sys; print(next(d["state"] for ds in json.load(sys.stdin)["devices"].values() for d in ds if d["udid"] == os.environ["SIMULATOR_ID"]))')
+          if [[ "$state" != Booted ]]; then xcrun simctl boot "$SIMULATOR_ID"; fi
+          xcrun simctl bootstatus "$SIMULATOR_ID" -b
+
+      - name: Build Debug app for Simulator
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project PanPanCamera.xcodeproj -scheme PanPanCamera \
+            -configuration Debug -destination "platform=iOS Simulator,id=$SIMULATOR_ID" \
+            -derivedDataPath "$RUNNER_TEMP/DerivedData" \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee "$RUNNER_TEMP/simulator-build.log"
+
+      - name: Install launch capture and validate ten screenshots
+        run: |
+          set -euo pipefail
+          bash scripts/capture_screenshots.sh 2>&1 | tee "$RUNNER_TEMP/capture.log"
+
+      - name: Upload screenshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: panpan-simulator-screenshots
+          path: screenshots/
+          retention-days: 7
+          if-no-files-found: error
+
+      - name: Collect Simulator diagnostics
+        if: always()
+        run: bash scripts/collect_simulator_diagnostics.sh
+
+      - name: Upload diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panpan-simulator-diagnostics
+          path: |
+            ${{ runner.temp }}/*.log
+            ${{ runner.temp }}/available-simulators.json
+            ${{ runner.temp }}/native-resolution.png
+            ${{ runner.temp }}/simulator-diagnostics/
+          retention-days: 7
+          if-no-files-found: warn

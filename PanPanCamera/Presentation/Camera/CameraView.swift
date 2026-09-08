@@ -6,16 +6,17 @@ struct CameraView: View {
     @StateObject private var beauty = BeautyState()
     @StateObject private var tools = CameraToolState()
     @Environment(\.scenePhase) private var scenePhase
+    private let screenshot = ScreenshotConfiguration(arguments: ProcessInfo.processInfo.arguments)
 
-    private var shouldRunCamera: Bool { scenePhase == .active && camera.capturedPhoto == nil }
+    private var shouldRunCamera: Bool {
+        !screenshot.isEnabled && scenePhase == .active && camera.capturedPhoto == nil
+    }
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            CameraPreview(session: camera.previewSession, device: camera.previewDevice)
-                .ignoresSafeArea()
-                .accessibilityLabel(Text(L10n.livePreview))
-            if camera.state.status != .running || camera.state.access != .authorized {
+            preview
+            if !screenshot.isEnabled && (camera.state.status != .running || camera.state.access != .authorized) {
                 CameraStatusView(state: camera.state) {
                     Task { await camera.setActive(shouldRunCamera) }
                 }
@@ -24,9 +25,34 @@ struct CameraView: View {
         }
         .safeAreaInset(edge: .top, spacing: 0) { topControls }
         .safeAreaInset(edge: .bottom, spacing: 0) { bottomControls }
-        .task(id: shouldRunCamera) { await camera.setActive(shouldRunCamera) }
-        .onDisappear { Task { await camera.setActive(false) } }
-        .sheet(item: $tools.panel) { panel in panelView(panel) }
+        .task(id: shouldRunCamera) {
+            guard !screenshot.isEnabled else { return }
+            await camera.setActive(shouldRunCamera)
+        }
+        .onDisappear {
+            guard !screenshot.isEnabled else { return }
+            Task { await camera.setActive(false) }
+        }
+        .task {
+            #if DEBUG
+            guard let screen = screenshot.screen else { return }
+            switch screen {
+            case .camera: await ScreenshotReadiness.record(screen)
+            case .beauty: tools.beautyCategory = .skin; tools.panel = .beauty
+            case .reshape: tools.beautyCategory = .face; tools.panel = .beauty
+            case .filter: tools.panel = .filters
+            case .makeup: tools.panel = .makeup
+            case .settings: tools.panel = .settings
+            }
+            #endif
+        }
+        .sheet(item: $tools.panel) { panel in
+            panelView(panel).task {
+                #if DEBUG
+                if let screen = screenshot.screen { await ScreenshotReadiness.record(screen) }
+                #endif
+            }
+        }
         .fullScreenCover(item: $camera.capturedPhoto) { photo in
             CaptureResultView(photo: photo)
         }
@@ -38,6 +64,25 @@ struct CameraView: View {
         } message: {
             if let message = camera.errorMessage { Text(message) }
         }
+    }
+
+    @ViewBuilder
+    private var preview: some View {
+        #if DEBUG
+        if screenshot.isEnabled {
+            ScreenshotPreview().ignoresSafeArea()
+        } else {
+            livePreview
+        }
+        #else
+        livePreview
+        #endif
+    }
+
+    private var livePreview: some View {
+        CameraPreview(session: camera.previewSession, device: camera.previewDevice)
+            .ignoresSafeArea()
+            .accessibilityLabel(Text(L10n.livePreview))
     }
 
     private var topControls: some View {

@@ -5,6 +5,36 @@
 	};
 	"objectVersion" = 56;
 	"objects" = {
+		"E9D2EB2518B6EE269261C8B3" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "ScreenshotConfigurationTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"066C9B6ABAC7DE77D53AFDA6" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E9D2EB2518B6EE269261C8B3";
+		};
+		"CC7B9F6FE4078D3C09195D15" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "ScreenshotPreview.swift";
+			"sourceTree" = "<group>";
+		};
+		"4F854EB8DB3C40C12825A33E" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "CC7B9F6FE4078D3C09195D15";
+		};
+		"776EE5E3DB630E7A6AEF6B0C" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "ScreenshotConfiguration.swift";
+			"sourceTree" = "<group>";
+		};
+		"FD273AB51A7709F6E461E0A9" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "776EE5E3DB630E7A6AEF6B0C";
+		};
 		"7E9EC00582B6DB8FB56C2927" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -18,6 +48,7 @@
 		"DCE7BF4446DDFA1D7C5D0E3A" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"776EE5E3DB630E7A6AEF6B0C",
 				"7E9EC00582B6DB8FB56C2927",
 			);
 			"path" = "App";
@@ -327,6 +358,7 @@
 		"B365BA7AF52893E9DE0DE153" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"CC7B9F6FE4078D3C09195D15",
 				"C62D96C6F5C44C1A27F6431D",
 				"8E965BB166B8C82134141736",
 				"89BB25590E84DA91AB9B2216",
@@ -564,6 +596,7 @@
 		"A9F99B2CD4B4341BBBB50D75" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"E9D2EB2518B6EE269261C8B3",
 				"0B830B9A6456D5C86A702843",
 				"3C51061E8415F39D4A3D6A56",
 				"6A40986015162595D5C01407",
@@ -628,6 +661,8 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"4F854EB8DB3C40C12825A33E",
+				"FD273AB51A7709F6E461E0A9",
 				"B8C32F8C8211FAAA8872F645",
 				"6678B2665E7F5E6556EA16A0",
 				"291613B383D6846C7669EFA0",
@@ -675,6 +710,7 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"066C9B6ABAC7DE77D53AFDA6",
 				"F62B52019E10D518B07B576A",
 				"802C87F367CB401A43889713",
 				"595A42C9A0A20296B2FEB9AD",

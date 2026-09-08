@@ -19,6 +19,7 @@ xcuserdata/
 .verification/
 __pycache__/
 *.pyc
+screenshots/
 
 # Local configuration and credentials
 .env

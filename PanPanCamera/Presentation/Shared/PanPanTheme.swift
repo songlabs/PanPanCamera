@@ -65,8 +65,17 @@ struct PanelContainer<Content: View>: View {
                 }
             }
         }
-        .presentationDetents([.medium, .large])
+        .presentationDetents(panelDetents)
         .presentationDragIndicator(.visible)
         .presentationCornerRadius(28)
+    }
+
+    private var panelDetents: Set<PresentationDetent> {
+        #if DEBUG
+        if ScreenshotConfiguration(arguments: ProcessInfo.processInfo.arguments).isEnabled {
+            return [.large]
+        }
+        #endif
+        return [.medium, .large]
     }
 }
