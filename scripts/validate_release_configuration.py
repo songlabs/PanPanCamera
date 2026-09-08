@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import sys
+from validate_marketing_version import validate as validate_marketing_version
 
 REQUIRED = ['APPLE_TEAM_ID', 'ASC_KEY_ID', 'ASC_ISSUER_ID', 'ASC_PRIVATE_KEY',
             'APPLE_DISTRIBUTION_P12_BASE64', 'APPLE_DISTRIBUTION_P12_PASSWORD', 'PROFILE_PANPAN_BASE64']
@@ -20,6 +21,10 @@ def errors(environment):
 
 if __name__ == '__main__':
     problems = errors(os.environ)
+    try:
+        validate_marketing_version(os.environ.get('MARKETING_VERSION'))
+    except ValueError as error:
+        problems.append(str(error))
     # The scaffold intentionally has no release artwork. Do not invent an icon.
     catalog = Path('PanPanCamera/Resources/Assets.xcassets/AppIcon.appiconset/Contents.json')
     project = Path('PanPanCamera.xcodeproj/project.pbxproj').read_text()

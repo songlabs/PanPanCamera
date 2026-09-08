@@ -57,12 +57,12 @@ struct CameraView: View {
             CaptureResultView(photo: photo)
         }
         .alert(Text(L10n.errorTitle), isPresented: Binding(
-            get: { camera.errorMessage != nil },
-            set: { if !$0 { camera.errorMessage = nil } }
+            get: { camera.failure != nil },
+            set: { if !$0 { camera.failure = nil } }
         )) {
-            Button { camera.errorMessage = nil } label: { Text(L10n.close) }
+            Button { camera.failure = nil } label: { Text(L10n.close) }
         } message: {
-            if let message = camera.errorMessage { Text(message) }
+            if let failure = camera.failure { Text(failure.localizedKey) }
         }
     }
 

@@ -8,9 +8,17 @@ enum CameraSessionEvent {
     case switchFailed
 }
 
+/// Commands consumed by CameraService. Hardware work remains inside CameraSession.
+protocol CameraSessionControlling: AnyObject {
+    var session: AVCaptureSession { get }
+    func setRunning(_ shouldRun: Bool)
+    func switchCamera()
+    func capture(flash: FlashMode)
+}
+
 /// Owns all capture graph mutations on queue. The preview layer is the only external
 /// consumer of session, and never starts/stops or changes its inputs and outputs.
-final class CameraSession: @unchecked Sendable {
+final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     let session = AVCaptureSession()
     private let queue = DispatchQueue(label: "camera.panpan.session", qos: .userInitiated)
     private let output = AVCapturePhotoOutput()
@@ -18,12 +26,11 @@ final class CameraSession: @unchecked Sendable {
     private var input: AVCaptureDeviceInput?
     private var rotation: AVCaptureDevice.RotationCoordinator?
     // Retain delegates until final completion, including a capture invalidated by a reset.
-    private var photoProcessors: [Int64: PhotoCaptureProcessor] = [:]
-    private var activeCaptureID: Int64?
+    private var captures = PhotoCaptureRegistry<PhotoCaptureProcessor>()
     private var observers: [NSObjectProtocol] = []
     private var flashObservation: NSKeyValueObservation?
     private var configured = false
-    private var wantsRunning = false
+    private var lifecycle = CameraSessionLifecycle()
 
     init(onEvent: @escaping (CameraSessionEvent) -> Void) {
         self.onEvent = onEvent
@@ -36,7 +43,7 @@ final class CameraSession: @unchecked Sendable {
 
     func setRunning(_ shouldRun: Bool) {
         queue.async { [self] in
-            wantsRunning = shouldRun
+            lifecycle.wantsRunning = shouldRun
             if shouldRun { startIfNeeded() }
             else {
                 if session.isRunning { session.stopRunning() }
@@ -47,7 +54,7 @@ final class CameraSession: @unchecked Sendable {
 
     func switchCamera() {
         queue.async { [self] in
-            guard configured, session.isRunning, activeCaptureID == nil,
+            guard configured, session.isRunning, captures.activeID == nil,
                   let oldInput = input else {
                 onEvent(.switching(false))
                 return
@@ -58,19 +65,16 @@ final class CameraSession: @unchecked Sendable {
                 onEvent(.switchFailed)
                 return
             }
-            session.beginConfiguration()
-            session.removeInput(oldInput)
-            let switched = session.canAddInput(newInput)
-            if switched {
-                session.addInput(newInput)
-                input = newInput
-            } else if session.canAddInput(oldInput) {
-                session.addInput(oldInput)
-            } else {
-                input = nil
-                configured = false
-            }
-            session.commitConfiguration()
+            let replacement = CameraInputReplacement<AVCaptureDeviceInput>.perform(
+                current: oldInput, replacement: newInput,
+                begin: { session.beginConfiguration() },
+                remove: { session.removeInput($0) },
+                canAdd: { session.canAddInput($0) },
+                add: { session.addInput($0) },
+                commit: { session.commitConfiguration() }
+            )
+            input = replacement.input
+            configured = replacement.isConfigured
             if let active = input {
                 observeDevice(active.device)
                 publishConfiguration()
@@ -78,7 +82,7 @@ final class CameraSession: @unchecked Sendable {
                 session.stopRunning()
                 onEvent(.status(.failed))
             }
-            if !switched { onEvent(.switchFailed) }
+            if !replacement.switched { onEvent(.switchFailed) }
             onEvent(.switching(false))
         }
     }
@@ -86,7 +90,7 @@ final class CameraSession: @unchecked Sendable {
     func capture(flash: FlashMode) {
         queue.async { [self] in
             guard configured, session.isRunning, !session.isInterrupted,
-                  activeCaptureID == nil, let connection = output.connection(with: .video),
+                  captures.activeID == nil, let connection = output.connection(with: .video),
                   connection.isActive else {
                 onEvent(.captureFinished(nil))
                 return
@@ -107,25 +111,22 @@ final class CameraSession: @unchecked Sendable {
             settings.flashMode = availableFlashModes().contains(flash) ? requested : .off
             settings.photoQualityPrioritization = .balanced
             let captureID = settings.uniqueID
-            activeCaptureID = captureID
             let processor = PhotoCaptureProcessor { [weak self] data in
                 guard let self else { return }
                 self.queue.async {
-                    self.photoProcessors.removeValue(forKey: captureID)
-                    guard self.activeCaptureID == captureID else { return }
+                    guard self.captures.finish(id: captureID) else { return }
                     let photo = data.flatMap(CapturedPhoto.init(data:))
-                    self.activeCaptureID = nil
                     self.onEvent(.captureFinished(photo))
                 }
             }
-            photoProcessors[captureID] = processor
+            captures.register(processor, id: captureID)
             output.capturePhoto(with: settings, delegate: processor)
         }
     }
 
     private func startIfNeeded() {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard wantsRunning else { return }
+        guard lifecycle.wantsRunning else { return }
         guard AVCaptureDevice.authorizationStatus(for: .video) == .authorized else {
             onEvent(.status(.idle))
             return
@@ -218,7 +219,7 @@ final class CameraSession: @unchecked Sendable {
         observers.append(center.addObserver(forName: AVCaptureSession.wasInterruptedNotification,
                                              object: session, queue: nil) { [weak self] _ in
             self?.queue.async { [weak self] in
-                guard let self, self.wantsRunning else { return }
+                guard let self, self.lifecycle.wantsRunning else { return }
                 self.onEvent(.status(.interrupted))
             }
         })
@@ -232,12 +233,12 @@ final class CameraSession: @unchecked Sendable {
             let wasReset = error?.code == .mediaServicesWereReset
             self?.queue.async { [weak self] in
                 guard let self else { return }
-                if self.activeCaptureID != nil {
-                    self.activeCaptureID = nil
+                if self.captures.invalidateActive() {
                     self.onEvent(.captureFinished(nil))
                 }
-                if wasReset && self.wantsRunning { self.startIfNeeded() }
-                else if self.wantsRunning { self.onEvent(.status(.failed)) }
+                self.lifecycle.recover(wasReset: wasReset,
+                                       restart: { self.startIfNeeded() },
+                                       reportFailure: { self.onEvent(.status(.failed)) })
             }
         })
     }

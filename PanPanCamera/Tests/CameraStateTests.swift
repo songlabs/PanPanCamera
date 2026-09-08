@@ -41,7 +41,7 @@ final class CameraStateTests: XCTestCase {
         XCTAssertTrue(state.canCapture)
     }
 
-    func testOppositePositionDoesNotMutateActualHardwareState() {
+    func testOppositePositionDoesNotMutateCameraState() {
         let state = CameraState()
         XCTAssertEqual(state.position, .front)
         XCTAssertEqual(state.position.opposite, .back)

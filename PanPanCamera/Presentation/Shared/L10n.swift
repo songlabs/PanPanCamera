@@ -93,6 +93,15 @@ extension Text {
     init(_ key: L10n) { self.init(LocalizedStringKey(key.rawValue)) }
 }
 
+extension CameraFailure {
+    var localizedKey: L10n {
+        switch self {
+        case .captureFailed: return .captureFailed
+        case .switchFailed: return .switchFailed
+        }
+    }
+}
+
 extension CameraMode {
     var label: L10n {
         switch self { case .photo: return .photo; case .video: return .video; case .portrait: return .portrait }

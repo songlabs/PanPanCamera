@@ -10,16 +10,25 @@ final class PhotoCaptureProcessor: NSObject, AVCapturePhotoCaptureDelegate {
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        process(data: error == nil ? photo.fileDataRepresentation() : nil, error: error)
+    }
+
+    // The AVFoundation callbacks feed these same transitions in production.
+    func process(data: Data?, error: Error?) {
         guard error == nil else {
             processingFailed = true
             return
         }
-        photoData = photo.fileDataRepresentation()
+        photoData = data
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
                      error: Error?) {
+        finish(error: error)
+    }
+
+    func finish(error: Error?) {
         completion(error == nil && !processingFailed ? photoData : nil)
     }
 }

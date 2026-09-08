@@ -34,10 +34,7 @@ jobs:
             echo '::error::TestFlight can only run from main.'
             exit 1
           fi
-          if [[ ! "$REQUESTED_MARKETING_VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}$ ]]; then
-            echo '::error::marketing_version must contain two or three numeric components.'
-            exit 1
-          fi
+          python3 scripts/validate_marketing_version.py "$REQUESTED_MARKETING_VERSION"
 
       - name: Verify iOS CI passed for current commit
         env:

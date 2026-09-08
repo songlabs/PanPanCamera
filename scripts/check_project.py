@@ -103,6 +103,9 @@ def check_sources():
         require(not forbidden_import.search(text), f'Out-of-scope rendering/library import: {path.name}')
         imports = set(re.findall(r'^(?:@preconcurrency )?import (\w+)', text, re.M))
         require(imports <= allowed_imports, f'Unexpected dependency: {path.name}: {imports - allowed_imports}')
+        if path.relative_to(ROOT / 'PanPanCamera').parts[0] == 'Camera':
+            require('SwiftUI' not in imports and not re.search(r'\b(?:L10n|Presentation)\b', text),
+                    f'Camera must not depend on UI/localization types: {path.name}')
         require(not re.search(r'\b(?:URLSession|WKWebView|AVCaptureMovieFileOutput|AVCaptureVideoDataOutput)\b', text), f'Unexpected network/video path: {path.name}')
     domain = '\n'.join(p.read_text(encoding='utf-8') for p in (ROOT / 'PanPanCamera/Domain').glob('*.swift'))
     require(not re.search(r'^import ', domain, re.M), 'Domain must remain pure Swift without framework imports')

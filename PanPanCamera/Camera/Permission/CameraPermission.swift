@@ -1,5 +1,15 @@
 import AVFoundation
 
+/// Small injection boundary for authorization, including a suspended system prompt.
+@MainActor
+struct CameraPermissionProvider {
+    var current: @MainActor () -> CameraAccess
+    var request: @MainActor () async -> CameraAccess
+
+    static let system = Self(current: { CameraPermission.current },
+                             request: { await CameraPermission.request() })
+}
+
 enum CameraPermission {
     static var current: CameraAccess {
         switch AVCaptureDevice.authorizationStatus(for: .video) {

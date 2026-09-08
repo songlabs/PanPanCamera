@@ -7,6 +7,7 @@ import plistlib
 import re
 import subprocess
 import sys
+from validate_marketing_version import validate as validate_marketing_version
 
 
 def require(condition, message):
@@ -73,6 +74,8 @@ def main():
     if len(sys.argv) > 1:
         app = Path(sys.argv[1])
         info = plistlib.loads((app / 'Info.plist').read_bytes())
+        validate_marketing_version(os.environ['MARKETING_VERSION'])
+        validate_marketing_version(info.get('CFBundleShortVersionString'))
         for key, expected in [('CFBundleIdentifier', os.environ['APP_BUNDLE_ID']),
                               ('CFBundleShortVersionString', os.environ['MARKETING_VERSION']),
                               ('CFBundleVersion', os.environ['BUILD_NUMBER'])]:

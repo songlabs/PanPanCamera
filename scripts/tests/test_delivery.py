@@ -16,6 +16,19 @@ from select_simulator import select
 from validate_release_configuration import REQUIRED, errors
 from validate_signing import validate_entitlements, validate_profile
 from verify_ci_gate import verify
+from validate_marketing_version import validate as validate_marketing_version
+
+
+class MarketingVersionTests(unittest.TestCase):
+    def testThreeNumericComponentsPassWithoutNormalization(self):
+        for value in ['0.1.0', '1.0.0', '1.2.3', '10.20.300']:
+            self.assertEqual(validate_marketing_version(value), value)
+
+    def testOtherVersionFormatsFail(self):
+        for value in ['0.1', '1', '1.2.3.4', 'v1.0.0', '1.0-beta', '1.0.0-beta',
+                      '1..0', '1.0.', '', '1.0.0\n', ' 1.0.0', None]:
+            with self.subTest(value=value), self.assertRaisesRegex(ValueError, 'exactly three'):
+                validate_marketing_version(value)
 
 
 class SimulatorSelectionTests(unittest.TestCase):

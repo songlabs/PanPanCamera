@@ -7,13 +7,23 @@ final class CameraService: ObservableObject {
     @Published private(set) var state = CameraState()
     @Published private(set) var previewDevice: AVCaptureDevice?
     @Published var capturedPhoto: CapturedPhoto?
-    @Published var errorMessage: L10n?
+    @Published var failure: CameraFailure?
 
     private var isActive = false
     private var permissionRequestInFlight = false
-    private lazy var captureSession = CameraSession { [weak self] event in
+    private let permission: CameraPermissionProvider
+    private let makeSession: (@escaping (CameraSessionEvent) -> Void) -> any CameraSessionControlling
+    private lazy var captureSession: any CameraSessionControlling = makeSession { [weak self] event in
         // Preserve event order from the serial session queue.
         DispatchQueue.main.async { [weak self] in self?.handle(event) }
+    }
+
+    init(permission: CameraPermissionProvider? = nil,
+         makeSession: @escaping (@escaping (CameraSessionEvent) -> Void) -> any CameraSessionControlling = {
+             CameraSession(onEvent: $0)
+         }) {
+        self.permission = permission ?? .system
+        self.makeSession = makeSession
     }
 
     // Used only by the UIViewRepresentable preview adapter.
@@ -27,11 +37,11 @@ final class CameraService: ObservableObject {
             return
         }
         guard !permissionRequestInFlight else { return }
-        state.access = CameraPermission.current
+        state.access = permission.current()
         if state.access == .unknown {
             permissionRequestInFlight = true
             state.access = .requesting
-            state.access = await CameraPermission.request()
+            state.access = await permission.request()
             permissionRequestInFlight = false
         }
         // A permission prompt or background transition can change activity while awaiting.
@@ -52,7 +62,7 @@ final class CameraService: ObservableObject {
     func capture() {
         guard state.canCapture else { return }
         state.isCapturing = true
-        errorMessage = nil
+        failure = nil
         captureSession.capture(flash: state.flash)
     }
 
@@ -72,10 +82,10 @@ final class CameraService: ObservableObject {
         case let .captureFinished(photo):
             state.isCapturing = false
             if let photo { capturedPhoto = photo }
-            else { errorMessage = .captureFailed }
+            else { failure = .captureFailed }
         case .switchFailed:
             state.isSwitching = false
-            errorMessage = .switchFailed
+            failure = .switchFailed
         }
     }
 }

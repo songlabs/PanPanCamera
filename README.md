@@ -1,6 +1,6 @@
 # PanPanCamera · PanPan
 
-PanPanCamera 是 PanPan 的第一版原生 iOS 美颜相机开发基础。长期功能方向是设备端相机、美肌、美型与照片编辑；UI、命名和素材采用 PanPan 自己的设计，不复制其他 App。当前版本为 **0.1.0**，重点是清晰工程结构、真实相机与拍照路径、多语言和后续本地处理的职责边界。
+PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构阶段**。后续目标是在设备端提供主流美颜相机的美肌、美型与照片编辑能力。UI、命名和素材采用 PanPan 自己的设计，不复制其他 App；当前重点是清晰工程结构、真实相机与拍照路径、多语言和本地处理边界。
 
 **当前版本不使用任何外部 AI API。Photos / Camera processing should remain on-device.** 没有照片上传、网络客户端、账号、后端、数据库、订阅、内购、广告、第三方 SDK 或第三方素材。
 
@@ -34,6 +34,9 @@ PanPanCamera 是 PanPan 的第一版原生 iOS 美颜相机开发基础。长期
 | 美妆 | Lip / Blush / Eye / Brow 本地化类别选择骨架 |
 | Settings | 隐私与版本范围说明；没有虚假的功能开关 |
 | 未实现入口 | 比例、Timer、相册点击后说明当前限制；视频、人像显示未支持且禁用 |
+| 五语言 | UI、无障碍文字、权限说明与品牌名称 |
+| Debug Screenshot Mode | 固定 SwiftUI 测试背景和页面参数；绕过真实相机与权限 |
+| GitHub Actions | iOS CI、手动 Simulator Screenshot、TestFlight 交付基础设施；TestFlight 尚未实际执行 |
 
 美肌／美型的 **19 个参数仅改变界面状态，不改变相机预览或照片**。Auto 不执行自动算法。滤镜／美妆也不渲染效果，各面板提供五语言说明。关闭面板再打开保留本次运行参数，重启 App 后恢复默认值。
 
@@ -68,6 +71,22 @@ scripts/                      无第三方依赖的静态检查
 
 更详细的线程、生命周期、方向、照片数据和未来模块边界见 [Architecture.md](docs/Architecture.md)。
 
+依赖原则如下；FaceTracking、BeautyEngine 处理和 Rendering 管线均为下一阶段计划，不是当前已实现模块：
+
+```text
+Presentation（本地化、View）
+    ↓
+Application / State（当前由 CameraService 等状态边界承担）
+    ↓
+Camera / FaceTracking（计划）/ BeautyEngine（计划）
+    ↓
+Rendering（计划）
+```
+
+**Camera 层不依赖 Presentation / L10n / SwiftUI UI 文案。** Camera 只输出 state、events、failures 和 capture data。`CameraFailure` 是 Domain 中的语义错误；Presentation 将其映射到既有本地化 key。参数、相机状态和面板状态保持分离。
+
+相机行为测试使用最小权限／Session 命令注入，以及生产路径实际调用的 `CameraInputReplacement`、`PhotoCaptureRegistry`、`CameraSessionLifecycle`。输入事务、delegate 生命周期和恢复决策仍由原有串行 Session 队列调用；不模拟完整 AVFoundation 硬件。
+
 ## 五语言
 
 正式资源包含 **日语 `ja`、简体中文 `zh-Hans`、繁体中文 `zh-Hant`、英语 `en`、韩语 `ko`**，Japanese 为项目 development region 与 String Catalog source language。
@@ -86,22 +105,44 @@ scripts/                      无第三方依赖的静态检查
 | --- | --- |
 | Python 工程/资源静态检查 | 已实际执行通过；包含目标引用、源码/资源归属、scheme/XML/plist/JSON、五语言与字面量/依赖扫描 |
 | Swift syntax parse | 已实际执行通过；包含 App 与测试源码，仅语法解析 |
-| 纯 Swift Domain typecheck | 已实际执行通过；3 个无框架依赖的 Domain 文件，Windows Swift 5 语言模式类型检查，无执行 |
+| 纯 Swift host typecheck | 4 个 Domain 文件和 3 个相机控制辅助类型，Windows Swift 5 语言模式类型检查，无硬件执行 |
 | git diff --check | 已实际执行通过 |
 | Xcode Build / Apple SDK typecheck | 由 iOS CI 的 Debug XCTest / Release Simulator Build 验证；以对应 commit 的 run 为准 |
-| XCTest | 17 个 Debug 测试方法；额外在 Release configuration 执行 5 个截图隔离测试，以 Actions 结果为准 |
+| XCTest | 当前集合为 33 个 Debug 方法；Release 单独执行 5 个截图隔离方法；实际 passed / failed / skipped 数见下方当前 SHA 的 `.xcresult` |
+| Delivery script tests | 27 个 Python 测试，覆盖版本格式、PNG 数据流、Simulator 选择、CI gate、Profile 和上传失败传播 |
 | Simulator UI | 手动 Simulator Screenshot 生成 10 张实际 UI 截图，需下载查看；不能证明真实相机 |
 | Real Device Camera | 尚未执行；预览、拍照、闪光灯、方向、镜像与生命周期均待真机验收 |
+| TestFlight | signing / Archive / Export / Upload 尚未实际验证 |
+
+### Last verified baseline — 按当前 SHA 查询实际证据
+
+验证状态保存在 [iOS CI 运行记录](https://github.com/songlabs/PanPanCamera/actions/workflows/ci.yml?query=branch%3Amain) 和 [Simulator Screenshot 运行记录](https://github.com/songlabs/PanPanCamera/actions/workflows/simulator-screenshot.yml?query=branch%3Amain)。README 不嵌入自身 commit SHA 或预测 run ID，避免回填文档后 SHA 再次变化；也不把历史成功 run 当作当前提交已通过。
+
+在 checkout 中执行以下只读命令，取得**当前 SHA** 对应的实际 run ID、链接、状态和结果：
+
+```powershell
+$verifiedSha = git rev-parse HEAD
+gh run list --repo songlabs/PanPanCamera --workflow ci.yml --commit $verifiedSha --json databaseId,headSha,status,conclusion,url
+gh run list --repo songlabs/PanPanCamera --workflow simulator-screenshot.yml --commit $verifiedSha --json databaseId,headSha,status,conclusion,url
+# 对上面返回的实际 ID 执行；CI 与 Screenshot 必须分别核对。
+gh run view <RUN_ID> --repo songlabs/PanPanCamera --json headSha,status,conclusion,jobs,url
+gh run view <RUN_ID> --repo songlabs/PanPanCamera --log
+```
+
+只有 `headSha` 完全相同且 `completed / success` 才算该提交完成验证；没有结果、仍运行或失败都不算通过。CI 还需确认 Debug XCTest、Release Simulator Build、Release isolation XCTest 三个步骤都成功，并读取 diagnostics 中两个 `.xcresult` 的 `passedTests / failedTests / skippedTests` 摘要。`xcode-version.log` 和 Simulator inventory 记录实际 Xcode、设备和 iOS 版本。
+
+Screenshot 的 `screenshot-inventory.log` 记录实际路径、数量、分辨率、SHA256、Python 数据流检查与 macOS 原生读取结果，`capture.log` 记录五语言／locale。下载同一 run 的 `panpan-simulator-screenshots` 后人工检查黑图、权限弹窗和文字布局。实际分辨率以该 run 的原生 framebuffer 为准，不将某个历史设备尺寸写成所有 Simulator 的固定值。验收报告应同时记录这两个同 SHA run 的链接；artifact 保留期为 7 天。
 
 Windows 可重复执行：
 
 ```powershell
 python scripts/check_project.py
 powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check_swift_syntax.ps1
+python -m unittest discover -s scripts/tests -v
 git diff --check
 ```
 
-Swift Windows 工具链可能提示 Windows sysroot 与 iPhone target 不匹配；语法模式无需导入 Apple SDK，不能证明 App 的类型检查、链接或运行。脚本还单独对仅使用标准库的三个 Domain 文件执行 Windows host typecheck；它不导入 Foundation 或 Apple UI／相机框架。Python 的字面量扫描是基础防回归检查，不能替代全部 UI 语义和布局审查。
+Swift Windows 工具链可能提示 Windows sysroot 与 iPhone target 不匹配；语法模式无需导入 Apple SDK，不能证明 App 的类型检查、链接或运行。脚本还分别对仅使用标准库的 Domain 和相机控制辅助类型执行 Windows host typecheck。Python 字面量扫描是基础防回归检查，不能替代全部 UI 语义和布局审查。
 
 在 Mac 上也可执行：
 
@@ -119,11 +160,11 @@ xcodebuild -project PanPanCamera.xcodeproj -scheme PanPanCamera \
   -resultBundlePath .verification/PanPanCameraTests.xcresult CODE_SIGNING_ALLOWED=NO test
 ```
 
-原有 12 个测试方法覆盖全部参数默认值与范围、非法数值、工具／类别独立状态、模式门控、拍摄忙碌状态、方向状态切换、闪光灯能力变化和五语言编译资源；新增 5 个方法检查截图参数及 Debug / Release 边界。没有用复杂硬件 Mock 来模拟 AVCaptureSession 验收。详细人工步骤见 [DeviceValidation.md](docs/DeviceValidation.md)。
+33 个 Debug 方法覆盖参数、模式／能力状态、五语言编译资源、Screenshot 参数隔离，以及权限 await 跨越 inactive、Settings 返回、迟到 running 事件、输入替换的三种结果、processor 成功／失败释放、reset 后旧回调隔离和语义错误映射。Release 运行其中 5 个 Screenshot 隔离方法。这里的行为测试执行生产协调逻辑，不创建真实摄像头；`CameraPosition.opposite` 测试只描述值类型，不声称验证硬件。详细边界和人工步骤见 [DeviceValidation.md](docs/DeviceValidation.md)。
 
 ## GitHub Actions
 
-三个工作流参考 `songlabs/QuotaGlance` 当前 `main@37163816738aa531b0dc26f6b088e4156108c478` 的实现，按 PanPan 的单 App / iPhone 工程简化。所有 Apple 作业固定 `macos-15`、`/Applications/Xcode_26.3.app/Contents/Developer`；Xcode 不存在或版本不匹配时失败，不自动换版本。
+三个工作流用于 PanPan 的单 App / iPhone 工程。所有 Apple 作业固定 `macos-15`、`/Applications/Xcode_26.3.app/Contents/Developer`；Xcode 不存在或版本不匹配时失败，不自动换版本。实际执行版本仍需核对 run 日志。
 
 ### iOS CI
 
@@ -134,7 +175,7 @@ push main → Unit Test (Debug) → Release Simulator Build
           → Release 截图隔离 XCTest → Diagnostics Artifact
 ```
 
-也支持 `Run workflow`。使用实际 `PanPanCamera.xcodeproj`、`PanPanCamera` scheme、`PanPanCameraTests` target。动态从 `simctl list devices available -j` 选择最新可用 iOS 26.x 的 iPhone，优先顺序为 iPhone 17 Pro Max、17 Pro、16 Pro Max、16 Pro，其后选择可用的最新代 iPhone。没有合适设备时输出 inventory 并失败。没有 Watch、Widget、iPad 或配对步骤。
+自动触发为 `push main`，也支持 `workflow_dispatch`（Run workflow）。使用实际 `PanPanCamera.xcodeproj`、`PanPanCamera` scheme、`PanPanCameraTests` target。动态从 `simctl list devices available -j` 选择最新可用 iOS 26.x 的 iPhone，优先顺序为 iPhone 17 Pro Max、17 Pro、16 Pro Max、16 Pro，其后选择可用的最新代 iPhone。没有合适设备时输出 inventory 并失败。Simulator CI 不能验证真实 Camera hardware，也没有覆盖 iOS 17 运行时。
 
 `panpan-ios-ci-diagnostics` 保留 7 天，包含两个 `.xcresult`、测试/Release build 日志、Xcode 版本、Simulator inventory、Simulator 进程日志和可收集的 crash / `.ips`。诊断步骤即使前序失败也执行；测试、编译失败会使作业失败。Release Simulator Build 不等于真机 Release Archive。
 
@@ -158,13 +199,19 @@ ja/makeup.png       ja/settings.png
 
 每张图重新安装 App，使用真实 `-AppleLanguages` / `-AppleLocale` 设置语言，并核对 App 返回的当前语言、Locale 和目标画面。App 通过 `--screenshot-mode --screenshot-screen camera|beauty|reshape|filter|makeup|settings` 打开现有界面。截图模式与测试背景仅用于 Debug；Release 忽略所有截图参数。截图模式不创建预览相机会话、不请求相机权限、不启动 AVCaptureSession。背景是 SwiftUI 绘制的固定渐变、圆形和取景框，代表 UI 测试背景，不是真实 Camera Feed，也不代表美颜效果。没有网络、外部图片或生成式素材。
 
-截图检查要求恰好 10 张、PNG 完整性、非空文件及与未缩放的原生 `simctl` 基准图一致的分辨率，输出尺寸/大小/SHA256 inventory。下载后仍需人工查看文字、布局与弹窗。`panpan-simulator-diagnostics` 保存 build、launch、capture、Simulator 日志与设备清单，同样保留 7 天。
+截图检查要求恰好 10 张，且分辨率与未缩放的原生 `simctl` 基准图一致。标准库 Python verifier 验证 signature、IHDR／IEND、所有 chunk CRC、连续且总体非空的 IDAT、完整 zlib 流结束、扫描行长度及 filter byte；无 IDAT、损坏／截断流不能通过。当前明确支持静态、non-interlaced、8-bit RGB／RGBA；不支持的格式直接失败，不静默接受。另使用 macOS `sips` 读取每张原图的宽高进行二次核对，不重写图片、不引入 Pillow。
+
+inventory 输出尺寸、大小、SHA256 和两种验证结果。下载后仍需人工查看文字、布局与弹窗；readiness 不是完整 UI 自动断言。Screenshot 面板固定为 large，普通运行支持 medium / large，截图未覆盖普通默认面板高度。`panpan-simulator-diagnostics` 保存 build、launch、capture、inventory 与设备清单，保留 7 天。
 
 ### TestFlight
 
 [打开 TestFlight](https://github.com/songlabs/PanPanCamera/actions/workflows/testflight.yml)：`Actions → TestFlight → Run workflow → main → 输入 marketing_version`，例如 `0.1.0`。只允许 main，非 main 明确失败。
 
-**TestFlight 只有当前 commit 的 iOS CI 成功后才允许执行。** 首先在 Linux preflight 查询该 SHA 的 `ci.yml` runs，要求 `iOS CI`、`main`、完全相同 SHA、`completed`、`success`；CI 不存在、失败或仍运行均在签名与 Archive 前停止。检查方式遵循 [GitHub workflow runs API](https://docs.github.com/en/rest/actions/workflow-runs)。
+**交付 workflow 已实现；TestFlight signing / Archive / Export / Upload 尚未实际验证，实际上传尚未执行。** 当前缺少发行凭据配置和正式 AppIcon；这次基础架构修整不执行 TestFlight，不修改 Apple Developer 或 App Store Connect 配置。
+
+项目统一要求 `MARKETING_VERSION` 为严格三段数字，例如 `0.1.0`、`1.2.3`。`0.1`、`1`、`1.2.3.4`、前缀和 beta 后缀均 fail-fast，不自动补齐。workflow、release configuration 和 Archive 校验共用 `scripts/validate_marketing_version.py`，没有多套格式规则。
+
+**TestFlight 只有当前 commit 存在成功的 iOS CI run 才允许执行。** Linux preflight 查询该 SHA 的 `ci.yml` runs，要求 `iOS CI`、`main`、完全相同 SHA、`completed`、`success`；没有满足条件的成功 run 就在签名与 Archive 前停止。Gate 接受该 SHA 任意一次匹配的成功 run，不代表要求最新一次重跑成功。检查方式遵循 [GitHub workflow runs API](https://docs.github.com/en/rest/actions/workflow-runs)。
 
 ```text
 手动版本输入 → main / 当前 SHA 的 CI Gate → 必要配置检查
@@ -185,7 +232,7 @@ ja/makeup.png       ja/settings.png
 | Secret | `APPLE_DISTRIBUTION_P12_PASSWORD` | P12 导出密码 |
 | Secret | `PROFILE_PANPAN_BASE64` | `com.songlabs.PanPanCamera` 的 App Store provisioning profile 的 Base64 |
 
-本次建立工作流时，GitHub API 确认上述 Repository Secrets / Variables 与 Environment 均不存在。工作流会一次列出所有缺失配置名称，不输出值。Apple Developer 中的 App ID、App Store Connect 中对应的 App、有效证书、含该证书的 App Store Profile 以及 API Key 权限需要另行准备/核实。
+截至 2026-09-08 的只读配置检查，Repository Secrets / Variables 与 Environment 均未配置；这不是以后配置状态的保证。工作流会一次列出缺失配置名称，不输出值。Apple Developer 中的 App ID、App Store Connect 中对应的 App、有效证书、含该证书的 App Store Profile 以及 API Key 权限需要另行准备／核实。
 
 **当前工程尚无发行用 App Icon。** 必须先提供正式图标、加入 `AppIcon.appiconset` 并配置 AppIcon 编译设置；release preflight 会对此明确失败，避免耗时 Archive 后才被 Apple 拒绝。本任务不创作品牌素材、不改 Bundle ID、不修改 App Store Connect 配置。
 
@@ -201,13 +248,33 @@ ja/makeup.png       ja/settings.png
 
 以下均未进入当前实现，不存在伪装的效果或隐式调用：
 
-1. BeautyEngine：本地美肌与真正的参数处理契约。
-2. Face Tracking：Vision 人脸／Landmark 输入，以及独立的几何验证。
-3. Metal Rendering：本地实时渲染、性能与功耗评估。
-4. Makeup / Filters：真实本地美妆与滤镜处理。
-5. Photo Editor、照片导入与保存：独立设计权限和数据生命周期。
-6. Video Beauty、录制与编辑：后续独立范围。
-7. Core ML 模型、实际磨皮／美白／瘦脸／美妆算法均未实现。
-8. 比例裁切、Timer、人像模式与发行用 App Icon 尚未实现；GitHub Actions 发布基础设施已建立，Apple / GitHub 发行凭据需单独配置。
+1. Vision Face Detection、Face Landmarks、Stable Face Tracking。
+2. AVCaptureVideoDataOutput 与实时帧数据管线。
+3. BeautyEngine、Skin Processing、Face Warp，及真正的磨皮／美白／瘦脸算法。
+4. Metal Rendering、Core ML、真实 Filter Rendering、真实 Makeup Rendering。
+5. Video Recording、Video Beauty、Photo Editor。
+6. System Photos Save、照片导入、持久化照片存储。
+7. 比例裁切、Timer、人像模式与发行用 App Icon；发行凭据仍需单独配置。
+
+下一阶段顺序为：Vision Face Detection → Face Landmarks → Stable Face Tracking → BeautyEngine input model → Metal rendering。`check_project.py` 当前仍禁止 Vision、Metal、CoreImage 和 AVCaptureVideoDataOutput 等 0.1 范围外 API；开始对应阶段时必须同步调整 scope guard。本次保留这些 guard，不提前实现下一阶段。
+
+## Real Device Validation Pending
+
+以下均仍为 **Pending**，不受 Unit Test／Simulator 绿灯替代：
+
+- Camera Preview，前后摄像头的真实画面。
+- Front / Rear switch，重复操作与切换失败恢复。
+- Flash Off / Auto / On，前置无硬件闪光灯情况。
+- Photo capture，原始照片、结果页及释放。
+- Orientation，固定竖屏 UI 下物理旋转的照片方向。
+- Mirroring，前后镜头含文字／不对称物体的测试。
+- Background / Foreground、Home、锁屏／解锁、拍摄中离开 App。
+- Interruption、media services reset，在可制造条件下分别记录结果。
+
+详细 checklist 见 [DeviceValidation.md](docs/DeviceValidation.md)。TestFlight signing、设备 Archive、IPA Export 和 Upload 同样尚未验证。
+
+## 隐私原则
+
+当前不上传相机画面、不上传拍摄照片、不使用外部 AI API；照片仅用于本次内存预览。后续 BeautyEngine 目标仍为 on-device。这里描述当前代码和处理方向，不承诺尚未实现的隐私技术机制。
 
 后续仍以 **设备端处理、原生框架、最小权限** 为原则。GitHub Simulator 即使编译、测试与截图全部成功，也不能证明真实 iPhone 的预览、拍照、闪光灯、方向、镜像或生命周期行为。

@@ -52,5 +52,5 @@ done
 for screen in beauty reshape filter makeup settings; do
   capture ja ja_JP "$screen"
 done
-python3 scripts/verify_screenshots.py screenshots "$RUNNER_TEMP/native-resolution.png" \
+python3 scripts/verify_screenshots.py screenshots "$RUNNER_TEMP/native-resolution.png" --macos-read \
   | tee "$RUNNER_TEMP/screenshot-inventory.log"

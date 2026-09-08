@@ -13,3 +13,11 @@ if ($domainFiles.Count -eq 0) { throw 'No domain sources found.' }
 & swiftc -typecheck -swift-version 5 @domainFiles
 if ($LASTEXITCODE -ne 0) { throw 'Pure Swift domain typechecking failed.' }
 Write-Output "PASS: typechecked $($domainFiles.Count) pure Swift domain files for the installed host toolchain. No app or test was executed."
+$controlFiles = @(
+    (Join-Path $projectRoot 'PanPanCamera/Camera/Session/CameraInputReplacement.swift'),
+    (Join-Path $projectRoot 'PanPanCamera/Camera/Session/CameraSessionLifecycle.swift'),
+    (Join-Path $projectRoot 'PanPanCamera/Camera/Capture/PhotoCaptureRegistry.swift')
+)
+& swiftc -typecheck -swift-version 5 @controlFiles
+if ($LASTEXITCODE -ne 0) { throw 'Pure Swift camera control typechecking failed.' }
+Write-Output "PASS: typechecked $($controlFiles.Count) pure Swift camera control helpers for the host toolchain. Hardware and XCTest were not run."
