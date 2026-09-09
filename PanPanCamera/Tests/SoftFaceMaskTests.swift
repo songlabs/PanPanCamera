@@ -182,7 +182,6 @@ final class SoftFaceMaskTests: XCTestCase {
             ], in: bounds)
             let pixels = ProcessingTestPixels.floats(difference, bounds: bounds)
             let maximum = stride(from: 0, to: pixels.count, by: 4).map { pixels[$0] }.max()!
-            print("Face union in-graph max difference=\(maximum)")
             XCTAssertEqual(maximum, 0, accuracy: 0.0001)
         }.value
         for i in first.pixels.indices {
