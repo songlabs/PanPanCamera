@@ -1,7 +1,7 @@
-# Facial Feature Protection v1 + Texture-Preserving Natural Skin Retouch v1
+# Skin Semantic Mask Infrastructure v1
 
 Experimental local Core Image implementation, reached through DebugPhotoProcessing
-and MockFaceDetector / MockFaceLandmarkDetector only. The official capture/save path and product UI do not invoke
+and MockFaceDetector / MockFaceLandmarkDetector / MockSkinMaskProvider only. The official capture/save path and product UI do not invoke
 it. This is an explainable two-scale approximation, not a copy of a closed-source app,
 semantic skin detection, identity verification or visually accepted beauty feature.
 
@@ -18,10 +18,135 @@ source CGImage color space. Only bounded filter/mask helpers were added to this 
 All CIImages are job-local. No per-face context, new queue, Task, photo cache or history
 is introduced. Image-processing errors propagate through the unchanged pipeline;
 optional landmark detection failure falls back to the existing face/edge path.
+Expected semantic unavailability falls back per face; actual image-processing errors
+still propagate. The development baseline for this addition is main
+`97cf0899f5b16c2a3104e944951e4d2db4190b20`, inspected after fetching origin/main.
 
 NaturalSkinProcessingStep is retained (brightness +0.008, saturation 1.005, contrast 1),
 but is absent from the default DEBUG chain. Its tests and the older rectangular DEBUG
 brightness probe remain. Texture and tone are not stacked.
+
+## Skin semantic contract and responsibilities
+
+The code chain is now:
+
+    FaceDetecting -> FaceRegion                     where a face is
+    FaceLandmarkDetecting -> FacialLandmarks         where features are
+    SkinMaskProviding -> SkinMaskResult              where skin is allowed
+    SoftFaceMaskGenerator                           geometric face coverage
+    FeatureProtectionMaskGenerator                  semantic feature protection
+    DetailProtectionMaskGenerator                   high-frequency protection
+    EffectiveSkinMaskComposer                       where processing is allowed
+    TexturePreservingSkinSmoothingStep              how texture is processed
+
+`SkinMaskProviding.skinMask(in:region:landmarks:)` synchronously receives the immutable
+ProcessingImage, one FaceRegion and that region's optional FacialLandmarks on the
+existing worker. The step accepts an optional `any SkinMaskProviding`; nil already
+means disabled/unavailable, so SkinRetouchConfiguration gains no semantic toggle.
+The backend does not depend on a Mock. A future local adapter can implement this
+interface; no actual segmentation model or photo Vision adapter is implemented here.
+
+`SkinMaskResult` includes its **FaceRegion**, matched by structural equality exactly
+as FacialLandmarks. It contains an available CIImage or `.unavailable(for: region)`
+(nil mask). A black available mask forbids processing; unavailable means use S = 1.
+No array-index association, UUID, tracking, confidence or video state is introduced.
+The step requests each unique region once, supplies only matching landmarks and
+treats a mislabeled return as unavailable for the requested face. Missing/reordered
+results do not discard any other face. Duplicate available results max-union; a nil
+duplicate never replaces usable data. Unrelated regions are ignored by the composer.
+
+Weights are **0 = non-skin / processing forbidden; 1 = skin / processing allowed**,
+with continuous values in 0...1. The available-result initializer requires the exact
+finite original extent, including nonzero origins; it rejects infinite, empty, shifted
+or mismatched masks. It composites input alpha over zero, then bounds the red scalar
+into equal RGB channels with alpha 1. Thus a white semantic pixel with alpha 0.25 has
+weight 0.25, and a transparent semantic pixel has weight 0. Output photo alpha follows
+the unchanged conservative reconstruction policy described below. This is scalar
+data: future raster providers must disable color-space conversion when importing it.
+
+All coordinates use the existing display-oriented bottom-left FaceRegion contract.
+Mock fixture rectangles use the same face-local normalized 0...1 convention as photo
+landmarks and map through FaceRegion.imageRect(in:). There is no extra EXIF transform,
+y flip or mirror. ProcessingImage itself is CGImage-backed with zero-origin extent;
+job-local graph entry points exercise translated extents without a second image type.
+All generated gradients are cropped after mapping to the exact image extent.
+
+## Geometric Mock modes and feathering
+
+MockSkinMaskProvider and its configuration exist entirely inside `#if DEBUG`, like
+the existing two mocks. It reads only CGImage width/height and deliberately ignores
+even supplied landmarks. It never inspects source pixels or alpha, calls detection,
+loads a model, classifies RGB/HSV/YCbCr, accesses a camera, or sends data anywhere.
+All fixed geometry/defaults live in MockSkinMaskProvider.Policy. Configuration values
+are immutable and validated; none are added to formal retouch parameters.
+
+| Mode | Synthetic behavior |
+| --- | --- |
+| `.normalSkin` | Most of an ellipse covering local rect (0.02,0.01,0.96,0.98) is 1; softened periphery, top hair boundary y=0.88, eye weights reduced by 0.85 and lip weights by 0.80. FeatureProtection remains the main feature exclusion. |
+| `.hairExclusion` | Moves hair boundary down to y=0.72; weights above the transition are exactly 0 even inside SoftFaceMask. |
+| `.glassesOcclusion` | Zero-weight interior in local rectangle (0.12,0.56,0.76,0.17), with soft edges. |
+| `.beardReducedWeight` | Lower-face weight defaults to 0.25 below y=0.40, continuously rising to normal skin above the transition. It preserves the other normal exclusions. |
+| `.unavailable` | Returns no semantic graph for that face; composer retains the existing face/feature/detail treatment. |
+
+`nonSkinOcclusion: CGRect?` supplies an asymmetric generic face-local rectangle in
+any available mode, replacing the glasses rectangle when present. `faces:` provides
+region-bound configuration overrides, so one job can include hair, beard and unavailable
+faces. If an override repeats the same region, the first configuration wins; masks
+themselves still max-union, never add. Defaults are engineering fixtures, **not visually
+validated skin geometry or beard treatment**.
+
+Outer/eye/lip ellipses use CIRadialGradient, with a full-weight interior and a feather
+band derived from `featherFraction * min(face.width, face.height)`. Hair, beard and each
+side of an occlusion use CISmoothLinearGradient (S-curve interpolation). Default
+featherFraction is 0.015, validated in 0.001...0.1. Occlusion feather is capped at one
+quarter of its shorter side to keep an exact-zero interior after inversion. Hair and
+beard transitions span boundary ± feather; eyes/lips remain reduced rather than
+replacing semantic feature protection. No custom kernel, Metal, raster photo render,
+new context, queue or image cache is needed. Linear-gradient endpoints and radial
+parameters follow Apple's [Core Image filter reference](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CoreImageFilterReference/index.html).
+
+## EffectiveSkinMaskComposer
+
+The composer receives face coverage generation, per-face skin results, feature and
+detail masks, and the existing configuration. It only combines masks; it does not
+smooth or render a photograph. ProtectionMaskCombiner retains the existing protection
+maximum; its old effective helper delegates to the composer for compatibility.
+The step and DEBUG diagnostics use the same `makeMasks` path and returned masks.
+
+For one face, using F = SoftFaceMask, S = SkinSemanticMask, P = feature protection,
+D = detail protection, e = edgeProtectionStrength, i = intensity:
+
+    C = max(clamp(P, 0, 1), clamp(D * e, 0, 1))
+    effectiveSkinMask = clamp(F * S * (1 - C) * i, 0, 1)
+
+For multiple faces, first pair coverage with **that face's** semantics:
+
+    Sj = available semantic mask, or 1 when unavailable
+    coveredSkin = max_j(Fj * Sj)
+    effectiveSkinMask = clamp(coveredSkin * (1 - C) * i, 0, 1)
+
+Feature protection retains its existing maximum across all faces/features, and detail
+protection still comes from the original photo. No overlap adds strength or repeats
+photo processing. This intentionally does not multiply independently unioned F and S:
+doing so would let another face's fallback/semantic mask open exclusions beyond its
+own coverage. In overlapping coverage, the maximum allowed contribution wins; the
+mock does not infer which person physically occludes another.
+
+All unavailable results reduce to the old `max(Fj) * (1 - C) * i`. A single unavailable
+face does not zero the whole image or require all faces to succeed. True invalid
+extents/filter/processing failures throw through the existing pipeline.
+
+The diagnostic `.skinMask` is `max_j(Sj bounded to region j)`, with black outside all
+regions and white inside an unavailable region. It shows the actual fallback policy,
+not an assertion of successful segmentation. It is not multiplied into the combined
+face mask again; processing uses the paired coveredSkin graph above. Fallback diagnostic
+region borders may be hard; the actual effective input remains feathered by Fj.
+
+The frequency decomposition, both radii, CINoiseReduction, detailRetention, maximum
+channel delta, default intensity and reconstruction kernel are unchanged. Intensity
+zero still returns the exact original CGImage before calling either optional provider
+or creating a CIImage, filter, mask or render. Explicit mask diagnostics may run at
+zero; effectiveSkinMask is then black while raw semantic weights remain inspectable.
 
 ## Existing Vision investigation and shared semantic names
 
@@ -207,19 +332,10 @@ contrast, not absolute skin RGB/HSV thresholds, and does not semantically locate
 lips, hair, moles or identity. Fixed skin-color thresholds cannot reliably cover different
 complexions and lighting, so there is no such classifier or complexion exclusion.
 
-    F = featureProtectionMask (0 when absent)
-    D = detailProtectionMask
-    combinedProtection = clamp(max(clamp(F, 0, 1),
-                                   clamp(D * edgeProtectionStrength, 0, 1)), 0, 1)
-    effectiveMask = clamp(faceMask * clamp(1 - combinedProtection, 0, 1)
-                          * intensity, 0, 1)
-
-Grayscale matrix arithmetic, multiplication and clamping keep mask alpha 1. One photo
-blend follows union/protection/intensity. ProtectionMaskCombiner implements the shared
-formula for processing and DEBUG output. DetailProtectionMaskGenerator keeps its
-existing CIEdges graph; its existing effectiveMask helper delegates to the same combiner
-with no features. max avoids repeated accumulation and applies edge strength only once.
-With F absent the original face/edge formula is retained. No segmentation is added.
+EffectiveSkinMaskComposer combines this unchanged detail graph with features and
+per-face semantic coverage using the formula above. ProtectionMaskCombiner still
+scales edges exactly once and takes max(feature, scaled edge), preserving both
+protection layers when semantics are unavailable.
 
 ## Complete filter/kernel inventory for the new chain
 
@@ -237,7 +353,8 @@ With F absent the original face/edge formula is retained. No segmentation is add
 | CIColorMatrix, scalar arithmetic | R/G/B vectors (scale,0,0,0), A vector zero, bias (bias,bias,bias,1); edge gain, plateau gain, feature strength, edge strength, (scale -1/bias 1) protection inverse, intensity |
 | CIColorClamp, after each matrix | min (0,0,0,1), max (1,1,1,1) |
 | CIMorphologyMaximum | clamped protection, inputRadius smallRadius |
-| CIMultiplyCompositing | faceMask and inverted/scaled protection weight |
+| CIMultiplyCompositing | per-face F * S, then allowed protection; mock geometry intersections |
+| CIRadialGradient / CISmoothLinearGradient, DEBUG semantic fixtures | ellipse/feather and hair, beard, occlusion ramps defined above |
 | CIColorKernel reconstruction | original, small, large, low; d, 1-0.5*(1-d), delta bound 0.02, opaque threshold 0.9999 |
 | CIBlendWithMask | candidate over original using effectiveMask |
 | CIDifferenceBlendMode, DEBUG only | processed graph + original, no gain |
@@ -256,7 +373,7 @@ cross-alpha contamination. Diagnostic masks are opaque; difference is a visualiz
 not the alpha acceptance output. Nonzero processing still uses the existing RGBA8 render;
 Apple tests allow one code value for color roundtrip and require unchanged alpha.
 
-Intensity zero and no faces return the exact input CGImage before the landmark provider or any CIImage, filter,
+Intensity zero and no faces return the exact input CGImage before the landmark/skin providers or any CIImage, filter,
 mask or render. All subpixel/nil coverage also returns the input. Explicit diagnostic
 modes may render masks/difference even at zero; original and processed-at-zero are the
 bypass comparison outputs.
@@ -273,16 +390,35 @@ Run sequentially from one developer task; all requests share one busy slot:
     let stronger = try await DebugPhotoProcessing.process(data: data,
         configuration: .naturalDefault.withIntensity(.stronger)) // 0.5
     let face = try await DebugPhotoProcessing.process(data: data, output: .faceMask)
+    let skin = try await DebugPhotoProcessing.process(data: data, output: .skinMask)
+    let effective = try await DebugPhotoProcessing.process(data: data, output: .effectiveSkinMask)
+    let beard = MockSkinMaskProvider(configuration: try .init(mode: .beardReducedWeight))
+    let beardPreview = try await DebugPhotoProcessing.process(data: data, skinMaskProvider: beard)
+    let hair = MockSkinMaskProvider(configuration: try .init(mode: .hairExclusion))
+    let hairMask = try await DebugPhotoProcessing.process(data: data, output: .effectiveSkinMask,
+                                                         skinMaskProvider: hair)
     let features = try await DebugPhotoProcessing.process(data: data, output: .featureProtectionMask)
     let protection = try await DebugPhotoProcessing.process(data: data, output: .detailProtectionMask)
     let combined = try await DebugPhotoProcessing.process(data: data, output: .combinedProtectionMask)
     let difference = try await DebugPhotoProcessing.process(data: data, output: .difference)
 
+| Output | Meaning |
+| --- | --- |
+| `.original` | Oriented/downsampled original development preview. |
+| `.faceMask` | Face Region geometric coverage, maximum of soft face masks. |
+| `.skinMask` | Semantic skin weights; unavailable faces display the white fallback bounded to their regions. |
+| `.featureProtectionMask` | Eye, eyebrow, lip and nose semantic protection; white means protect. |
+| `.detailProtectionMask` | Generic high-frequency/edge protection before edge strength. |
+| `.combinedProtectionMask` | Final protection max(feature, clamp(detail * edgeStrength)). |
+| `.effectiveSkinMask` | Actual final skin-smoothing weights, including paired F/S, protection and intensity. |
+| `.processed` | One texture reconstruction and one masked blend. |
+| `.difference` | Unamplified absolute change between the processed graph and original preview. |
+
 The methods also accept CapturedPhoto. Existing processedPhoto/softFaceMask spellings
 remain aliases. Inspect returned CGImages in Xcode/local developer code; release outputs
 when finished. No UI, slider, saving, upload, logging or image history is added.
 Original here means the common oriented/downsampled decoded preview, not original file
-bytes. Immutable output/configuration travels with each job through the one static
+bytes. Immutable output/configuration/mock provider travels with each job through the one static
 pipeline. The caller serializes A/B requests.
 The optional landmarkOverlay mode is deferred to keep this change focused; separate
 feature/combined masks and asymmetric coordinate tests support the next Apple inspection.
@@ -314,23 +450,35 @@ Synthetic noisy skin, dark eye/brow lines and a colored textured lip patch compa
 feature change against skin change with edge strength 0 (semantic isolation) and 1
 (combined behavior). This does not assert visual quality on real photos.
 
-Windows checks: 37 Python tests passed (ten processing scope/Release isolation checks);
-project checks passed for 55 app and 18 XCTest files; 73 Swift files parsed both with and
-without DEBUG; four existing pure Swift domain types and three camera control helpers
-passed host typechecking. No Apple framework typecheck occurred. The host Foundation
-XCTest harness includes the new landmark tests but was blocked before execution by
-missing msvcrt.lib, oldnames.lib and msvcprt.lib. Separate Foundation typechecking of
-the actual landmark sources was blocked by missing errno.h in the Windows C SDK. These attempts are not
-passing XCTest/typecheck evidence.
+Skin Semantic Mask Infrastructure v1 adds 25 XCTest methods: 11 semantic mask,
+six composer, six pipeline/reconstruction integration, and two DEBUG output methods.
+The prior DEBUG A/B reference now injects MockSkinMaskProvider as well. Coverage includes
+all five modes, custom asymmetric occlusion, beard partial weights, feather transitions,
+all image edges, one/subpixel faces, nonzero extents, scalar alpha, invalid inputs,
+image-independence, region overrides, max overlap/order/duplicates, mixed availability,
+mislabeled results, the independent legacy fallback formula, exact zero/no-face bypass,
+actual error propagation/admission recovery, alpha, shared mask output and difference.
+These Apple XCTest methods are **added, not executed** in this task.
 
-Texture-Preserving Natural Skin Retouch v1 已完成代码实现和当前环境可执行验证，
-但实际 Core Image 图像效果尚未在 Apple 平台验证。
-Facial Feature Protection v1 的实际 Core Image Mask 与像素行为尚未在 Apple 平台执行验证。
+Windows checks: 39 Python tests passed (12 processing scope/Release isolation checks);
+project checks passed for 58 app and 21 XCTest sources; 79 Swift sources parsed both
+with and without DEBUG. Four existing pure Swift Domain files and three camera control
+helpers passed host typechecking. Release redeclaration probes passed including the
+new mock. No Apple framework typecheck occurred. Previous host Foundation attempts
+were blocked by missing msvcrt.lib, oldnames.lib, msvcprt.lib and errno.h; those known
+paths were not retried and the Windows environment was not modified.
+
+Skin Semantic Mask Infrastructure v1 及 Natural Skin Processing 基础 Mask 链路已经完成代码实现，
+并完成当前环境可执行静态验证。
+Mock Skin Mask 不代表真实皮肤语义识别已经完成。
+Apple Core Image / XCTest 实际运行验证暂缓，将在基础组件完成后统一执行。
 真实 Vision 人脸检测 / landmarks 尚未验证。
-CIColorKernel(source:) 尚未完成 Apple SDK / Xcode 编译验证。
+真实 Skin Segmentation 尚未实现。
+现有 CIColorKernel(source:) deprecated 风险保持，未修改、未新增第二处 legacy kernel；
+Apple SDK / Xcode 编译与运行验证仍待统一阶段。
 尚未完成 Apple 平台 / 真机验收。
-Apple XCTest, Xcode Build, Simulator, real photos, device performance, GPU, memory and
-thermals remain unverified. No identity-model validation claim is made.
+Xcode Build, Simulator, real photos, GPU, memory, latency and thermals remain pending.
+This task does not start the unified Apple acceptance phase or new beauty capabilities.
 
 Future Mac/iPhone acceptance must inspect protection positions for eyes, eyebrows,
 lips and nose, including frontal/profile, looking up/down, glasses, fringe occlusion,

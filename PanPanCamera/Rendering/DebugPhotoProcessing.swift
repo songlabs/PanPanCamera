@@ -10,7 +10,8 @@ import ImageIO
 enum DebugPhotoProcessing {
     enum Failure: Error { case invalidImageData, decodeFailed }
     enum Output: Sendable {
-        case original, faceMask, featureProtectionMask, detailProtectionMask, combinedProtectionMask, processed, difference
+        case original, faceMask, skinMask, featureProtectionMask, detailProtectionMask
+        case combinedProtectionMask, effectiveSkinMask, processed, difference
         // Preserve existing developer call sites while using descriptive new modes.
         static let processedPhoto = Self.processed
         static let softFaceMask = Self.faceMask
@@ -22,6 +23,7 @@ enum DebugPhotoProcessing {
         let image: ProcessingImage
         let output: Output
         let configuration: SkinRetouchConfiguration
+        let skinMaskProvider: MockSkinMaskProvider
     }
 
     private struct Detector: FaceDetecting {
@@ -32,39 +34,38 @@ enum DebugPhotoProcessing {
 
     private struct OutputStep: ImageProcessingStep {
         func process(_ input: JobImage, regions: [FaceRegion]) throws -> JobImage {
+            let step = TexturePreservingSkinSmoothingStep(configuration: input.configuration,
+                landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>(), skinMaskProvider: input.skinMaskProvider)
             let result: ProcessingImage
             switch input.output {
             case .original:
                 result = input.image
             case .processed:
-                result = try TexturePreservingSkinSmoothingStep(configuration: input.configuration,
-                    landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>())
-                    .process(input.image, regions: regions)
+                result = try step.process(input.image, regions: regions)
             case .faceMask:
                 result = try DebugFaceMaskStep().process(input.image, regions: regions)
-            case .featureProtectionMask, .detailProtectionMask, .combinedProtectionMask:
+            case .skinMask, .featureProtectionMask, .detailProtectionMask, .combinedProtectionMask, .effectiveSkinMask:
                 let source = CIImage(cgImage: input.image.cgImage)
                 let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: source.extent)
-                var feature: CIImage?
-                if input.output != .detailProtectionMask {
-                    let landmarks = try MockFaceLandmarkDetector<ProcessingImage>()
-                        .detectLandmarks(in: input.image, regions: regions)
-                    feature = try FeatureProtectionMaskGenerator().makeMask(landmarks: landmarks, regions: regions, in: source.extent)
-                }
-                var mask = feature ?? black
-                if input.output != .featureProtectionMask,
-                   let scale = SkinRetouchScale(regions: regions, in: source.extent) {
-                    let detail = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
-                    mask = input.output == .detailProtectionMask ? detail :
-                        try ProtectionMaskCombiner.combined(feature: feature, detail: detail, configuration: input.configuration)
+                let landmarks = try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: input.image, regions: regions)
+                let semantics = try step.skinMasks(in: input.image, regions: regions, landmarks: landmarks)
+                let masks = try step.makeMasks(source: source, regions: regions, landmarks: landmarks, skinMasks: semantics)
+                let mask: CIImage
+                switch input.output {
+                case .skinMask: mask = masks?.skinMask ?? black
+                case .featureProtectionMask: mask = masks?.featureProtectionMask ?? black
+                case .detailProtectionMask: mask = masks?.detailProtectionMask ?? black
+                case .combinedProtectionMask: mask = masks?.combinedProtectionMask ?? black
+                default: mask = masks?.effectiveSkinMask ?? black
                 }
                 result = try CoreImageRendering.render(mask, matching: input.image)
             case .difference:
                 let source = CIImage(cgImage: input.image.cgImage)
                 let landmarks = input.configuration.intensity.value == 0 ? [] :
                     try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: input.image, regions: regions)
-                let processed = try TexturePreservingSkinSmoothingStep(configuration: input.configuration)
-                    .makeOutput(source: source, regions: regions, landmarks: landmarks) ?? source
+                let semantics = input.configuration.intensity.value == 0 ? [] :
+                    try step.skinMasks(in: input.image, regions: regions, landmarks: landmarks)
+                let processed = try step.makeOutput(source: source, regions: regions, landmarks: landmarks, skinMasks: semantics) ?? source
                 // Unamplified absolute difference for inspection only. Its alpha is
                 // diagnostic; alpha-preservation acceptance uses .processed pixels.
                 let difference = try CoreImageRendering.filter("CIDifferenceBlendMode", parameters: [
@@ -72,7 +73,7 @@ enum DebugPhotoProcessing {
                 ], in: source.extent)
                 result = try CoreImageRendering.render(difference, matching: input.image)
             }
-            return JobImage(image: result, output: input.output, configuration: input.configuration)
+            return JobImage(image: result, output: input.output, configuration: input.configuration, skinMaskProvider: input.skinMaskProvider)
         }
     }
 
@@ -81,12 +82,14 @@ enum DebugPhotoProcessing {
     )
 
     static func process(_ photo: CapturedPhoto, output: Output = .processed,
-                        configuration: SkinRetouchConfiguration = .naturalDefault) async throws -> ImageProcessingOutput<ProcessingImage> {
-        try await process(data: photo.data, output: output, configuration: configuration)
+                        configuration: SkinRetouchConfiguration = .naturalDefault,
+                        skinMaskProvider: MockSkinMaskProvider = MockSkinMaskProvider()) async throws -> ImageProcessingOutput<ProcessingImage> {
+        try await process(data: photo.data, output: output, configuration: configuration, skinMaskProvider: skinMaskProvider)
     }
 
     static func process(data: Data, output: Output = .processed,
-                        configuration: SkinRetouchConfiguration = .naturalDefault) async throws -> ImageProcessingOutput<ProcessingImage> {
+                        configuration: SkinRetouchConfiguration = .naturalDefault,
+                        skinMaskProvider: MockSkinMaskProvider = MockSkinMaskProvider()) async throws -> ImageProcessingOutput<ProcessingImage> {
         let result = try await pipeline.process(load: {
             guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
                 throw Failure.invalidImageData
@@ -99,7 +102,7 @@ enum DebugPhotoProcessing {
                 kCGImageSourceThumbnailMaxPixelSize: 2048,
                 kCGImageSourceShouldCacheImmediately: true
             ] as CFDictionary) else { throw Failure.decodeFailed }
-            return JobImage(image: ProcessingImage(cgImage: image), output: output, configuration: configuration)
+            return JobImage(image: ProcessingImage(cgImage: image), output: output, configuration: configuration, skinMaskProvider: skinMaskProvider)
         })
         return ImageProcessingOutput(image: result.image.image, detection: result.detection)
     }

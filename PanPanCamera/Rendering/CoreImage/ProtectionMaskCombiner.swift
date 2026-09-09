@@ -16,10 +16,7 @@ enum ProtectionMaskCombiner {
 
     static func effective(face: CIImage, combined: CIImage,
                           configuration: SkinRetouchConfiguration) throws -> CIImage {
-        let weight = try CoreImageRendering.grayMask(combined, scale: -1, bias: 1)
-        let coverage = try CoreImageRendering.filter("CIMultiplyCompositing", parameters: [
-            kCIInputImageKey: face, kCIInputBackgroundImageKey: weight
-        ], in: face.extent)
-        return try CoreImageRendering.grayMask(coverage, scale: configuration.intensity.value)
+        // Compatibility for existing edge-only probes/tests; one effective formula.
+        try EffectiveSkinMaskComposer.effective(face: face, combined: combined, configuration: configuration)
     }
 }

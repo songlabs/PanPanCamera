@@ -5,6 +5,66 @@
 	};
 	"objectVersion" = 56;
 	"objects" = {
+		"F00000000000000000000001" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "SkinMaskProviding.swift";
+			"sourceTree" = "<group>";
+		};
+		"F10000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F00000000000000000000001";
+		};
+		"F00000000000000000000002" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "MockSkinMaskProvider.swift";
+			"sourceTree" = "<group>";
+		};
+		"F10000000000000000000002" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F00000000000000000000002";
+		};
+		"F00000000000000000000003" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "EffectiveSkinMaskComposer.swift";
+			"sourceTree" = "<group>";
+		};
+		"F10000000000000000000003" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F00000000000000000000003";
+		};
+		"F00000000000000000000004" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "SkinSemanticMaskTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"F10000000000000000000004" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F00000000000000000000004";
+		};
+		"F00000000000000000000005" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "EffectiveSkinMaskComposerTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"F10000000000000000000005" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F00000000000000000000005";
+		};
+		"F00000000000000000000006" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "SemanticSkinProcessingTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"F10000000000000000000006" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "F00000000000000000000006";
+		};
 		"E00000000000000000000001" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -936,6 +996,9 @@
 		"62315AE240EA33C7515C50B6" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"F00000000000000000000001",
+				"F00000000000000000000002",
+				"F00000000000000000000003",
 				"E00000000000000000000005",
 				"E00000000000000000000004",
 				"D00000000000000000000001",
@@ -1073,6 +1136,9 @@
 		"A9F99B2CD4B4341BBBB50D75" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"F00000000000000000000004",
+				"F00000000000000000000005",
+				"F00000000000000000000006",
 				"E00000000000000000000008",
 				"E00000000000000000000007",
 				"E00000000000000000000006",
@@ -1153,6 +1219,9 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"F10000000000000000000001",
+				"F10000000000000000000002",
+				"F10000000000000000000003",
 				"E10000000000000000000005",
 				"E10000000000000000000004",
 				"E10000000000000000000003",
@@ -1232,6 +1301,9 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"F10000000000000000000004",
+				"F10000000000000000000005",
+				"F10000000000000000000006",
 				"E10000000000000000000008",
 				"E10000000000000000000007",
 				"E10000000000000000000006",

@@ -215,6 +215,53 @@ final class DebugPhotoProcessingTests: XCTestCase {
         XCTAssertEqual(ProcessingTestPixels.rgba(original.image), ProcessingTestPixels.rgba(originalAgain.image))
     }
 
+    func testSemanticAndEffectiveDebugOutputsMatchSharedProcessingMasksForEveryMockMode() async throws {
+        let data = try encoded(SkinRetouchTestImage.texture())
+        let original = try await DebugPhotoProcessing.process(data: data, output: .original)
+        for mode in MockSkinMaskProvider.Configuration.Mode.allCases {
+            let provider = MockSkinMaskProvider(configuration: try .init(mode: mode))
+            for output: DebugPhotoProcessing.Output in [.skinMask, .effectiveSkinMask] {
+                let debug = try await DebugPhotoProcessing.process(data: data, output: output, skinMaskProvider: provider)
+                let expected = try await Task.detached {
+                    let regions = original.detection.regions, image = original.image
+                    let landmarks = try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: image, regions: regions)
+                    let step = TexturePreservingSkinSmoothingStep(skinMaskProvider: provider)
+                    let semantics = try step.skinMasks(in: image, regions: regions, landmarks: landmarks)
+                    let masks = try XCTUnwrap(step.makeMasks(source: CIImage(cgImage: image.cgImage), regions: regions,
+                                                            landmarks: landmarks, skinMasks: semantics))
+                    return try CoreImageRendering.render(output == .skinMask ? masks.skinMask : masks.effectiveSkinMask, matching: image)
+                }.value
+                XCTAssertEqual(ProcessingTestPixels.rgba(debug.image), ProcessingTestPixels.rgba(expected))
+            }
+            let processed = try await DebugPhotoProcessing.process(data: data, skinMaskProvider: provider)
+            let difference = try await DebugPhotoProcessing.process(data: data, output: .difference, skinMaskProvider: provider)
+            let expectedDifference = try await Task.detached {
+                let source = CIImage(cgImage: original.image.cgImage)
+                let landmarks = try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: original.image, regions: original.detection.regions)
+                let step = TexturePreservingSkinSmoothingStep(skinMaskProvider: provider)
+                let semantics = try step.skinMasks(in: original.image, regions: original.detection.regions, landmarks: landmarks)
+                let adjusted = try XCTUnwrap(step.makeOutput(source: source, regions: original.detection.regions, landmarks: landmarks, skinMasks: semantics))
+                let expectedProcessed = try CoreImageRendering.render(adjusted, matching: original.image)
+                XCTAssertEqual(ProcessingTestPixels.rgba(processed.image), ProcessingTestPixels.rgba(expectedProcessed))
+                return try CoreImageRendering.render(CoreImageRendering.filter("CIDifferenceBlendMode", parameters: [
+                    kCIInputImageKey: adjusted, kCIInputBackgroundImageKey: source
+                ], in: source.extent), matching: original.image)
+            }.value
+            XCTAssertEqual(ProcessingTestPixels.rgba(difference.image), ProcessingTestPixels.rgba(expectedDifference))
+        }
+        let originalAgain = try await DebugPhotoProcessing.process(data: data, output: .original)
+        XCTAssertEqual(ProcessingTestPixels.rgba(originalAgain.image), ProcessingTestPixels.rgba(original.image))
+    }
+
+    func testZeroIntensityEffectiveDebugMaskIsBlackWhileSemanticWeightsRemainVisible() async throws {
+        let data = try encoded(image(width: 100, height: 100))
+        let config = SkinRetouchConfiguration.naturalDefault.withIntensity(.original)
+        let effective = try await DebugPhotoProcessing.process(data: data, output: .effectiveSkinMask, configuration: config)
+        let skin = try await DebugPhotoProcessing.process(data: data, output: .skinMask, configuration: config)
+        XCTAssertEqual(pixel(effective.image, x: 50, y: 50), [0, 0, 0, 255])
+        XCTAssertGreaterThan(pixel(skin.image, x: 50, y: 50)[0], 250)
+    }
+
     func testDebugABConfigurationsAreJobLocalAndZeroMatchesDecodedOriginal() async throws {
         let data = try encoded(SkinRetouchTestImage.texture())
         let original = try await DebugPhotoProcessing.process(data: data, output: .original)
@@ -223,7 +270,7 @@ final class DebugPhotoProcessingTests: XCTestCase {
             let result = try await DebugPhotoProcessing.process(data: data, configuration: configuration)
             let reference = ImageProcessingPipeline<ProcessingImage>(detector: MockFaceDetector(),
                 steps: [TexturePreservingSkinSmoothingStep(configuration: configuration,
-                    landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>())])
+                    landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>(), skinMaskProvider: MockSkinMaskProvider())])
             let expected = try await reference.process(original.image)
             XCTAssertEqual(ProcessingTestPixels.rgba(result.image), ProcessingTestPixels.rgba(expected.image))
             if intensity == .original {

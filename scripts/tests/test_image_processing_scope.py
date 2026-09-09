@@ -14,6 +14,7 @@ APP = ROOT / 'PanPanCamera'
 DEVELOPMENT = (
     APP / 'FaceTracking/MockFaceDetector.swift',
     APP / 'FaceTracking/MockFaceLandmarkDetector.swift',
+    APP / 'Rendering/CoreImage/MockSkinMaskProvider.swift',
     APP / 'Rendering/DebugPhotoProcessing.swift',
     APP / 'Rendering/CoreImage/DebugFaceBrightnessStep.swift',
     APP / 'Rendering/CoreImage/DebugFaceMaskStep.swift',
@@ -24,6 +25,7 @@ CORE = (
     APP / 'FaceTracking/FacialLandmarks.swift',
     APP / 'FaceTracking/FaceLandmarkDetecting.swift',
     APP / 'Rendering/ImageProcessingPipeline.swift',
+    APP / 'Rendering/CoreImage/SkinMaskProviding.swift',
 )
 
 
@@ -37,6 +39,7 @@ class ImageProcessingScopeTests(unittest.TestCase):
             probe = Path(directory) / 'ReleaseIsolation.swift'
             probe.write_text('''struct MockFaceDetector<Image: Sendable> {}
 struct MockFaceLandmarkDetector<Image: Sendable> {}
+struct MockSkinMaskProvider {}
 struct DebugPhotoProcessing {}
 struct DebugFaceBrightnessStep {}
 struct DebugFaceMaskStep {}
@@ -56,7 +59,7 @@ struct DebugFaceMaskStep {}
                 self.assertNotRegex(str(settings.get(key, '')), r'\bDEBUG\b')
 
     def test_mock_and_probe_have_no_product_call_sites(self):
-        symbols = r'\b(?:MockFaceDetector|MockFaceLandmarkDetector|DebugPhotoProcessing|DebugFaceBrightnessStep|DebugFaceMaskStep)\b'
+        symbols = r'\b(?:MockFaceDetector|MockFaceLandmarkDetector|MockSkinMaskProvider|DebugPhotoProcessing|DebugFaceBrightnessStep|DebugFaceMaskStep)\b'
         for path in APP.rglob('*.swift'):
             if 'Tests' in path.parts or path in DEVELOPMENT:
                 continue
@@ -66,7 +69,7 @@ struct DebugFaceMaskStep {}
         for path in CORE:
             # Check code, not explanatory comments about the dependency boundary.
             code = '\n'.join(line.split('//')[0] for line in path.read_text(encoding='utf-8').splitlines())
-            self.assertIsNone(re.search(r'\b(?:Vision|VisionFaceDetector|MockFaceDetector|MockFaceLandmarkDetector|VN\w+|DetectedFace)\b', code), str(path))
+            self.assertIsNone(re.search(r'\b(?:Vision|VisionFaceDetector|MockFaceDetector|MockFaceLandmarkDetector|MockSkinMaskProvider|VN\w+|DetectedFace)\b', code), str(path))
 
     def test_new_processing_sources_remain_local_and_without_model_or_camera_apis(self):
         for path in set((*CORE, *DEVELOPMENT, *(APP / 'Rendering').rglob('*.swift'))):
@@ -81,11 +84,13 @@ struct DebugFaceMaskStep {}
                                 r'\b(?:NaturalSkinProcessingStep|SoftFaceMaskGenerator|FaceMaskGenerating|'
                                 r'TexturePreservingSkinSmoothingStep|DetailProtectionMaskGenerator|'
                                 r'FeatureProtectionMaskGenerator|ProtectionMaskCombiner|'
+                                r'SkinMaskProviding|SkinMaskResult|EffectiveSkinMaskComposer|'
                                 r'SkinRetouchConfiguration|SkinRetouchIntensity)\b', str(path))
 
     def test_pipeline_does_not_depend_on_a_mask_algorithm(self):
         code = (APP / 'Rendering/ImageProcessingPipeline.swift').read_text(encoding='utf-8')
         self.assertNotRegex(code, r'\b(?:FaceMaskGenerating|SoftFaceMaskGenerator|NaturalSkinProcessingStep|'
+                                 r'SkinMaskProviding|SkinMaskResult|EffectiveSkinMaskComposer|MockSkinMaskProvider|'
                                  r'TexturePreservingSkinSmoothingStep|SkinRetouchConfiguration|CoreImage)\b')
 
     def test_retouch_reuses_one_renderer_context_without_new_queues_or_tasks(self):
@@ -93,7 +98,8 @@ struct DebugFaceMaskStep {}
         contexts = [path for path in sources if re.search(r'\bCIContext\s*\(', path.read_text(encoding='utf-8'))]
         self.assertEqual(contexts, [APP / 'Rendering/CoreImage/CoreImageRendering.swift'])
         for name in ('TexturePreservingSkinSmoothingStep', 'DetailProtectionMaskGenerator', 'SkinRetouchConfiguration',
-                     'FeatureProtectionMaskGenerator', 'ProtectionMaskCombiner'):
+                     'FeatureProtectionMaskGenerator', 'ProtectionMaskCombiner', 'SkinMaskProviding',
+                     'MockSkinMaskProvider', 'EffectiveSkinMaskComposer'):
             code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
             self.assertNotRegex(code, r'\b(?:DispatchQueue|Task)\s*[({.]')
 
@@ -108,6 +114,22 @@ struct DebugFaceMaskStep {}
         code = (APP / 'Rendering/DebugPhotoProcessing.swift').read_text(encoding='utf-8')
         self.assertNotRegex(code, r'\bNaturalSkinProcessingStep\s*\(')
         self.assertEqual(len(re.findall(r'ImageProcessingPipeline<JobImage>\s*\(', code)), 1)
+
+    def test_semantic_masks_add_no_legacy_kernel_or_photo_render(self):
+        for name in ('SkinMaskProviding', 'MockSkinMaskProvider', 'EffectiveSkinMaskComposer'):
+            code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
+            self.assertNotRegex(code, r'\b(?:CIColorKernel|CIKernel|CIContext)\s*\(')
+            self.assertNotRegex(code, r'\bCoreImageRendering\.render\s*\(')
+        kernels = [path for path in (APP / 'Rendering').rglob('*.swift')
+                   if re.search(r'\bCIColorKernel\s*\(source:', path.read_text(encoding='utf-8'))]
+        self.assertEqual(kernels, [APP / 'Rendering/CoreImage/TexturePreservingSkinSmoothingStep.swift'])
+
+    def test_mock_semantics_do_not_read_pixels_or_classify_skin_color(self):
+        code = '\n'.join(line.split('//')[0] for line in
+                         (APP / 'Rendering/CoreImage/MockSkinMaskProvider.swift').read_text(encoding='utf-8').splitlines())
+        self.assertNotRegex(code, r'\b(?:dataProvider|CFDataGetBytePtr|createCGImage|render|CGContext|HSV|YCbCr)\b')
+        self.assertNotRegex(code, r'CIImage\s*\(cgImage:|\.features\b|\.imagePoints\b')
+        self.assertNotRegex(code, r'CI(?:ColorCube|ColorThreshold|AreaAverage|AreaHistogram|ColorKernel)')
 
 
 if __name__ == '__main__':

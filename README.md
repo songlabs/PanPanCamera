@@ -37,7 +37,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 | 未实现入口 | 比例、Timer、相册点击后说明当前限制；视频、人像显示未支持且禁用 |
 | 五语言 | UI、无障碍文字、权限说明与品牌名称 |
 | Debug Screenshot Mode | 固定 SwiftUI 测试背景和页面参数；绕过真实相机与权限 |
-| DEBUG 照片处理 | Mock FaceRegion / FacialLandmarks → 柔边 Face Mask + 特征保护 + 梯度保护 → 两尺度纹理重建 → 单次 Blend；支持四种 Mask、原图、处理图、Difference 与 0 / 0.25 / 0.5 A/B，未接入正式照片流程 |
+| DEBUG 照片处理 | Mock FaceRegion / FacialLandmarks / Skin Semantic Mask → 每脸柔边覆盖与皮肤权重配对 → 五官和细节保护 → EffectiveSkinMaskComposer → 原两尺度纹理重建及单次 Blend；支持六种 Mask、原图、处理图、Difference 与 0 / 0.25 / 0.5 A/B，未接入正式照片流程 |
 | GitHub Actions | iOS CI、手动 Simulator Screenshot、TestFlight 交付基础设施；TestFlight 尚未实际执行 |
 
 美肌／美型的 **19 个参数仅改变界面状态，不改变相机预览或照片**。Auto 不执行自动算法。滤镜／美妆也不渲染效果，各面板提供五语言说明。关闭面板再打开保留本次运行参数，重启 App 后恢复默认值。
@@ -113,8 +113,8 @@ Rendering（独立开发链路）
 | 纯 Swift host typecheck | 4 个 Domain 文件和 3 个相机控制辅助类型，Windows Swift 5 语言模式类型检查，无硬件执行 |
 | git diff --check | 已实际执行通过 |
 | Xcode Build / Apple SDK typecheck | 由 iOS CI 的 Debug XCTest / Release Simulator Build 验证；以对应 commit 的 run 为准 |
-| XCTest | 当前 18 个测试源文件静态统计 132 个方法；本次 Facial Feature Protection 新增 22 个方法，尚未在 Apple 平台执行。Release 单独执行 5 个截图隔离方法，实际结果以当前 SHA 的 `.xcresult` 为准 |
-| Delivery / scope tests | 37 个 Python 测试已通过，包含 10 个处理范围／Release 隔离检查，以及版本、PNG、Simulator、CI gate、Profile 和上传失败传播 |
+| XCTest | 当前 21 个测试源文件静态统计 157 个方法；本次 Skin Semantic Mask 新增 25 个方法，已新增但尚未执行。Apple XCTest 暂缓，等待后续统一阶段；Release 的 5 个截图隔离方法保留 |
+| Delivery / scope tests | 39 个 Python 测试已通过，包含 12 个处理范围／Release 隔离检查，以及版本、PNG、Simulator、CI gate、Profile 和上传失败传播 |
 | Simulator UI | 手动 Simulator Screenshot 生成 10 张实际 UI 截图，需下载查看；不能证明真实相机 |
 | Real Device Camera | 尚未执行；预览、拍照、闪光灯、方向、镜像与生命周期均待真机验收 |
 | TestFlight | signing / Archive / Export / Upload 尚未实际验证 |
@@ -165,7 +165,9 @@ xcodebuild -project PanPanCamera.xcodeproj -scheme PanPanCamera \
   -resultBundlePath .verification/PanPanCameraTests.xcresult CODE_SIGNING_ALLOWED=NO test
 ```
 
-现有 XCTest 覆盖参数、相机控制、人脸坐标和独立照片处理。本次增加 Mock landmarks／校验、六类特征柔边、保护组合、多脸关联、缺失 landmarks 降级、intensity 0 和合成像素行为测试，共 22 个方法；这些测试尚未执行。Windows 的 Foundation landmark 类型检查被缺失 `errno.h` 阻断，host XCTest 在 manifest 链接阶段缺少 `msvcrt.lib`、`oldnames.lib`、`msvcprt.lib`，未运行任何 host XCTest。73 个 Swift 文件在 DEBUG 开启／关闭时均通过语法解析；这不是 Apple 编译证明。Apple 边界和人工步骤见 [DeviceValidation.md](docs/DeviceValidation.md) 及 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。
+现有 XCTest 覆盖参数、相机控制、人脸坐标和独立照片处理。本次新增 25 个方法，包含普通皮肤／头发／遮挡／胡须／unavailable Mock、柔边、四边缘、非零 extent、透明权重、多人脸与重叠、逐脸降级、公式、严格 intensity 0、处理错误和 DEBUG 中间结果一致性；已新增，尚未执行。79 个 Swift 文件在 DEBUG 开启／关闭时均通过语法解析；这不是 Apple 编译证明。先前 Windows Foundation／host XCTest 路径已确认缺少 `errno.h`、`msvcrt.lib`、`oldnames.lib`、`msvcprt.lib`，本任务未重试或修复该环境。Apple 边界与预留步骤见 [DeviceValidation.md](docs/DeviceValidation.md) 及 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。
+
+本阶段按「组件实现 → 当前环境静态检查 → commit → push → 确认 Actions 已触发 → 结束」交付。不会等待／轮询本次 CI 结果，也不会自动启动统一 Apple 测试；`queued` 或 `in_progress` 不代表 CI passed。以下 Mac 与 Actions 验证说明保留给后续统一阶段使用。
 
 ## GitHub Actions
 
@@ -261,7 +263,9 @@ inventory 输出尺寸、大小、SHA256 和两种验证结果。下载后仍需
 6. System Photos Save、照片导入、持久化照片存储。
 7. 比例裁切、Timer、人像模式与发行用 App Icon；发行凭据仍需单独配置。
 
-当前已有 Vision Face Detection、Face Landmarks 和限频视频帧检测代码，但真实检测尚未验证。Rendering 的独立 DEBUG 照片入口已实现 Texture-Preserving Natural Skin Retouch v1，并新增 Facial Feature Protection v1：Mock landmarks 明确保护双眼、双眉、嘴唇和较弱的鼻部曲线。使用 face-local、左下原点、0…1 坐标；每份 landmarks 绑定自己的 FaceRegion。最终 mask 为 `faceMask × (1 - max(featureMask, detailMask × edgeStrength)) × intensity` 并限制在 0…1。缺失／非法 landmarks 降级到原 face + edge 路径。默认 intensity 0.25、detailRetention 0.9 及其余频率算法参数全部保持不变；这些仍是工程初始值。Facial Feature Protection v1 的实际 Core Image Mask 与像素行为尚未在 Apple 平台执行验证。真实 Vision 人脸检测 / landmarks 尚未验证。`CIColorKernel(source:)` 尚未完成 Apple SDK / Xcode 编译验证。参数、算法、A/B 和验证边界见 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。`check_project.py` 仅在 FaceTracking 放开 Vision、在 Camera 放开视频帧获取、在 Rendering 和 Tests 放开 Core Image，继续禁止 Metal、CoreML、网络和其他范围外 API。尚未完成 Apple 平台 / 真机验收。
+当前已有 Vision Face Detection、Face Landmarks 和限频视频帧检测代码，但真实检测尚未验证。Rendering 的独立 DEBUG 照片入口已完成 **Skin Semantic Mask Infrastructure v1 及 Natural Skin Processing 基础 Mask 链路代码实现**，并完成当前环境可执行静态验证。新增 `SkinMaskProviding`、绑定 FaceRegion 的 `SkinMaskResult`、DEBUG-only `MockSkinMaskProvider` 和 `EffectiveSkinMaskComposer`。Mock 支持 normal skin、hair exclusion、glasses／自定义矩形遮挡、beard reduced weight（默认 0.25）及 unavailable；均来自几何配置，没有读取肤色或真实五官。单脸最终权重为 `F × S × (1 - max(P, clamp(D × e))) × intensity`，多人脸先做 `max(Fj × Sj)` 再应用保护和强度。每脸独立缺失时 `Sj = 1`；没有 tracking ID 或 array-index 关联。所有 Mask 与原图有限 extent 一致，支持非零原点，沿用左下原点坐标，不额外 mirror；语义输入 alpha 乘入权重。原 frequency algorithm、默认 intensity 0.25、detailRetention 0.9 和其余平滑参数保持不变。
+
+**Mock Skin Mask 不代表真实皮肤语义识别已经完成。Apple Core Image / XCTest 实际运行验证暂缓，将在基础组件完成后统一执行。真实 Vision 人脸检测 / landmarks 尚未验证。真实 Skin Segmentation 尚未实现。尚未完成 Apple 平台 / 真机验收。** 现有 `CIColorKernel(source:)` deprecated 风险继续记录，本次未修改、未新增第二处 legacy kernel。DEBUG 九种输出语义、公式、Mock 参数与测试边界见 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。没有修改正式照片、相机、产品 UI、网络或上传路径；没有引入真实 ML、Metal、MPS、第三方 SDK 或新美颜能力。
 
 ## Real Device Validation Pending
 
