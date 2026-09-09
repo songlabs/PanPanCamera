@@ -234,10 +234,16 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         }
         session.addOutput(output)
         output.maxPhotoQualityPrioritization = .quality
-        if #available(iOS 17.0, *), let largest = output.supportedMaxPhotoDimensions.max(by: {
-            Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height)
-        }) {
-            output.maxPhotoDimensions = largest
+        if #available(iOS 17.0, *) {
+            let supportedDimensions = output.supportedMaxPhotoDimensions
+            let largestDimension = supportedDimensions.max { lhs, rhs in
+                let lhsPixelCount = Int64(lhs.width) * Int64(lhs.height)
+                let rhsPixelCount = Int64(rhs.width) * Int64(rhs.height)
+                return lhsPixelCount < rhsPixelCount
+            }
+            if let largestDimension {
+                output.maxPhotoDimensions = largestDimension
+            }
         }
         // Optional analysis output: failure must leave photo capture and preview usable.
         videoOutput.alwaysDiscardsLateVideoFrames = true
