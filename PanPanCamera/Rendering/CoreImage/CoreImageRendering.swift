@@ -1,5 +1,30 @@
 import CoreImage
 import Foundation
+import AVFoundation
+import ImageIO
+
+final class SilentFrameEncoder: @unchecked Sendable {
+    private let context = CIContext(options: [.cacheIntermediates: false])
+
+    func encode(_ frame: SilentFrame) -> Data? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        let orientation = SilentFrameOrientation.exif(captureOrientation: frame.orientation,
+                                                      mirrored: frame.mirrored)
+        let image = CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(orientation)
+        let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let cgImage = context.createCGImage(image, from: image.extent, format: .RGBA8,
+                                                  colorSpace: colorSpace) else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else {
+            return nil
+        }
+        var metadata = frame.metadata
+        metadata[kCGImagePropertyOrientation as String] = CGImagePropertyOrientation.up.rawValue
+        metadata[kCGImageDestinationLossyCompressionQuality as String] = 1.0
+        CGImageDestinationAddImage(destination, cgImage, metadata as CFDictionary)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
+    }
+}
 
 /// Shared by the experimental step and DEBUG probes. First initialized on a worker;
 /// filters/graphs remain job-local and the context keeps no intermediate image cache.

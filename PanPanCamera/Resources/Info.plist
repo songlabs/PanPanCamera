@@ -24,6 +24,8 @@
 	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>写真のプレビューと撮影のためにカメラを使用します。写真はデバイス内で処理され、アップロードされません。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>撮影した写真を写真ライブラリに保存します。</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

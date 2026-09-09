@@ -87,7 +87,8 @@ def check_catalogs():
         require(catalogs['InfoPlist']['strings']['CFBundleDisplayName']['localizations'][locale]['stringUnit']['value'] == 'PanPan', 'Display name translated')
     info = plistlib.loads((ROOT / 'PanPanCamera/Resources/Info.plist').read_bytes())
     require(info['NSCameraUsageDescription'] == catalogs['InfoPlist']['strings']['NSCameraUsageDescription']['localizations']['ja']['stringUnit']['value'], 'Permission fallback differs from Japanese catalog')
-    require(not any(key in info for key in ['NSMicrophoneUsageDescription', 'NSPhotoLibraryUsageDescription', 'NSPhotoLibraryAddUsageDescription']), 'Unexpected permission scope')
+    require(not any(key in info for key in ['NSMicrophoneUsageDescription', 'NSPhotoLibraryUsageDescription']), 'Unexpected permission scope')
+    require('NSPhotoLibraryAddUsageDescription' in info, 'Missing add-only photo permission')
     require(info['CFBundleDisplayName'] == 'PanPan', 'Incorrect display name')
     print('PASS typed key coverage, placeholders, brand, and localized camera permission')
 
@@ -95,8 +96,8 @@ def check_catalogs():
 def check_sources():
     sources = [p for p in (ROOT / 'PanPanCamera').rglob('*.swift') if 'Tests' not in p.parts]
     hardcoded = re.compile(r'\b(?:Text|Button|Label|Toggle|Picker|Slider|ProgressView|Section)\s*\(\s*"|\.(?:navigationTitle|accessibilityLabel|accessibilityHint|accessibilityValue|alert)\s*\(\s*"')
-    forbidden_import = re.compile(r'^(?:@preconcurrency )?import\s+(?:Metal|CoreML|Photos|PhotosUI)\b', re.M)
-    allowed_imports = {'Foundation', 'SwiftUI', 'AVFoundation', 'Combine', 'UIKit', 'ImageIO', 'Vision', 'CoreImage'}
+    forbidden_import = re.compile(r'^(?:@preconcurrency )?import\s+(?:Metal|CoreML|PhotosUI)\b', re.M)
+    allowed_imports = {'Foundation', 'SwiftUI', 'AVFoundation', 'Combine', 'UIKit', 'ImageIO', 'Vision', 'CoreImage', 'Photos'}
     for path in sources:
         text = path.read_text(encoding='utf-8')
         require(not hardcoded.search(text), f'UI literal outside localization adapter: {path.name}')

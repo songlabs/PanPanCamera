@@ -86,9 +86,17 @@ final class CameraService: ObservableObject {
         case let .switching(value):
             state.isSwitching = value
         case let .captureFinished(photo):
-            state.isCapturing = false
-            if let photo { capturedPhoto = photo }
-            else { failure = .captureFailed }
+            guard let photo else {
+                state.isCapturing = false
+                failure = .captureFailed
+                return
+            }
+            Task { [weak self] in
+                guard let self else { return }
+                if await PhotoLibrarySaver.save(photo.data) { capturedPhoto = photo }
+                else { failure = .captureFailed }
+                state.isCapturing = false
+            }
         case .switchFailed:
             state.isSwitching = false
             failure = .switchFailed

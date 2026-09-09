@@ -26,7 +26,10 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     private let output = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let videoQueue = DispatchQueue(label: "camera.panpan.faces", qos: .utility)
+    private let encodingQueue = DispatchQueue(label: "camera.panpan.silent-encoding", qos: .userInitiated)
     private let faceDetector = VisionFaceDetector()
+    private let frameStore = SilentFrameStore()
+    private let frameEncoder = SilentFrameEncoder()
     private var faceProcessor: CameraFaceFrameProcessor?
     private var faceRotationObservation: NSKeyValueObservation?
     private var videoOutputReady = false
@@ -104,11 +107,16 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
 
     func capture(flash: FlashMode) {
         queue.async { [self] in
-            guard configured, session.isRunning, !session.isInterrupted,
-                  captures.activeID == nil, let connection = output.connection(with: .video),
-                  connection.isActive else {
+            guard configured, session.isRunning, !session.isInterrupted, captures.activeID == nil else {
                 onEvent(.captureFinished(nil))
                 return
+            }
+            if captureStrategy() == .silentVideoFrame {
+                captureSilentFrame()
+                return
+            }
+            guard let connection = output.connection(with: .video), connection.isActive else {
+                onEvent(.captureFinished(nil)); return
             }
             let angle = rotation?.videoRotationAngleForHorizonLevelCapture ?? 90
             guard connection.isVideoRotationAngleSupported(angle) else {
@@ -121,10 +129,16 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
                 // Match the mirrored selfie preview; rear captures remain unmirrored.
                 connection.isVideoMirrored = input?.device.position == .front
             }
-            let settings = AVCapturePhotoSettings()
+            let settings = output.availablePhotoCodecTypes.contains(.jpeg)
+                ? AVCapturePhotoSettings(format: [AVVideoCodecKey: AVVideoCodecType.jpeg])
+                : AVCapturePhotoSettings()
+            if #available(iOS 18.0, *), output.isShutterSoundSuppressionSupported {
+                settings.isShutterSoundSuppressionEnabled = true
+            }
             let requested = avFlash(flash)
             settings.flashMode = availableFlashModes().contains(flash) ? requested : .off
-            settings.photoQualityPrioritization = .balanced
+            settings.photoQualityPrioritization = .quality
+            settings.maxPhotoDimensions = output.maxPhotoDimensions
             let captureID = settings.uniqueID
             let processor = PhotoCaptureProcessor { [weak self] data in
                 guard let self else { return }
@@ -136,6 +150,30 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             }
             captures.register(processor, id: captureID)
             output.capturePhoto(with: settings, delegate: processor)
+        }
+    }
+
+    private func captureStrategy() -> SilentCaptureStrategy {
+        if #available(iOS 18.0, *) {
+            return .select(suppressionSupported: output.isShutterSoundSuppressionSupported)
+        }
+        return .silentVideoFrame
+    }
+
+    private func captureSilentFrame() {
+        dispatchPrecondition(condition: .onQueue(queue))
+        guard let frame = frameStore.take() else { onEvent(.captureFinished(nil)); return }
+        // A sentinel occupies the existing one-capture registry without retaining an AV delegate.
+        let captureID = Int64.min
+        let token = PhotoCaptureProcessor { _ in }
+        captures.register(token, id: captureID)
+        encodingQueue.async { [weak self] in
+            guard let self else { return }
+            let data = self.frameEncoder.encode(frame)
+            self.queue.async {
+                guard self.captures.finish(id: captureID) else { return }
+                self.onEvent(.captureFinished(data.flatMap(CapturedPhoto.init(data:))))
+            }
         }
     }
 
@@ -195,10 +233,15 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             return false
         }
         session.addOutput(output)
-        output.maxPhotoQualityPrioritization = .balanced
+        output.maxPhotoQualityPrioritization = .quality
+        if #available(iOS 17.0, *), let largest = output.supportedMaxPhotoDimensions.max(by: {
+            Int64($0.width) * Int64($0.height) < Int64($1.width) * Int64($1.height)
+        }) {
+            output.maxPhotoDimensions = largest
+        }
         // Optional analysis output: failure must leave photo capture and preview usable.
         videoOutput.alwaysDiscardsLateVideoFrames = true
-        videoOutput.automaticallyConfiguresOutputBufferDimensions = true
+        videoOutput.automaticallyConfiguresOutputBufferDimensions = false
         videoOutputReady = session.canAddOutput(videoOutput)
         if videoOutputReady {
             session.addOutput(videoOutput)
@@ -206,7 +249,12 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             let formats = videoOutput.availableVideoPixelFormatTypes
             if let format = [kCVPixelFormatType_420YpCbCr8BiPlanarFullRange,
                              kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange].first(where: { formats.contains($0) }) {
-                videoOutput.videoSettings = [kCVPixelBufferPixelFormatTypeKey as String: format]
+                let dimensions = CMVideoFormatDescriptionGetDimensions(newInput.device.activeFormat.formatDescription)
+                videoOutput.videoSettings = [
+                    kCVPixelBufferPixelFormatTypeKey as String: format,
+                    kCVPixelBufferWidthKey as String: Int(dimensions.width),
+                    kCVPixelBufferHeightKey as String: Int(dimensions.height)
+                ]
             }
             configureVideoConnection()
         }
@@ -233,6 +281,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     }
 
     private func availableFlashModes() -> [FlashMode] {
+        guard captureStrategy() == .suppressedPhotoOutput else { return [.off] }
         guard let device = input?.device, device.hasFlash, device.isFlashAvailable else {
             return [.off]
         }
@@ -287,8 +336,8 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         guard faceProcessor?.deviceID != device.uniqueID || faceProcessor?.orientation != orientation else { return }
         stopFaceDetection()
         // Replacing the immutable delegate also rejects queued buffers from the old input.
-        let processor = CameraFaceFrameProcessor(deviceID: device.uniqueID, orientation: orientation,
-                                                 detector: faceDetector) { [weak self] delivery in
+        let processor = CameraFaceFrameProcessor(device: device, orientation: orientation,
+                                                 detector: faceDetector, frameStore: frameStore) { [weak self] delivery in
             self?.onEvent(.faceDetection(delivery))
         }
         faceProcessor = processor
@@ -296,6 +345,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     }
 
     private func stopFaceDetection() {
+        frameStore.clear()
         faceProcessor?.delivery.invalidate()
         faceProcessor = nil
         videoOutput.setSampleBufferDelegate(nil, queue: nil)

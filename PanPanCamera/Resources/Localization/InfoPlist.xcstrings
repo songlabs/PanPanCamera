@@ -70,6 +70,40 @@
           }
         }
       }
+    },
+    "NSPhotoLibraryAddUsageDescription": {
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "撮影した写真を写真ライブラリに保存します。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Save captured photos to your photo library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "将拍摄的照片保存到照片图库。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "將拍攝的照片儲存到照片圖庫。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "촬영한 사진을 사진 보관함에 저장합니다."
+          }
+        }
+      }
     }
   },
   "version": "1.0"
