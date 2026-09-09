@@ -105,6 +105,19 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
         // The synthetic dark spot is not a blemish-removal target.
         let originalSpot = ProcessingTestPixels.rgba(input, at: CGPoint(x: 111, y: 127))[0]
         let outputSpot = ProcessingTestPixels.rgba(output, at: CGPoint(x: 111, y: 127))[0]
+        let region = try FaceRegion(boundingBox: fullBox)
+        try await Task.detached {
+            let source = CIImage(cgImage: input.cgImage)
+            let scale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: source.extent))
+            let protection = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
+            let pixelSupport = try CoreImageRendering.filter("CIMorphologyMaximum", parameters: [
+                kCIInputImageKey: protection.clampedToExtent(), kCIInputRadiusKey: ceil(scale.smallRadius)
+            ], in: source.extent)
+            for point in [CGPoint(x: 104, y: 120), CGPoint(x: 111, y: 127), CGPoint(x: 80, y: 120)] {
+                let bounds = CGRect(origin: point, size: CGSize(width: 1, height: 1))
+                print("Detail protection point=\(point) subpixelRadius=\(scale.smallRadius) current=\(ProcessingTestPixels.floats(protection, bounds: bounds)[0]) pixelSupport=\(ProcessingTestPixels.floats(pixelSupport, bounds: bounds)[0])")
+            }
+        }.value
         XCTAssertLessThanOrEqual(abs(Int(outputSpot) - Int(originalSpot)), 2)
     }
 

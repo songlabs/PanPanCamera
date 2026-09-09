@@ -165,6 +165,29 @@ final class SoftFaceMaskTests: XCTestCase {
         let union = try XCTUnwrap(unionResult), reversed = try XCTUnwrap(reversedResult)
         let duplicate = try XCTUnwrap(duplicateResult)
         assertValid(union, expectedExtent: extent)
+        if let i = first.pixels.indices.first(where: { abs(union.pixels[$0] - max(first.pixels[$0], second.pixels[$0])) > 0.0001 }) {
+            print("Face union mismatch x=\((i / 4) % 100) y=\((i / 4) / 100) channel=\(i % 4) a=\(first.pixels[i]) b=\(second.pixels[i]) union=\(union.pixels[i])")
+        }
+        let regions = try [box, other].map { try FaceRegion(boundingBox: $0) }
+        try await Task.detached {
+            let bounds = CGRect(x: 0, y: 0, width: 100, height: 100)
+            let generator = SoftFaceMaskGenerator()
+            let a = try XCTUnwrap(generator.makeMask(regions: [regions[0]], in: bounds))
+            let b = try XCTUnwrap(generator.makeMask(regions: [regions[1]], in: bounds))
+            let union = try XCTUnwrap(generator.makeMask(regions: regions, in: bounds))
+            // Compare inside one CI graph, before separately rendering/resampling
+            // the transformed inputs. This distinguishes compositing from sampling.
+            let expected = try CoreImageRendering.filter("CIMaximumCompositing", parameters: [
+                kCIInputImageKey: b, kCIInputBackgroundImageKey: a
+            ], in: bounds)
+            let difference = try CoreImageRendering.filter("CIDifferenceBlendMode", parameters: [
+                kCIInputImageKey: union, kCIInputBackgroundImageKey: expected
+            ], in: bounds)
+            let pixels = ProcessingTestPixels.floats(difference, bounds: bounds)
+            let maximum = stride(from: 0, to: pixels.count, by: 4).map { pixels[$0] }.max()!
+            print("Face union in-graph max difference=\(maximum)")
+            XCTAssertEqual(maximum, 0, accuracy: 0.0001)
+        }.value
         for i in first.pixels.indices {
             XCTAssertEqual(union.pixels[i], max(first.pixels[i], second.pixels[i]), accuracy: 0.0001)
             XCTAssertEqual(union.pixels[i], reversed.pixels[i], accuracy: 0.0001)

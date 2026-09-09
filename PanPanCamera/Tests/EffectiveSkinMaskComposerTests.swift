@@ -93,6 +93,9 @@ final class EffectiveSkinMaskComposerTests: XCTestCase {
                     let second = ProcessingTestPixels.floats(singleB[keyPath: keyPath], bounds: extent)
                     let union = ProcessingTestPixels.floats(combined[keyPath: keyPath], bounds: extent)
                     let duplicate = ProcessingTestPixels.floats(repeated[keyPath: keyPath], bounds: extent)
+                    if let i = union.indices.first(where: { abs(union[$0] - max(first[$0], second[$0])) > 0.0001 }) {
+                        print("Effective union mismatch mask=\(keyPath) x=\((i / 4) % 100) y=\((i / 4) / 100) a=\(first[i]) b=\(second[i]) union=\(union[i])")
+                    }
                     for i in union.indices {
                         XCTAssertEqual(union[i], max(first[i], second[i]), accuracy: 0.0001)
                         XCTAssertEqual(union[i], duplicate[i], accuracy: 0.0001)
