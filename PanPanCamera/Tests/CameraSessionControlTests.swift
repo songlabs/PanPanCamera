@@ -2,6 +2,34 @@ import XCTest
 @testable import PanPanCamera
 
 final class CameraSessionControlTests: XCTestCase {
+    func testSilentStrategyPrefersSuppressedPhotoOutput() {
+        XCTAssertEqual(SilentCaptureStrategy.select(suppressionSupported: true), .suppressedPhotoOutput)
+    }
+
+    func testSilentStrategyFallsBackToVideoFrame() {
+        XCTAssertEqual(SilentCaptureStrategy.select(suppressionSupported: false), .silentVideoFrame)
+    }
+
+    func testSilentFrameStoreFailsSafelyWithoutAFrameAndConsumesOnce() {
+        let store = SilentFrameStore()
+        XCTAssertNil(store.take())
+        var buffer: CVPixelBuffer?
+        XCTAssertEqual(CVPixelBufferCreate(nil, 2, 2, kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
+        store.replace(SilentFrame(pixelBuffer: buffer!, timestamp: .zero, orientation: .right,
+                                  position: .front, mirrored: true, metadata: [:]))
+        let captured = store.take()
+        XCTAssertEqual(captured?.position, .front)
+        XCTAssertEqual(captured?.mirrored, true)
+        XCTAssertNil(store.take())
+    }
+
+    func testSilentFrameOrientationIncludesFrontMirror() {
+        XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .up, mirrored: false), .up)
+        XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .right, mirrored: false), .right)
+        XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .down, mirrored: false), .down)
+        XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .left, mirrored: false), .left)
+        XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .right, mirrored: true), .rightMirrored)
+    }
     private func replace(allowed: Set<CameraPosition>) -> (CameraInputReplacement<CameraPosition>, [String]) {
         var operations: [String] = []
         let result = CameraInputReplacement<CameraPosition>.perform(

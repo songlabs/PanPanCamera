@@ -1197,31 +1197,31 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "写真はこの画面でのみ確認できます。アルバムには保存されません。カメラに戻ると破棄されます。"
+            "value": "写真ライブラリに保存しました。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "照片仅供本次预览，不会保存到系统相册。返回相机后将丢弃。"
+            "value": "已保存到照片图库。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "照片僅供本次預覽，不會儲存至系統相簿。返回相機後將捨棄。"
+            "value": "已儲存到照片圖庫。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "This photo is only held for this preview and is not saved to your library. Returning to the camera discards it."
+            "value": "Saved to your photo library."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사진은 이 미리보기에서만 확인할 수 있으며 앨범에 저장되지 않아요. 카메라로 돌아가면 삭제돼요."
+            "value": "사진 보관함에 저장했습니다."
           }
         }
       }
