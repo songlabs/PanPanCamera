@@ -89,15 +89,23 @@ final class EffectiveSkinMaskComposerTests: XCTestCase {
                 let repeated = try compose([b, a, b], [result, resultA, result, .unavailable(for: a)])
                 SemanticMaskTestPixels.bounded(combined.effectiveSkinMask, in: extent)
                 for keyPath: KeyPath<EffectiveSkinMaskComposer.Masks, CIImage> in [\.effectiveSkinMask, \.skinMask, \.faceMask] {
-                    let first = ProcessingTestPixels.floats(singleA[keyPath: keyPath], bounds: extent)
-                    let second = ProcessingTestPixels.floats(singleB[keyPath: keyPath], bounds: extent)
+                    // Keep both transformed masks in the same render graph. A CPU
+                    // max of separately rasterized gradients tests resampling, not
+                    // the per-face pairing/union formula used by this composer.
+                    let expected = try CoreImageRendering.filter("CIMaximumCompositing", parameters: [
+                        kCIInputImageKey: singleA[keyPath: keyPath],
+                        kCIInputBackgroundImageKey: singleB[keyPath: keyPath]
+                    ], in: extent)
+                    let difference = try CoreImageRendering.filter("CIDifferenceBlendMode", parameters: [
+                        kCIInputImageKey: combined[keyPath: keyPath], kCIInputBackgroundImageKey: expected
+                    ], in: extent)
+                    let differences = ProcessingTestPixels.floats(difference, bounds: extent)
+                    for i in differences.indices where i % 4 != 3 {
+                        XCTAssertEqual(differences[i], 0, accuracy: 0.0001)
+                    }
                     let union = ProcessingTestPixels.floats(combined[keyPath: keyPath], bounds: extent)
                     let duplicate = ProcessingTestPixels.floats(repeated[keyPath: keyPath], bounds: extent)
-                    if let i = union.indices.first(where: { abs(union[$0] - max(first[$0], second[$0])) > 0.0001 }) {
-                        print("Effective union mismatch mask=\(keyPath) x=\((i / 4) % 100) y=\((i / 4) / 100) a=\(first[i]) b=\(second[i]) union=\(union[i])")
-                    }
                     for i in union.indices {
-                        XCTAssertEqual(union[i], max(first[i], second[i]), accuracy: 0.0001)
                         XCTAssertEqual(union[i], duplicate[i], accuracy: 0.0001)
                     }
                 }

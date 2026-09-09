@@ -105,11 +105,22 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
         // The synthetic dark spot is not a blemish-removal target.
         let originalSpot = ProcessingTestPixels.rgba(input, at: CGPoint(x: 111, y: 127))[0]
         let outputSpot = ProcessingTestPixels.rgba(output, at: CGPoint(x: 111, y: 127))[0]
+        print("Texture edge=\(SkinRetouchTestImage.edgeContrast(input)) -> \(SkinRetouchTestImage.edgeContrast(output)) line=\(SkinRetouchTestImage.lineContrast(input)) -> \(SkinRetouchTestImage.lineContrast(output)) spot=\(originalSpot) -> \(outputSpot)")
         let region = try FaceRegion(boundingBox: fullBox)
         try await Task.detached {
             let source = CIImage(cgImage: input.cgImage)
             let scale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: source.extent))
             let protection = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
+            for weight in [0.1, 0.25, 0.5, 0.75] {
+                let original = SemanticMaskTestPixels.constant(0, in: source.extent)
+                let adjusted = SemanticMaskTestPixels.constant(1, in: source.extent)
+                let mask = SemanticMaskTestPixels.constant(weight, in: source.extent)
+                let blended = try CoreImageRendering.blend(adjusted, over: original, mask: mask)
+                let actual = ProcessingTestPixels.floats(blended, bounds: CGRect(x: 80, y: 120, width: 1, height: 1))[0]
+                print("Linear blend weight=\(weight) actual=\(actual)")
+                XCTAssertEqual(actual, Float(weight), accuracy: 0.0001,
+                    "Scalar masks must interpolate once in linear working space")
+            }
             let pixelSupport = try CoreImageRendering.filter("CIMorphologyMaximum", parameters: [
                 kCIInputImageKey: protection.clampedToExtent(), kCIInputRadiusKey: ceil(scale.smallRadius)
             ], in: source.extent)

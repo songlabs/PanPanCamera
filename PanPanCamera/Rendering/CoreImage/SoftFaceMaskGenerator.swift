@@ -23,24 +23,21 @@ struct SoftFaceMaskGenerator: FaceMaskGenerating {
             guard !rect.isNull, rect.width >= 1, rect.height >= 1 else { continue }
             let radiusY = rect.height * 0.48
             let radiusX = min(rect.width * 0.45, radiusY * 0.8)
-            // Generate at image scale so CI never rasterizes a large reference
-            // circle only to downsample it differently when a union is added.
+            // Use a 100-unit reference circle, then scale to a portrait ellipse.
             // Both colors are opaque: this is coverage, not source image alpha.
             guard let gradient = CIFilter(name: "CIRadialGradient", parameters: [
                 "inputCenter": CIVector(x: 0, y: 0),
-                "inputRadius0": radiusY * 0.65,
-                "inputRadius1": radiusY,
+                "inputRadius0": 65.0,
+                "inputRadius1": 100.0,
                 "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: 1),
                 "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 1)
             ]), let radial = gradient.outputImage else { throw Failure.filterUnavailable }
             // Radial output is black outside radius1. Transform before cropping so
             // there is no transparent rectangle edge to interpolate into the mask.
-            let mask = radial.transformed(by: CGAffineTransform(a: radiusX / radiusY, b: 0,
-                                                               c: 0, d: 1,
+            let mask = radial.transformed(by: CGAffineTransform(a: radiusX / 100, b: 0,
+                                                               c: 0, d: radiusY / 100,
                                                                tx: rect.midX, ty: rect.midY))
                 .cropped(to: extent)
-                .insertingIntermediate()
-                .samplingNearest()
             if let previous = combined {
                 guard let union = CIFilter(name: "CIMaximumCompositing", parameters: [
                     kCIInputImageKey: mask,
