@@ -40,6 +40,7 @@ struct SoftFaceMaskGenerator: FaceMaskGenerating {
                                                                tx: rect.midX, ty: rect.midY))
                 .cropped(to: extent)
                 .insertingIntermediate()
+                .samplingNearest()
             if let previous = combined {
                 guard let union = CIFilter(name: "CIMaximumCompositing", parameters: [
                     kCIInputImageKey: mask,

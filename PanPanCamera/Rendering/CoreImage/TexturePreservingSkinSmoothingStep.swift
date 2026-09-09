@@ -54,9 +54,10 @@ struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
         }
         let policy = SkinRetouchConfiguration.Policy.self
         let midRetention = 1 - policy.midFrequencyAttenuation * (1 - configuration.detailRetention)
+        let opacitySupport = try makeOpacitySupport(source: source, scale: scale)
         guard let kernel = Self.reconstruction,
               let adjusted = kernel.apply(extent: source.extent, arguments: [
-                source, small, large, low, configuration.detailRetention, midRetention,
+                source, small, large, low, opacitySupport, configuration.detailRetention, midRetention,
                 policy.maximumChannelChange, policy.opaqueThreshold
               ]) else { throw CoreImageRendering.Failure.filterUnavailable }
         // All faces share one reconstructed candidate and exactly one photo blend.
@@ -96,18 +97,28 @@ struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
         ], in: source.extent)
     }
 
+    /// Gaussian half-float accumulation can turn alpha 1 into 0.9990. Use the
+    /// original neighborhood's minimum alpha for the transparency decision;
+    /// morphology does not accumulate rounding error. Cover the large blur's
+    /// three-sigma support without changing any frequency or strength parameter.
+    func makeOpacitySupport(source: CIImage, scale: SkinRetouchScale) throws -> CIImage {
+        try CoreImageRendering.filter("CIMorphologyMinimum", parameters: [
+            kCIInputImageKey: source.clampedToExtent(),
+            kCIInputRadiusKey: ceil(scale.largeRadius * 3)
+        ], in: source.extent)
+    }
+
     // One small pointwise Core Image color kernel keeps signed detail residuals
     // without using clamping/absolute-value blend modes as subtraction. No custom
     // Metal renderer/shader pipeline. Immutable kernel is shared; images are not.
     // init(source:) is Apple's legacy CI language API; Apple execution is pending.
     private static let reconstruction = CIColorKernel(source: """
         kernel vec4 reconstruct(__sample original, __sample small, __sample large,
-                                __sample low, float detailRetention, float midRetention,
+                                __sample low, __sample opacitySupport, float detailRetention, float midRetention,
                                 float maximumChange, float opaqueThreshold) {
             // Conservatively leave translucency and transparent neighborhoods alone.
             // Alpha is never smoothed/replaced by a filter's generated alpha.
-            if (original.a < opaqueThreshold || small.a < opaqueThreshold ||
-                large.a < opaqueThreshold || low.a < opaqueThreshold) { return original; }
+            if (original.a < opaqueThreshold || opacitySupport.a < opaqueThreshold) { return original; }
             vec3 o = unpremultiply(original).rgb;
             vec3 s = unpremultiply(small).rgb;
             vec3 l = unpremultiply(large).rgb;

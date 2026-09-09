@@ -122,8 +122,6 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
                 let pixels = ProcessingTestPixels.floats(band, bounds: patch)
                 let alpha = stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }
                 print("Opaque frequency band radius=\(radius) alpha=\(alpha.min()!)...\(alpha.max()!)")
-                XCTAssertGreaterThanOrEqual(Double(alpha.min()!), SkinRetouchConfiguration.Policy.opaqueThreshold,
-                    "Opaque input must not trigger the reconstruction translucency bypass")
                 var defaultPixels = [Float](repeating: 0, count: pixels.count)
                 defaultPixels.withUnsafeMutableBytes {
                     ProcessingTestPixels.context.render(band, toBitmap: $0.baseAddress!,
@@ -132,11 +130,21 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
                 }
                 let defaultAlpha = stride(from: 3, to: defaultPixels.count, by: 4).map { defaultPixels[$0] }
                 print("Default frequency band radius=\(radius) alpha=\(defaultAlpha.min()!)...\(defaultAlpha.max()!)")
-                XCTAssertGreaterThanOrEqual(Double(defaultAlpha.min()!), SkinRetouchConfiguration.Policy.opaqueThreshold,
-                    "Default intermediate precision must not classify an opaque frequency band as translucent")
             }
             let config = SkinRetouchConfiguration.naturalDefault.withIntensity(try SkinRetouchIntensity(1))
             let step = TexturePreservingSkinSmoothingStep(configuration: config)
+            let support = try step.makeOpacitySupport(source: source, scale: scale)
+            var supportPixels = [Float](repeating: 0, count: Int(patch.width * patch.height) * 4)
+            supportPixels.withUnsafeMutableBytes {
+                ProcessingTestPixels.context.render(support, toBitmap: $0.baseAddress!,
+                    rowBytes: Int(patch.width) * 16, bounds: patch, format: .RGBAf,
+                    colorSpace: ProcessingTestPixels.linearColorSpace)
+            }
+            // The Gaussian alpha diagnostic above is intentionally not the gate:
+            // Apple half-float accumulation does not preserve its exact unit sum.
+            for i in stride(from: 3, to: supportPixels.count, by: 4) {
+                XCTAssertEqual(supportPixels[i], 1, "Opaque source support must remain eligible at default precision")
+            }
             let masks = try XCTUnwrap(step.makeMasks(source: source, regions: [region]))
             let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region]))
             let before = ProcessingTestPixels.floats(source, bounds: patch)
@@ -146,6 +154,37 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
             let coverage = stride(from: 0, to: weights.count, by: 4).map { weights[$0] }
             print("Texture float maxChange=\(changes.max()!) coverage=\(coverage.min()!)...\(coverage.max()!)")
             XCTAssertGreaterThan(changes.max()!, 0, "The float graph must perform active reconstruction")
+            let rendered = try CoreImageRendering.render(output, matching: input)
+            XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(rendered, in: patch)),
+                              SkinRetouchTestImage.variance(SkinRetouchTestImage.values(input, in: patch)))
+        }.value
+    }
+
+    func testTranslucentNeighborhoodStaysProtectedWhileOpaqueSkinIsProcessed() async throws {
+        let input = try SkinRetouchTestImage.make { x, y in
+            let alpha: UInt8 = x < 64 ? 128 : 255
+            let value = UInt8(150 + ((x * 17 + y * 13) % 21) - 10)
+            let premultiplied = UInt8(Int(value) * Int(alpha) / 255)
+            return [premultiplied, premultiplied, premultiplied, alpha]
+        }
+        let region = try FaceRegion(boundingBox: fullBox)
+        try await Task.detached {
+            let source = CIImage(cgImage: input.cgImage)
+            let config = try SkinRetouchConfiguration(intensity: SkinRetouchIntensity(1), edgeProtectionStrength: 0)
+            let step = TexturePreservingSkinSmoothingStep(configuration: config)
+            let scale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: source.extent))
+            let support = try step.makeOpacitySupport(source: source, scale: scale)
+            XCTAssertLessThan(ProcessingTestPixels.floats(support,
+                bounds: CGRect(x: 66, y: 128, width: 1, height: 1))[3], 0.6)
+            let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region]))
+            let protected = CGRect(x: 60, y: 112, width: 8, height: 16)
+            let before = ProcessingTestPixels.floats(source, bounds: protected)
+            let after = ProcessingTestPixels.floats(output, bounds: protected)
+            for i in before.indices { XCTAssertEqual(after[i], before[i], accuracy: 0.0001) }
+            let rendered = try CoreImageRendering.render(output, matching: input)
+            let skin = CGRect(x: 76, y: 112, width: 20, height: 16)
+            XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(rendered, in: skin)),
+                              SkinRetouchTestImage.variance(SkinRetouchTestImage.values(input, in: skin)))
         }.value
     }
 
