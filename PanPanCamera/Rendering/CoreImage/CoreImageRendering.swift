@@ -6,6 +6,9 @@ import Foundation
 enum CoreImageRendering {
     enum Failure: Error { case filterUnavailable, renderFailed }
 
+    // Apple's default working space is extended linear sRGB on the supported OS.
+    // Preserve it: TonePolicy uses linear sRGB luminance, while render() retains
+    // the input CGImage's output color space. Do not disable color management.
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
     static func filter(_ name: String, parameters: [String: Any], in extent: CGRect) throws -> CIImage {

@@ -1,8 +1,8 @@
-# Skin Semantic Mask Infrastructure v1
+# Natural Skin Tone & Illumination / Natural Skin Retouch v1
 
 Experimental local Core Image implementation, reached through DebugPhotoProcessing
 and MockFaceDetector / MockFaceLandmarkDetector / MockSkinMaskProvider only. The official capture/save path and product UI do not invoke
-it. This is an explainable two-scale approximation, not a copy of a closed-source app,
+it. Texture and tone use separate explainable low-frequency approximations, not a copy of a closed-source app,
 semantic skin detection, identity verification or visually accepted beauty feature.
 
 ## Architecture retained
@@ -20,11 +20,130 @@ is introduced. Image-processing errors propagate through the unchanged pipeline;
 optional landmark detection failure falls back to the existing face/edge path.
 Expected semantic unavailability falls back per face; actual image-processing errors
 still propagate. The development baseline for this addition is main
-`97cf0899f5b16c2a3104e944951e4d2db4190b20`, inspected after fetching origin/main.
+`ffa7f23a6b0708fa96c4a1bb8556033867be80e0`, inspected after fetching origin/main.
 
 NaturalSkinProcessingStep is retained (brightness +0.008, saturation 1.005, contrast 1),
 but is absent from the default DEBUG chain. Its tests and the older rectangular DEBUG
-brightness probe remain. Texture and tone are not stacked.
+brightness probe remain. It has no default DEBUG call site; the new independent
+NaturalSkinToneAdjustmentStep replaces its role in the combined entry.
+
+## Tone Consistency ≠ Skin Whitening
+
+NaturalSkinToneAdjustmentStep only adds a bounded, neutral low-frequency luminance
+correction. It has no fixed brightness/exposure lift, RGB/HSV/Lab skin target, hue,
+saturation, warmth, pinkness, whitening, color classifier or chroma-consistency pass.
+The reference comes from the current image's allowed skin area. A uniform patch has
+zero intended correction at every complexion. Positive and negative deviations receive
+opposite corrections; there is no preference for lighter skin. Equal linear RGB deltas
+retain the original channel differences, and headroom protection prevents channel
+clipping. This is an engineering color-preservation contract, not visual acceptance.
+Chroma consistency is deferred because a luminance-only, bounded standard-filter
+implementation is more explainable before actual Apple/photo validation.
+
+The renderer retains Apple's default extended linear sRGB working space and emits
+RGBA8 in the input CGImage's color space. Tone constants are **linear-light units**,
+not sRGB bytes, exposure stops or perceptual lightness. Apple's documentation describes
+the [default working color space](https://developer.apple.com/documentation/coreimage/cicontextoption/workingcolorspace)
+and [CIColorMatrix's unpremultiplied working-space arithmetic](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CoreImageFilterReference/index.html#//apple_ref/doc/filter/ci/CIColorMatrix).
+No renderer/context configuration or texture algorithm was changed.
+
+For the smallest usable face's short side `f`, the separate TonePolicy defines:
+
+    localRadius = clamp(0.025 * f, 4, 32) pixels
+    referenceRadius = 3 * localRadius        // 12...96 pixels
+    Y = 0.2126 R + 0.7152 G + 0.0722 B
+    A = clamp((alpha - 0.9999) / (1 - 0.9999), 0, 1)
+    W = clamp(EffectiveSkinMask / intensity, 0, 1) * A
+    local = Gaussian(Y * W, localRadius) / Gaussian(W, localRadius)
+    reference = Gaussian(Y * W, referenceRadius) / Gaussian(W, referenceRadius)
+    deviation = reference - local
+    C = clamp(0.2 * deviation, -maxLuminanceCorrection, +maxLuminanceCorrection)
+
+Masked Gaussian statistics use premultiplied RGBA `(Y*W, W)`: CIMaskToAlpha and
+CISourceInCompositing encode support as alpha, CIGaussianBlur filters it, and an opaque
+CIColorMatrix obtains the unpremultiplied weighted mean. No divide kernel is needed.
+Support is derived from the **existing final mask**, with intensity removed only for
+statistics; it is not another skin detector or independently generated Tone Mask.
+Zero/insufficient support suppresses correction. Divisors for intensity/headroom have
+a 0.000001 arithmetic floor to keep subnormal configuration values finite; at such
+tiny intensity, support conservatively gates the effect out.
+
+Standard filters represent signed deviation around 0.5:
+
+    E = blend(reference, 1 - local, 0.5) = 0.5 + 0.5 * deviation
+    encodedCorrection = clamp(0.4 * E + 0.3, 0.5 - cap, 0.5 + cap)
+    candidate = 2 * blend(originalRGB, encodedCorrection, 0.5) - 0.5
+
+The 0.5 encoding value is generated with CIColorMatrix in working space, avoiding a
+color-managed gray constant. CIDifferenceBlendMode supplies only `abs(deviation)` for
+protection; it is never used as signed subtraction. Neither Gaussian image is returned
+as the photo: the original high-frequency residual is retained through `original + C`.
+Tone adds no legacy kernel, Metal, MPS, Core ML, Accelerate algorithm or third party.
+
+All protection is scalar attenuation in 0...1, using simple clamped linear ramps:
+
+| Protection | Policy in linear working-space units |
+| --- | --- |
+| Large lighting deviations | Full weight for abs(deviation) ≤ 0.015; fades to zero at 0.06. Strong directional transitions are suppressed rather than equalized. |
+| Deep shadow | min(original Y, local Y) ≤ 0.015 has zero weight; full weight at 0.06. No shadow recovery. |
+| Highlight | max(original Y, local Y) ≥ 0.9 has zero weight; full weight at/below 0.65. No HDR tone mapping. |
+| Statistical support | min(Gaussian(W, localRadius), Gaussian(W, referenceRadius)) ≤ 0.05 has zero weight; full at 0.25. |
+| Alpha | Zero at/below 0.9999; one at 1. Translucent samples do not contribute to statistics. |
+| Channel headroom `g` | clamp(min(minRGB, 1-maxRGB) / cap, 0, 1); attenuates candidate delta and final weight. Pixels outside SDR channel bounds are bypassed. |
+
+With these weights L/S/H/U/A and headroom g:
+
+    outputRGB = originalRGB + C * EffectiveSkinMask * toneConsistencyStrength
+                             * L * S * H * U * A * g * g
+
+EffectiveSkinMask already includes intensity; it is not multiplied by intensity a
+second time. Before rounding, absolute luminance/channel change is at most
+`cap * intensity * toneConsistencyStrength`. Defaults are `toneConsistencyStrength =
+0.25`, `maxLuminanceCorrection = 0.006`, with unchanged total intensity 0.25: the default
+bound is **0.000375 linear units**. The cap accepts finite 0...0.012; tone strength
+accepts finite 0...1. Strength 1 allows at most the policy's 20% deviation suppression
+and configured bound. Values are centralized in SkinRetouchConfiguration.TonePolicy.
+Defaults are engineering starting points, **尚未通过真实照片视觉验收**. Some changes
+will quantize away in RGBA8; no claim of visible efficacy is made.
+
+One scale pair and one final tone photo blend serve the union of all faces. Regions
+only determine scale and the existing composer's union; no per-face photo loop runs.
+Weighted statistics are spatially local, not a mean complexion shared by all people.
+Nearby/overlapping faces can contribute within the reference neighborhood; strong
+differences are gated, and mixed-face identity preservation remains a real-photo
+acceptance item. This implementation does not infer physical occlusion/lighting.
+
+Neighborhood input is clamped, filtered and cropped back to the exact finite source
+extent, including nonzero origins. No geometry, rotation, mirror, resize or content
+crop is added. CISourceInCompositing restores the candidate's **original pixel alpha**
+before the final blend; both blend inputs have the same alpha. Zero intensity, zero
+tone strength, zero cap and no faces bypass before CIImage/masks/providers/render.
+Invalid extent/mask and real provider/filter/render errors propagate; optional
+landmarks and per-face unavailable semantics keep the established fallback.
+
+## One composition entry, existing pipeline
+
+NaturalSkinRetouchSteps.make(configuration:components:...) returns typed processing
+steps. `.combined` is `[TexturePreservingSkinSmoothingStep, NaturalSkinToneAdjustmentStep]`;
+`.textureOnly` and `.toneOnly` return their independent component. At intensity zero
+the array is empty. Disabled tone is omitted. This is the lightweight v1 orchestrator;
+there is no second class, pipeline, executor, queue, Task, busy state or error wrapper.
+ImageProcessingPipeline continues to own admission, loading, face detection, worker,
+ordering and errors. DEBUG iterates the same factory result on its already-admitted
+worker. Formal photo/UI/save paths do not invoke it.
+
+Texture runs first to establish its unchanged texture result; Tone then measures that
+result and adds a bounded low-frequency residual without another texture pass. This
+keeps the source of each effect separable. Each component respects ProcessingImage's
+rendered CGImage boundary: Combined performs up to **two RGBA8 renders** through the
+same shared context. There is no graph fusion or cross-step cache. Each enabled step
+uses the same providers and unchanged mask-composition helpers on its own input;
+Tone reuses the existing texture type's `skinMasks` / `makeMasks` helpers only, never
+its smoothing method. Optional providers and masks may therefore be evaluated twice
+in Combined. This explicit cost avoids changing the protected texture implementation.
+Face detection itself still occurs once in the pipeline. The `.effectiveSkinMask`
+diagnostic retains its original-input semantics; Tone's detail protection in Combined
+is recomputed from the texture result. Tone-only uses the original-input mask.
 
 ## Skin semantic contract and responsibilities
 
@@ -38,6 +157,8 @@ The code chain is now:
     DetailProtectionMaskGenerator                   high-frequency protection
     EffectiveSkinMaskComposer                       where processing is allowed
     TexturePreservingSkinSmoothingStep              how texture is processed
+    NaturalSkinToneAdjustmentStep                   bounded low-frequency luminance
+    NaturalSkinRetouchSteps.make                     composition and component selection
 
 `SkinMaskProviding.skinMask(in:region:landmarks:)` synchronously receives the immutable
 ProcessingImage, one FaceRegion and that region's optional FacialLandmarks on the
@@ -246,7 +367,7 @@ and Gaussian-feathered. Clamp(blur / 0.98, 0, 1) restores an exclusion plateau w
 preserving a continuous outer ramp, then multiplies by feature strength. Every result
 is cropped to the original extent; all features/all faces max-union into one grayscale
 opaque mask. Faces smaller than one pixel in either dimension are skipped as before.
-The unchanged shared renderer performs the final photo render only once.
+The unchanged shared renderer performs one photo render per enabled component.
 
 ## Decomposition and reconstruction (unchanged)
 
@@ -285,7 +406,7 @@ Real photos must determine future tuning.
 ## Configuration and adaptive scale
 
 All retouch parameters and frequency policy remain in SkinRetouchConfiguration.swift.
-This task does not change that file or any existing frequency/intensity defaults.
+The two Tone fields and TonePolicy are added; existing frequency/intensity defaults are unchanged.
 Feature-mask-only constants live in FeatureProtectionMaskGenerator.Policy.
 
 | Parameter | Initial value | Throwing validation |
@@ -294,6 +415,8 @@ Feature-mask-only constants live in FeatureProtectionMaskGenerator.Policy.
 | detailRetention | 0.9 | Finite 0...1; 1 retains all high/mid detail |
 | noiseReductionStrength | 0.015 | Finite 0...0.03, a conservative v1 cap |
 | edgeProtectionStrength | 1.0 | Finite 0...1 |
+| toneConsistencyStrength | 0.25 | Finite 0...1 |
+| maxLuminanceCorrection | 0.006 | Finite 0...0.012 linear units |
 
 NaN/infinity/out-of-range values are rejected, never silently clamped. Use
 SkinRetouchConfiguration.naturalDefault and withIntensity. Intensity constants original,
@@ -357,7 +480,12 @@ protection layers when semantics are unavailable.
 | CIRadialGradient / CISmoothLinearGradient, DEBUG semantic fixtures | ellipse/feather and hair, beard, occlusion ramps defined above |
 | CIColorKernel reconstruction | original, small, large, low; d, 1-0.5*(1-d), delta bound 0.02, opaque threshold 0.9999 |
 | CIBlendWithMask | candidate over original using effectiveMask |
-| CIDifferenceBlendMode, DEBUG only | processed graph + original, no gain |
+| CIDifferenceBlendMode | Tone deviation magnitude for protection; DEBUG rendered result vs original, no gain |
+| CIColorMatrix / CIColorClamp, Tone | linear luminance, opaque weighted means, signed encoding, bounded correction, protection ramps |
+| CIMaskToAlpha / CISourceInCompositing, Tone | weighted local statistics and original alpha restoration |
+| CIGaussianBlur, Tone | clamped weighted luminance; local/reference radii 4...32 / 12...96 |
+| CIMinimumComponent / CIMaximumComponent / compositing, Tone | channel headroom, shadow/highlight/support protection |
+| CIBlendWithMask, Tone | scalar half-average arithmetic and one final photo blend |
 
 Photo neighborhood inputs are clamped before filtering; feature tiles use black padding.
 Every result is cropped to exact
@@ -389,6 +517,12 @@ Run sequentially from one developer task; all requests share one busy slot:
         configuration: .naturalDefault) // 0.25; no NaturalSkinProcessingStep
     let stronger = try await DebugPhotoProcessing.process(data: data,
         configuration: .naturalDefault.withIntensity(.stronger)) // 0.5
+    let texture = try await DebugPhotoProcessing.process(data: data, output: .processedTexture)
+    let tone = try await DebugPhotoProcessing.process(data: data, output: .toneAdjusted)
+    let toneDifference = try await DebugPhotoProcessing.process(data: data, output: .toneDifference)
+    let textureOnly = try await DebugPhotoProcessing.process(data: data, components: .textureOnly)
+    let toneOnly = try await DebugPhotoProcessing.process(data: data, components: .toneOnly)
+    let both = try await DebugPhotoProcessing.process(data: data, components: .combined)
     let face = try await DebugPhotoProcessing.process(data: data, output: .faceMask)
     let skin = try await DebugPhotoProcessing.process(data: data, output: .skinMask)
     let effective = try await DebugPhotoProcessing.process(data: data, output: .effectiveSkinMask)
@@ -410,10 +544,17 @@ Run sequentially from one developer task; all requests share one busy slot:
 | `.featureProtectionMask` | Eye, eyebrow, lip and nose semantic protection; white means protect. |
 | `.detailProtectionMask` | Generic high-frequency/edge protection before edge strength. |
 | `.combinedProtectionMask` | Final protection max(feature, clamp(detail * edgeStrength)). |
-| `.effectiveSkinMask` | Actual final skin-smoothing weights, including paired F/S, protection and intensity. |
-| `.processed` | One texture reconstruction and one masked blend. |
-| `.difference` | Unamplified absolute change between the processed graph and original preview. |
+| `.effectiveSkinMask` | Original-input effective weights, including paired F/S, protection and intensity. |
+| `.processed` | Selected components; defaults to Texture then Tone. |
+| `.processedTexture` | Texture only on the original preview, independent of components selection. |
+| `.toneAdjusted` | Tone only on the original preview, independent of components selection. |
+| `.toneDifference` | Unamplified rendered Tone-only result vs original. |
+| `.difference` | Unamplified rendered selected result vs original, matching delivered `.processed` pixels. |
 
+All nine previous outputs and both aliases remain; there are now twelve outputs.
+The difference modes now use rendered output rather than a pre-render graph so they
+include the actual RGBA8 boundary. Use configuration `.original`, `.naturalDefault`,
+or DEBUG-only `.strongerDebug`; these are developer presets, not product filters.
 The methods also accept CapturedPhoto. Existing processedPhoto/softFaceMask spellings
 remain aliases. Inspect returned CGImages in Xcode/local developer code; release outputs
 when finished. No UI, slider, saving, upload, logging or image history is added.
@@ -432,7 +573,7 @@ retention, lower flat noise variance, edge/one-pixel-line/dark-spot preservation
 duplicate/order/overlap/disjoint faces, alpha/transparent neighborhoods, flat colors
 across tones, four borders, nonzero extent, one-pixel face, error propagation, protection/
 feather relationships and job-local modes. Existing soft-mask/tone/EXIF tests remain;
-former default-tone expectations now require texture-only flat patches to stay stable.
+flat-patch expectations now require the combined default to stay stable.
 
 The deterministic noise fixture contains a hard edge and fine line. Gaussian baseline
 code exists only in tests, uses the same SMALL radius, mask, intensity and renderer, and
@@ -460,8 +601,18 @@ mislabeled results, the independent legacy fallback formula, exact zero/no-face 
 actual error propagation/admission recovery, alpha, shared mask output and difference.
 These Apple XCTest methods are **added, not executed** in this task.
 
-Windows checks: 39 Python tests passed (12 processing scope/Release isolation checks);
-project checks passed for 58 app and 21 XCTest sources; 79 Swift sources parsed both
+Tone/Orchestration v1 adds 29 XCTest methods: 19 Tone, seven composition, two
+configuration/scale, and one staged DEBUG output test. Existing DEBUG references now
+use the composition entry and rendered differences. Coverage includes all bypasses,
+uniform multi-color patches, signed low-frequency convergence, strict delta bound,
+strong lighting/shadow/highlight protection, masked reference isolation, alpha,
+nonzero extent, multi-face duplicates/order, one-time intensity scaling, linear chroma,
+high-frequency detail, fallback, original error propagation, stage order and modes.
+Float formula tests explicitly request RGBAf intermediates; public ProcessingImage
+tests separately cover RGBA8 output. None of these Apple tests was executed here.
+
+Windows checks: 40 Python tests passed (13 processing scope/Release isolation checks);
+project checks passed for 60 app and 23 XCTest sources; 83 Swift sources parsed both
 with and without DEBUG. Four existing pure Swift Domain files and three camera control
 helpers passed host typechecking. Release redeclaration probes passed including the
 new mock. No Apple framework typecheck occurred. Previous host Foundation attempts
@@ -492,3 +643,12 @@ References: Apple's [Core Image filter reference](https://developer.apple.com/li
 and [kernel language reference](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CIKernelLangRef/ci_gslang_ext.html)
 document APIs, not PanPan image quality. MPS guided filtering, Vision feature masks,
 semantic segmentation and temporary-blemish research remain future separate tasks.
+
+Natural Skin Processing Core Components 已完成代码层基础闭环。
+这只代表基础组件代码完成，不代表视觉质量验收完成。
+Natural Skin Tone / Illumination 的实际 Core Image 图像行为尚未在 Apple 平台验证。
+Mock Skin Mask 不代表真实 Skin Segmentation。
+真实 Vision 人脸检测 / landmarks 尚未验证。真实 Skin Segmentation 尚未实现。
+尚未完成 Apple 平台 / 真机验收。TexturePreservingSkinSmoothingStep 仍使用 deprecated
+CIColorKernel(source:)；本任务未修改、未复制、未新增、未解决，留到统一 Apple 验证阶段。
+本任务不进入统一 Apple 测试；commit/push 后确认 Actions 触发即结束，不等待或轮询 CI。

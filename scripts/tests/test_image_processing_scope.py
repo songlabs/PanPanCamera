@@ -83,6 +83,7 @@ struct DebugFaceMaskStep {}
             self.assertNotRegex(path.read_text(encoding='utf-8'),
                                 r'\b(?:NaturalSkinProcessingStep|SoftFaceMaskGenerator|FaceMaskGenerating|'
                                 r'TexturePreservingSkinSmoothingStep|DetailProtectionMaskGenerator|'
+                                r'NaturalSkinToneAdjustmentStep|NaturalSkinRetouchSteps|SkinToneScale|'
                                 r'FeatureProtectionMaskGenerator|ProtectionMaskCombiner|'
                                 r'SkinMaskProviding|SkinMaskResult|EffectiveSkinMaskComposer|'
                                 r'SkinRetouchConfiguration|SkinRetouchIntensity)\b', str(path))
@@ -92,6 +93,7 @@ struct DebugFaceMaskStep {}
         self.assertNotRegex(code, r'\b(?:FaceMaskGenerating|SoftFaceMaskGenerator|NaturalSkinProcessingStep|'
                                  r'SkinMaskProviding|SkinMaskResult|EffectiveSkinMaskComposer|MockSkinMaskProvider|'
                                  r'TexturePreservingSkinSmoothingStep|SkinRetouchConfiguration|CoreImage)\b')
+        self.assertNotRegex(code, r'\b(?:NaturalSkinToneAdjustmentStep|NaturalSkinRetouchSteps)\b')
 
     def test_retouch_reuses_one_renderer_context_without_new_queues_or_tasks(self):
         sources = list((APP / 'Rendering').rglob('*.swift'))
@@ -99,7 +101,8 @@ struct DebugFaceMaskStep {}
         self.assertEqual(contexts, [APP / 'Rendering/CoreImage/CoreImageRendering.swift'])
         for name in ('TexturePreservingSkinSmoothingStep', 'DetailProtectionMaskGenerator', 'SkinRetouchConfiguration',
                      'FeatureProtectionMaskGenerator', 'ProtectionMaskCombiner', 'SkinMaskProviding',
-                     'MockSkinMaskProvider', 'EffectiveSkinMaskComposer'):
+                     'MockSkinMaskProvider', 'EffectiveSkinMaskComposer',
+                     'NaturalSkinToneAdjustmentStep', 'NaturalSkinRetouchSteps'):
             code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
             self.assertNotRegex(code, r'\b(?:DispatchQueue|Task)\s*[({.]')
 
@@ -110,10 +113,20 @@ struct DebugFaceMaskStep {}
             self.assertNotRegex(code, r'\bCoreImageRendering\.render\s*\(')
             self.assertNotRegex(code, r'\b(?:MockFaceDetector|MockFaceLandmarkDetector)\b')
 
-    def test_debug_default_does_not_stack_tone_and_texture(self):
+    def test_debug_default_uses_composition_entry_without_legacy_tone(self):
         code = (APP / 'Rendering/DebugPhotoProcessing.swift').read_text(encoding='utf-8')
         self.assertNotRegex(code, r'\bNaturalSkinProcessingStep\s*\(')
         self.assertEqual(len(re.findall(r'ImageProcessingPipeline<JobImage>\s*\(', code)), 1)
+        self.assertIn('NaturalSkinRetouchSteps.make(', code)
+
+    def test_tone_adds_no_kernel_geometry_whitening_or_second_pipeline(self):
+        for name in ('NaturalSkinToneAdjustmentStep', 'NaturalSkinRetouchSteps'):
+            code = '\n'.join(line.split('//')[0] for line in
+                             (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8').splitlines())
+            self.assertNotRegex(code, r'\b(?:CIColorKernel|CIKernel|CIContext|ImageProcessingPipeline)\s*[(<]')
+            self.assertNotRegex(code, r'\b(?:Metal|MPS|CoreML|Accelerate)\b')
+            self.assertNotRegex(code, r'CI(?:ColorControls|ExposureAdjust|HueAdjust|TemperatureAndTint|WhitePointAdjust|AreaHistogram)')
+            self.assertNotRegex(code, r'\.transformed\s*\(|\.oriented\s*\(|\.autoAdjustmentFilters\s*\(')
 
     def test_semantic_masks_add_no_legacy_kernel_or_photo_render(self):
         for name in ('SkinMaskProviding', 'MockSkinMaskProvider', 'EffectiveSkinMaskComposer'):

@@ -20,11 +20,15 @@ final class SkinRetouchConfigurationTests: XCTestCase {
         XCTAssertEqual(configuration.detailRetention, 0.9)
         XCTAssertEqual(configuration.noiseReductionStrength, 0.015)
         XCTAssertEqual(configuration.edgeProtectionStrength, 1)
+        XCTAssertEqual(configuration.toneConsistencyStrength, 0.25)
+        XCTAssertEqual(configuration.maxLuminanceCorrection, 0.006)
         let stronger = configuration.withIntensity(.stronger)
         XCTAssertEqual(stronger.intensity.value, 0.5)
         XCTAssertEqual(stronger.detailRetention, configuration.detailRetention)
         XCTAssertEqual(stronger.noiseReductionStrength, configuration.noiseReductionStrength)
         XCTAssertEqual(stronger.edgeProtectionStrength, configuration.edgeProtectionStrength)
+        XCTAssertEqual(stronger.toneConsistencyStrength, configuration.toneConsistencyStrength)
+        XCTAssertEqual(stronger.maxLuminanceCorrection, configuration.maxLuminanceCorrection)
     }
 
     func testConfigurationRejectsInvalidOrUnsafeParameters() throws {
@@ -46,6 +50,37 @@ final class SkinRetouchConfigurationTests: XCTestCase {
             XCTAssertEqual(scale.smallRadius, small, accuracy: 0.00001)
             XCTAssertEqual(scale.largeRadius, small * 3, accuracy: 0.00001)
         }
+    }
+
+    func testToneConfigurationRejectsUnsafeValuesAndPreservesCustomSettings() throws {
+        for value in [-0.01, 1.01, Double.nan, .infinity, -.infinity] {
+            XCTAssertThrowsError(try SkinRetouchConfiguration(toneConsistencyStrength: value))
+        }
+        for value in [-0.001, 0.0121, Double.nan, .infinity, -.infinity] {
+            XCTAssertThrowsError(try SkinRetouchConfiguration(maxLuminanceCorrection: value))
+        }
+        let config = try SkinRetouchConfiguration(toneConsistencyStrength: 0.7, maxLuminanceCorrection: 0.003)
+        XCTAssertEqual(config.withIntensity(.original).toneConsistencyStrength, 0.7)
+        XCTAssertEqual(config.withIntensity(.stronger).maxLuminanceCorrection, 0.003)
+        XCTAssertEqual(SkinRetouchConfiguration.original.intensity, .original)
+        _ = try SkinRetouchConfiguration(toneConsistencyStrength: 0, maxLuminanceCorrection: 0)
+        _ = try SkinRetouchConfiguration(toneConsistencyStrength: 1, maxLuminanceCorrection: 0.012)
+    }
+
+    func testToneScaleUsesLowFrequencyRadiiAndSmallestUsableFace() throws {
+        let face = try FaceRegion(boundingBox: CGRect(x: 0, y: 0, width: 1, height: 1))
+        for (side, radius) in [(1.0, 4.0), (256.0, 6.4), (800.0, 20.0), (2000.0, 32.0)] {
+            let scale = try XCTUnwrap(SkinToneScale(regions: [face],
+                in: CGRect(x: 13, y: -7, width: side, height: side)))
+            XCTAssertEqual(scale.localRadius, radius, accuracy: 0.00001)
+            XCTAssertEqual(scale.referenceRadius, radius * 3, accuracy: 0.00001)
+        }
+        let extent = CGRect(x: 13, y: -7, width: 1000, height: 1000)
+        let small = try FaceRegion(boundingBox: CGRect(x: 0, y: 0, width: 0.2, height: 0.3))
+        XCTAssertEqual(SkinToneScale(regions: [small, face, small], in: extent),
+                       SkinToneScale(regions: [small], in: extent))
+        XCTAssertNil(SkinToneScale(regions: [], in: extent))
+        XCTAssertNil(SkinToneScale(regions: [face], in: .zero))
     }
 
     func testMixedFaceScaleUsesSmallestUsableFaceIndependentlyOfOrderOrDuplicates() throws {

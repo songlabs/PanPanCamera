@@ -165,7 +165,7 @@ xcodebuild -project PanPanCamera.xcodeproj -scheme PanPanCamera \
   -resultBundlePath .verification/PanPanCameraTests.xcresult CODE_SIGNING_ALLOWED=NO test
 ```
 
-现有 XCTest 覆盖参数、相机控制、人脸坐标和独立照片处理。本次新增 25 个方法，包含普通皮肤／头发／遮挡／胡须／unavailable Mock、柔边、四边缘、非零 extent、透明权重、多人脸与重叠、逐脸降级、公式、严格 intensity 0、处理错误和 DEBUG 中间结果一致性；已新增，尚未执行。79 个 Swift 文件在 DEBUG 开启／关闭时均通过语法解析；这不是 Apple 编译证明。先前 Windows Foundation／host XCTest 路径已确认缺少 `errno.h`、`msvcrt.lib`、`oldnames.lib`、`msvcprt.lib`，本任务未重试或修复该环境。Apple 边界与预留步骤见 [DeviceValidation.md](docs/DeviceValidation.md) 及 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。
+现有 XCTest 覆盖参数、相机控制、人脸坐标和独立照片处理。本次 Tone／Orchestration 新增 29 个测试方法（19 Tone、7 组合、2 配置／尺度、1 DEBUG 分阶段），当前共 23 个测试源文件、186 个方法，均为静态计数；本次新增 Apple 测试尚未执行。40 个 Python 测试（含 13 个处理范围／Release 隔离检查）、project checks、83 个 Swift 文件 DEBUG 开启／关闭语法解析及现有 4 个 Domain／3 个 camera control helper host typecheck 已通过；这不是 Apple 编译证明。先前 Windows Foundation／host XCTest 已确认缺少 `errno.h`、`msvcrt.lib`、`oldnames.lib`、`msvcprt.lib`，本任务未重试或修复该环境。Apple 边界见 [DeviceValidation.md](docs/DeviceValidation.md) 及 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。
 
 本阶段按「组件实现 → 当前环境静态检查 → commit → push → 确认 Actions 已触发 → 结束」交付。不会等待／轮询本次 CI 结果，也不会自动启动统一 Apple 测试；`queued` 或 `in_progress` 不代表 CI passed。以下 Mac 与 Actions 验证说明保留给后续统一阶段使用。
 
@@ -257,15 +257,40 @@ inventory 输出尺寸、大小、SHA256 和两种验证结果。下载后仍需
 
 1. 在现有 Vision 检测和 landmarks 基础上实现 Stable Face Tracking。
 2. 在现有 AVCaptureVideoDataOutput 检测路径基础上设计后续效果处理输入。
-3. BeautyEngine、Skin Processing、Face Warp，及真正的磨皮／美白／瘦脸算法。
+3. 正式照片／实时 BeautyEngine 接入、Face Warp；独立 Natural Skin 基础组件仍处于开发验证阶段。
 4. Metal Rendering、Core ML、真实 Filter Rendering、真实 Makeup Rendering。
 5. Video Recording、Video Beauty、Photo Editor。
 6. System Photos Save、照片导入、持久化照片存储。
 7. 比例裁切、Timer、人像模式与发行用 App Icon；发行凭据仍需单独配置。
 
-当前已有 Vision Face Detection、Face Landmarks 和限频视频帧检测代码，但真实检测尚未验证。Rendering 的独立 DEBUG 照片入口已完成 **Skin Semantic Mask Infrastructure v1 及 Natural Skin Processing 基础 Mask 链路代码实现**，并完成当前环境可执行静态验证。新增 `SkinMaskProviding`、绑定 FaceRegion 的 `SkinMaskResult`、DEBUG-only `MockSkinMaskProvider` 和 `EffectiveSkinMaskComposer`。Mock 支持 normal skin、hair exclusion、glasses／自定义矩形遮挡、beard reduced weight（默认 0.25）及 unavailable；均来自几何配置，没有读取肤色或真实五官。单脸最终权重为 `F × S × (1 - max(P, clamp(D × e))) × intensity`，多人脸先做 `max(Fj × Sj)` 再应用保护和强度。每脸独立缺失时 `Sj = 1`；没有 tracking ID 或 array-index 关联。所有 Mask 与原图有限 extent 一致，支持非零原点，沿用左下原点坐标，不额外 mirror；语义输入 alpha 乘入权重。原 frequency algorithm、默认 intensity 0.25、detailRetention 0.9 和其余平滑参数保持不变。
+当前已有 Vision Face Detection、Face Landmarks 和限频视频帧检测代码，但真实检测尚未验证。以 `main` 的 `ffa7f23a6b0708fa96c4a1bb8556033867be80e0` 为基准，独立 Rendering 入口已完成 **Natural Skin Tone & Illumination v1** 与 **NaturalSkinRetouchSteps v1**，形成：
 
-**Mock Skin Mask 不代表真实皮肤语义识别已经完成。Apple Core Image / XCTest 实际运行验证暂缓，将在基础组件完成后统一执行。真实 Vision 人脸检测 / landmarks 尚未验证。真实 Skin Segmentation 尚未实现。尚未完成 Apple 平台 / 真机验收。** 现有 `CIColorKernel(source:)` deprecated 风险继续记录，本次未修改、未新增第二处 legacy kernel。DEBUG 九种输出语义、公式、Mock 参数与测试边界见 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。没有修改正式照片、相机、产品 UI、网络或上传路径；没有引入真实 ML、Metal、MPS、第三方 SDK 或新美颜能力。
+```text
+Face / Landmark / Skin Data
+→ EffectiveSkinMask（Mask + Feature / Detail Protection）
+→ TexturePreservingSkinSmoothingStep（Texture）
+→ NaturalSkinToneAdjustmentStep（Tone）
+→ Natural Skin Retouch Output
+```
+
+**Tone Consistency ≠ Skin Whitening。** Tone v1 只调整很轻微的低频亮度不均，参考来自当前图像 Effective Skin Area 的加权局部统计，没有固定 brightness／exposure 提升、目标肤色、去黄、粉色或 hue 调整；本次没有实现 chroma consistency。局部尺度为 `clamp(0.025 × 最小可用脸短边, 4, 32)` 像素，参考尺度为其 3 倍。修正为 `clamp(0.2 × (reference - local), ±maxLuminanceCorrection)`，再应用现有 Effective Skin Mask、Tone 强度及光影／高光／深阴影／透明度／统计支持／通道余量保护。新配置默认 `toneConsistencyStrength = 0.25`、`maxLuminanceCorrection = 0.006`（上限 0.012）；总 intensity 仍为 0.25，默认最终修正界为 0.000375 线性工作空间单位，RGBA8 下可能量化为零。**这些是工程初值，尚未通过真实照片视觉验收。**
+
+`NaturalSkinRetouchSteps.make(...)` 是唯一组合入口，默认 Texture → Tone；现有 `ImageProcessingPipeline` 继续管理加载、人脸检测、worker、顺序、busy 和错误。组合层只返回 Step 数组，没有第二个 Pipeline／Task／线程队列。两个组件各保持现有 CGImage 渲染边界，Combined 最多渲染两次、使用同一个 CIContext；providers 与既有 Mask helpers 在各自输入上可能执行两次。本任务没有修改 Texture 算法或任何 Mask 算法。旧 `NaturalSkinProcessingStep` 的固定 brightness +0.008／saturation 1.005 实验代码及测试保留，不用于默认 DEBUG 链路。
+
+Mock Skin Mask 仍支持 normal skin、hair exclusion、glasses／矩形遮挡、beard reduced weight 和 unavailable。原有 `max(Fj × Sj) × (1 - protection) × intensity` 逐脸组合／统一处理与 unavailable 的 `Sj = 1` 降级保持。Tone 不重复逐脸处理照片。alpha、extent、orientation 和颜色空间契约保持；intensity 0／无脸严格原图透传，Tone 强度或修正上限为零也提前返回。
+
+DEBUG 保留九种既有输出及别名，新增 `.processedTexture`、`.toneAdjusted`、`.toneDifference`，共十二种；`.processed` 默认 Combined，`.difference` 比较实际渲染结果与原图。`components: .textureOnly / .toneOnly / .combined` 可独立排查；预设仅 `.original / .naturalDefault / .strongerDebug`，不增加正式 UI。完整公式、每项保护阈值、DEBUG 示例和阶段渲染边界见 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。
+
+**Natural Skin Processing Core Components 已完成代码层基础闭环。这只代表基础组件代码完成，不代表视觉质量验收完成。**
+
+- Natural Skin Tone / Illumination 的实际 Core Image 图像行为尚未在 Apple 平台验证。
+- Mock Skin Mask 不代表真实 Skin Segmentation。
+- 真实 Vision 人脸检测 / landmarks 尚未验证。
+- 真实 Skin Segmentation 尚未实现。
+- 尚未完成 Apple 平台 / 真机验收。
+- TexturePreservingSkinSmoothingStep 仍使用 deprecated `CIColorKernel(source:)`；本任务未修改、未复制、未新增第二处、未解决。
+
+本任务只完成组件与当前环境静态验证；commit → push → 确认 GitHub Actions 已触发后立即结束，不等待、不轮询 CI，不自动进入统一 Apple 测试。正式相机、照片捕获／保存、产品 UI、网络、依赖保持不变；没有新增 ML、Metal、MPS、几何或局部缺陷删除功能。
 
 ## Real Device Validation Pending
 

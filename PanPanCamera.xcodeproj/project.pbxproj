@@ -5,6 +5,46 @@
 	};
 	"objectVersion" = 56;
 	"objects" = {
+		"A20000000000000000000001" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "NaturalSkinToneAdjustmentStep.swift";
+			"sourceTree" = "<group>";
+		};
+		"A30000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A20000000000000000000001";
+		};
+		"A20000000000000000000002" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "NaturalSkinRetouchSteps.swift";
+			"sourceTree" = "<group>";
+		};
+		"A30000000000000000000002" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A20000000000000000000002";
+		};
+		"A20000000000000000000003" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "NaturalSkinToneAdjustmentTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"A30000000000000000000003" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A20000000000000000000003";
+		};
+		"A20000000000000000000004" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "NaturalSkinRetouchStepsTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"A30000000000000000000004" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A20000000000000000000004";
+		};
 		"F00000000000000000000001" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -996,6 +1036,8 @@
 		"62315AE240EA33C7515C50B6" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"A20000000000000000000001",
+				"A20000000000000000000002",
 				"F00000000000000000000001",
 				"F00000000000000000000002",
 				"F00000000000000000000003",
@@ -1136,6 +1178,8 @@
 		"A9F99B2CD4B4341BBBB50D75" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"A20000000000000000000003",
+				"A20000000000000000000004",
 				"F00000000000000000000004",
 				"F00000000000000000000005",
 				"F00000000000000000000006",
@@ -1219,6 +1263,8 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"A30000000000000000000001",
+				"A30000000000000000000002",
 				"F10000000000000000000001",
 				"F10000000000000000000002",
 				"F10000000000000000000003",
@@ -1301,6 +1347,8 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"A30000000000000000000003",
+				"A30000000000000000000004",
 				"F10000000000000000000004",
 				"F10000000000000000000005",
 				"F10000000000000000000006",

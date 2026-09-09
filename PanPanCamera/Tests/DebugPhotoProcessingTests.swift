@@ -107,7 +107,7 @@ final class DebugPhotoProcessingTests: XCTestCase {
         XCTAssertEqual(output.image.cgImage.height, 10)
         XCTAssertEqual(photo.data, data, "Development processing never replaces the original photo")
         XCTAssertLessThanOrEqual(abs(Int(pixel(output.image, x: 10, y: 5)[0]) - 100), 1,
-                                 "Texture-only default must not add the old tone lift to a flat patch")
+                                 "Combined default must not add the old tone lift to a flat patch")
     }
 
     func testDebugLoaderAppliesAllExifRotationsAndMirrorsBeforeDetection() async throws {
@@ -237,14 +237,14 @@ final class DebugPhotoProcessingTests: XCTestCase {
             let difference = try await DebugPhotoProcessing.process(data: data, output: .difference, skinMaskProvider: provider)
             let expectedDifference = try await Task.detached {
                 let source = CIImage(cgImage: original.image.cgImage)
-                let landmarks = try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: original.image, regions: original.detection.regions)
-                let step = TexturePreservingSkinSmoothingStep(skinMaskProvider: provider)
-                let semantics = try step.skinMasks(in: original.image, regions: original.detection.regions, landmarks: landmarks)
-                let adjusted = try XCTUnwrap(step.makeOutput(source: source, regions: original.detection.regions, landmarks: landmarks, skinMasks: semantics))
-                let expectedProcessed = try CoreImageRendering.render(adjusted, matching: original.image)
+                var expectedProcessed = original.image
+                for step in NaturalSkinRetouchSteps.make(
+                    landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>(), skinMaskProvider: provider) {
+                    expectedProcessed = try step.process(expectedProcessed, regions: original.detection.regions)
+                }
                 XCTAssertEqual(ProcessingTestPixels.rgba(processed.image), ProcessingTestPixels.rgba(expectedProcessed))
                 return try CoreImageRendering.render(CoreImageRendering.filter("CIDifferenceBlendMode", parameters: [
-                    kCIInputImageKey: adjusted, kCIInputBackgroundImageKey: source
+                    kCIInputImageKey: CIImage(cgImage: expectedProcessed.cgImage), kCIInputBackgroundImageKey: source
                 ], in: source.extent), matching: original.image)
             }.value
             XCTAssertEqual(ProcessingTestPixels.rgba(difference.image), ProcessingTestPixels.rgba(expectedDifference))
@@ -269,8 +269,8 @@ final class DebugPhotoProcessingTests: XCTestCase {
             let configuration = SkinRetouchConfiguration.naturalDefault.withIntensity(intensity)
             let result = try await DebugPhotoProcessing.process(data: data, configuration: configuration)
             let reference = ImageProcessingPipeline<ProcessingImage>(detector: MockFaceDetector(),
-                steps: [TexturePreservingSkinSmoothingStep(configuration: configuration,
-                    landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>(), skinMaskProvider: MockSkinMaskProvider())])
+                steps: NaturalSkinRetouchSteps.make(configuration: configuration,
+                    landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>(), skinMaskProvider: MockSkinMaskProvider()))
             let expected = try await reference.process(original.image)
             XCTAssertEqual(ProcessingTestPixels.rgba(result.image), ProcessingTestPixels.rgba(expected.image))
             if intensity == .original {
@@ -289,6 +289,27 @@ final class DebugPhotoProcessingTests: XCTestCase {
         let defaultAgain = try await DebugPhotoProcessing.process(data: data)
         let explicitNatural = try await DebugPhotoProcessing.process(data: data, configuration: .naturalDefault)
         XCTAssertEqual(ProcessingTestPixels.rgba(defaultAgain.image), ProcessingTestPixels.rgba(explicitNatural.image))
+    }
+
+    func testStagedOutputsMatchComponentSelectionAndToneDifferenceUsesDeliveredPixels() async throws {
+        let data = try encoded(SkinRetouchTestImage.texture())
+        let original = try await DebugPhotoProcessing.process(data: data, output: .original)
+        for (mode, components): (DebugPhotoProcessing.Output, NaturalSkinRetouchSteps.Components) in [
+            (.processedTexture, .textureOnly), (.toneAdjusted, .toneOnly), (.processed, .combined)
+        ] {
+            let stage = try await DebugPhotoProcessing.process(data: data, output: mode)
+            let selected = try await DebugPhotoProcessing.process(data: data, components: components)
+            XCTAssertEqual(ProcessingTestPixels.rgba(stage.image), ProcessingTestPixels.rgba(selected.image))
+        }
+        let tone = try await DebugPhotoProcessing.process(data: data, output: .toneAdjusted)
+        let difference = try await DebugPhotoProcessing.process(data: data, output: .toneDifference)
+        let expected = try await Task.detached {
+            let source = CIImage(cgImage: original.image.cgImage)
+            return try CoreImageRendering.render(CoreImageRendering.filter("CIDifferenceBlendMode", parameters: [
+                kCIInputImageKey: CIImage(cgImage: tone.image.cgImage), kCIInputBackgroundImageKey: source
+            ], in: source.extent), matching: original.image)
+        }.value
+        XCTAssertEqual(ProcessingTestPixels.rgba(difference.image), ProcessingTestPixels.rgba(expected))
     }
 }
 #endif

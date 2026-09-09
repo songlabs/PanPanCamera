@@ -12,6 +12,7 @@ enum DebugPhotoProcessing {
     enum Output: Sendable {
         case original, faceMask, skinMask, featureProtectionMask, detailProtectionMask
         case combinedProtectionMask, effectiveSkinMask, processed, difference
+        case processedTexture, toneAdjusted, toneDifference
         // Preserve existing developer call sites while using descriptive new modes.
         static let processedPhoto = Self.processed
         static let softFaceMask = Self.faceMask
@@ -23,6 +24,7 @@ enum DebugPhotoProcessing {
         let image: ProcessingImage
         let output: Output
         let configuration: SkinRetouchConfiguration
+        let components: NaturalSkinRetouchSteps.Components
         let skinMaskProvider: MockSkinMaskProvider
     }
 
@@ -40,8 +42,10 @@ enum DebugPhotoProcessing {
             switch input.output {
             case .original:
                 result = input.image
-            case .processed:
-                result = try step.process(input.image, regions: regions)
+            case .processed, .processedTexture, .toneAdjusted:
+                let components = input.output == .processedTexture ? .textureOnly :
+                    input.output == .toneAdjusted ? .toneOnly : input.components
+                result = try retouch(input, regions: regions, components: components)
             case .faceMask:
                 result = try DebugFaceMaskStep().process(input.image, regions: regions)
             case .skinMask, .featureProtectionMask, .detailProtectionMask, .combinedProtectionMask, .effectiveSkinMask:
@@ -59,21 +63,30 @@ enum DebugPhotoProcessing {
                 default: mask = masks?.effectiveSkinMask ?? black
                 }
                 result = try CoreImageRendering.render(mask, matching: input.image)
-            case .difference:
+            case .difference, .toneDifference:
                 let source = CIImage(cgImage: input.image.cgImage)
-                let landmarks = input.configuration.intensity.value == 0 ? [] :
-                    try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: input.image, regions: regions)
-                let semantics = input.configuration.intensity.value == 0 ? [] :
-                    try step.skinMasks(in: input.image, regions: regions, landmarks: landmarks)
-                let processed = try step.makeOutput(source: source, regions: regions, landmarks: landmarks, skinMasks: semantics) ?? source
+                let processed = try retouch(input, regions: regions,
+                    components: input.output == .toneDifference ? .toneOnly : input.components)
                 // Unamplified absolute difference for inspection only. Its alpha is
                 // diagnostic; alpha-preservation acceptance uses .processed pixels.
                 let difference = try CoreImageRendering.filter("CIDifferenceBlendMode", parameters: [
-                    kCIInputImageKey: processed, kCIInputBackgroundImageKey: source
+                    kCIInputImageKey: CIImage(cgImage: processed.cgImage), kCIInputBackgroundImageKey: source
                 ], in: source.extent)
                 result = try CoreImageRendering.render(difference, matching: input.image)
             }
-            return JobImage(image: result, output: input.output, configuration: input.configuration, skinMaskProvider: input.skinMaskProvider)
+            return JobImage(image: result, output: input.output, configuration: input.configuration,
+                components: input.components, skinMaskProvider: input.skinMaskProvider)
+        }
+
+        private func retouch(_ input: JobImage, regions: [FaceRegion],
+                             components: NaturalSkinRetouchSteps.Components) throws -> ProcessingImage {
+            // Already on the existing pipeline worker. No nested pipeline/job.
+            var image = input.image
+            for step in NaturalSkinRetouchSteps.make(configuration: input.configuration, components: components,
+                landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>(), skinMaskProvider: input.skinMaskProvider) {
+                image = try step.process(image, regions: regions)
+            }
+            return image
         }
     }
 
@@ -83,12 +96,15 @@ enum DebugPhotoProcessing {
 
     static func process(_ photo: CapturedPhoto, output: Output = .processed,
                         configuration: SkinRetouchConfiguration = .naturalDefault,
+                        components: NaturalSkinRetouchSteps.Components = .combined,
                         skinMaskProvider: MockSkinMaskProvider = MockSkinMaskProvider()) async throws -> ImageProcessingOutput<ProcessingImage> {
-        try await process(data: photo.data, output: output, configuration: configuration, skinMaskProvider: skinMaskProvider)
+        try await process(data: photo.data, output: output, configuration: configuration,
+            components: components, skinMaskProvider: skinMaskProvider)
     }
 
     static func process(data: Data, output: Output = .processed,
                         configuration: SkinRetouchConfiguration = .naturalDefault,
+                        components: NaturalSkinRetouchSteps.Components = .combined,
                         skinMaskProvider: MockSkinMaskProvider = MockSkinMaskProvider()) async throws -> ImageProcessingOutput<ProcessingImage> {
         let result = try await pipeline.process(load: {
             guard let source = CGImageSourceCreateWithData(data as CFData, nil) else {
@@ -102,7 +118,8 @@ enum DebugPhotoProcessing {
                 kCGImageSourceThumbnailMaxPixelSize: 2048,
                 kCGImageSourceShouldCacheImmediately: true
             ] as CFDictionary) else { throw Failure.decodeFailed }
-            return JobImage(image: ProcessingImage(cgImage: image), output: output, configuration: configuration, skinMaskProvider: skinMaskProvider)
+            return JobImage(image: ProcessingImage(cgImage: image), output: output, configuration: configuration,
+                components: components, skinMaskProvider: skinMaskProvider)
         })
         return ImageProcessingOutput(image: result.image.image, detection: result.detection)
     }

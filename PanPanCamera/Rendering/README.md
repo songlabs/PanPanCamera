@@ -7,11 +7,12 @@ That route is not evidence of successful real-face detection or device acceptanc
 
 ## Current DEBUG route
 
-    DebugPhotoProcessing.process(CapturedPhoto or Data, output, configuration, skinMaskProvider)
+    DebugPhotoProcessing.process(CapturedPhoto or Data, output, configuration, components, skinMaskProvider)
       -> one static ImageProcessingPipeline<JobImage>
          -> admitted background ImageIO orientation/downsample (maximum 2048)
          -> MockFaceDetector<ProcessingImage>
          -> FaceDetectionResult.regions -> FaceRegion
+         -> NaturalSkinRetouchSteps.make (default: Texture then Tone)
          -> TexturePreservingSkinSmoothingStep
             -> MockFaceLandmarkDetector -> FacialLandmarks (bound FaceRegion + local points)
             -> MockSkinMaskProvider -> region-bound SkinMaskResult (or unavailable)
@@ -24,13 +25,21 @@ That route is not evidence of successful real-face detection or device acceptanc
             -> signed original-detail reconstruction
             -> intensity * paired skin coverage * (1 - combined protection)
             -> one masked blend -> shared CoreImageRendering
+         -> NaturalSkinToneAdjustmentStep
+            -> unchanged provider/mask helpers on texture result
+            -> effective-mask-weighted local/reference luminance
+            -> bounded neutral correction + lighting/shadow/highlight protection
+            -> one tone photo blend -> same shared CoreImageRendering
       -> ImageProcessingOutput (rendered ProcessingImage + detection result)
 
 Alternate DEBUG outputs are original, faceMask, skinMask, featureProtectionMask,
 detailProtectionMask, combinedProtectionMask, effectiveSkinMask and difference.
-See the Core Image README for the exact nine output semantics and fallback visualization.
-Processed defaults to texture alone; NaturalSkinProcessingStep remains available for
-its existing tone tests and is not stacked. Original and processed-at-zero permit
+New outputs are processedTexture (Texture only), toneAdjusted (Tone only) and
+toneDifference (Tone-only rendered difference). All nine older outputs and both
+aliases remain. See the Core Image README for all twelve modes and fallback visualization.
+Processed defaults to Texture then Tone; components accepts textureOnly, toneOnly
+or combined. NaturalSkinProcessingStep remains for existing legacy tests with no
+default call site. Original and processed-at-zero permit
 A/B with intensity 0, 0.25 and 0.5 without a slider or code changes to parameter defaults.
 Previous processedPhoto/softFaceMask spellings remain aliases.
 
@@ -44,7 +53,7 @@ fully rendered CGImage; no lazy CIImage graph escapes the processing call.
 
 FaceDetecting<Image> and ImageProcessingStep<Image> keep their existing synchronous
 throwing interfaces. The pipeline has no concrete Mock, Vision, mask or renderer
-dependency. The texture step optionally accepts FaceLandmarkDetecting<ProcessingImage>;
+dependency. Both retouch steps optionally accept FaceLandmarkDetecting<ProcessingImage>;
 DEBUG injects MockFaceLandmarkDetector and MockSkinMaskProvider through the optional
 SkinMaskProviding interface. The backend never names a concrete mock. SkinMaskResult
 binds each finite, full-extent, opaque 0...1 scalar graph to its immutable FaceRegion;
@@ -64,14 +73,18 @@ and after successful work; synchronous work finishes before releasing its slot, 
 operation failure retains priority over racing cancellation.
 
 All DEBUG output modes and configurations use that same static pipeline/admission slot.
-Each immutable JobImage carries its output, validated settings and mock skin provider. A/B calls should be
+Each immutable JobImage carries its output, selected components, validated settings and mock skin provider. A/B calls should be
 sequential. There is no global mode switch, per-output queue or cached photo history.
 CoreImageRendering still has one shared lazy CIContext with intermediate caching off.
-All filters/graphs stay in the current call; caller-owned returned images should be
+Combined performs up to two RGBA8 renders, one per component; providers and mask
+helpers may run twice on the respective component inputs. No graph fusion or
+cross-step cache changes the protected texture implementation. All filters/graphs stay in the current call; caller-owned returned images should be
 released when inspection finishes.
 
-The processing step returns the exact input CGImage for intensity zero or no faces,
-before invoking landmark or skin providers or constructing a CIImage, mask, filter or render. Subpixel/nil coverage also returns
+The composition factory returns no steps at intensity zero; both processing steps
+return the exact input CGImage for intensity zero or no faces,
+before invoking landmark or skin providers or constructing a CIImage, mask, filter or render.
+Tone also bypasses for toneConsistencyStrength zero or maxLuminanceCorrection zero. Subpixel/nil coverage also returns
 the input. Explicit diagnostic requests intentionally render visualization pixels;
 original mode returns the common decoded preview directly. Mask alpha is opaque.
 Processed-photo alpha is retained, with conservative bypass of transparent/translucent
@@ -87,24 +100,51 @@ was added.
 See [CoreImage/README.md](CoreImage/README.md) for the complete formulas, fixed policy,
 filter/kernel parameters, adaptive scale tradeoff, DEBUG examples and pixel tests.
 
+## Responsibilities and tone policy
+
+Mask determines allowed coverage; Protection excludes features and detail; Texture
+retains the existing frequency reconstruction; Tone adds only a low-frequency neutral
+luminance residual; Orchestration selects and orders these components.
+**Tone Consistency ≠ Skin Whitening.** There is no fixed lift or target complexion,
+no chroma adjustment, no global equalization or camera exposure/white-balance override.
+
+The reference is normalized effective-mask-weighted luminance from this image, using
+local radius clamp(0.025 * smallest face short side, 4, 32) and reference radius 3x.
+Signed correction is clamp(0.2 * (reference - local), +/-maxLuminanceCorrection),
+attenuated for strong lighting, high highlights, deep shadows, low statistical
+support, translucency and insufficient channel headroom. Default new settings are
+toneConsistencyStrength 0.25 and maxLuminanceCorrection 0.006 in the unchanged extended
+linear sRGB working space. Existing intensity remains 0.25; the default pre-rounding
+bound is 0.000375. Configuration rejects nonfinite/out-of-range values and caps the
+luminance setting at 0.012. There is no maxChromaCorrection because chroma consistency
+is deferred. Engineering defaults have not passed real-photo visual acceptance.
+
+NaturalSkinRetouchSteps.make returns a step array; ImageProcessingPipeline remains
+the sole worker/admission/loading/detection/error owner. Texture precedes Tone so the
+new low-frequency residual is evaluated on the existing texture result, leaving the
+texture implementation unchanged. The old fixed CIColorControls step is retained
+only for compatibility/testing. No additional legacy kernel is introduced.
+
 ## Verification boundaries
 
 - python scripts/check_project.py: project membership, dependency scope and localization.
-- python -m unittest discover -s scripts/tests -v: 39 passing script/static tests,
-  including 12 processing scope/Release-isolation checks and the new mock exclusion probe.
-- scripts/check_swift_syntax.ps1: 79 Swift sources parse; four existing pure Swift Domain
+- python -m unittest discover -s scripts/tests -v: 40 passing script/static tests,
+  including 13 processing scope/Release-isolation checks and the new mock exclusion probe.
+- scripts/check_swift_syntax.ps1: 83 Swift sources parse; four existing pure Swift Domain
   files and three camera control helpers typecheck on the installed host toolchain.
   An additional parser invocation with DEBUG also passed. This is not Apple typecheck.
 - Previous host Foundation XCTest/typecheck attempts lacked msvcrt.lib, oldnames.lib,
   msvcprt.lib and errno.h. This task does not retry or repair those known paths.
-- Existing Xcode Debug test target now has 21 source files, with 157 test methods by
-  static count. This addition prepares 25 XCTest methods across semantic mask,
-  effective composer, processing integration and DEBUG output checks; not executed here.
+- Existing Xcode Debug test target now has 23 source files, with 186 test methods by
+  static count. This addition prepares 29 XCTest methods: 19 Tone, seven composition,
+  two configuration/scale and one staged DEBUG output case; not executed here. Float
+  formula tests explicitly request RGBAf intermediates, separate from public RGBA8 tests.
 - git diff --check passed. All modifications stay in Rendering, Tests, project
   membership, README and Python processing scope checks.
 
-Skin Semantic Mask Infrastructure v1 及 Natural Skin Processing 基础 Mask 链路已经完成代码实现，
-并完成当前环境可执行静态验证。
+Natural Skin Processing Core Components 已完成代码层基础闭环。
+这只代表基础组件代码完成，不代表视觉质量验收完成。
+Natural Skin Tone / Illumination 的实际 Core Image 图像行为尚未在 Apple 平台验证。
 Mock Skin Mask 不代表真实皮肤语义识别已经完成。
 Apple Core Image / XCTest 实际运行验证暂缓，将在基础组件完成后统一执行。
 真实 Vision 人脸检测 / landmarks 尚未验证。
