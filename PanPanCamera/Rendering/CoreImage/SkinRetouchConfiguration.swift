@@ -105,7 +105,10 @@ struct SkinRetouchConfiguration: Equatable, Sendable {
         static let largeScaleMultiplier = 3.0
         static let midFrequencyAttenuation = 0.5
         static let edgeIntensity = 1.0
-        static let edgeGain = 4.0
+        // CIEdges peaks below one for narrow synthetic lines and small spots.
+        // Saturate those confirmed detail boundaries while leaving low-level
+        // skin texture near zero for the later user-strength multiplication.
+        static let edgeGain = 8.0
         static let maximumChannelChange = 0.02
         static let opaqueThreshold = 0.9999
     }

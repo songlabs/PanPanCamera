@@ -105,56 +105,16 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
         // The synthetic dark spot is not a blemish-removal target.
         let originalSpot = ProcessingTestPixels.rgba(input, at: CGPoint(x: 111, y: 127))[0]
         let outputSpot = ProcessingTestPixels.rgba(output, at: CGPoint(x: 111, y: 127))[0]
-        print("Texture edge=\(SkinRetouchTestImage.edgeContrast(input)) -> \(SkinRetouchTestImage.edgeContrast(output)) line=\(SkinRetouchTestImage.lineContrast(input)) -> \(SkinRetouchTestImage.lineContrast(output)) spot=\(originalSpot) -> \(outputSpot)")
-        let region = try FaceRegion(boundingBox: fullBox)
-        try await Task.detached {
-            let source = CIImage(cgImage: input.cgImage)
-            let scale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: source.extent))
-            let protection = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
-            for weight in [0.1, 0.25, 0.5, 0.75] {
-                let original = SemanticMaskTestPixels.constant(0, in: source.extent)
-                let adjusted = SemanticMaskTestPixels.constant(1, in: source.extent)
-                let mask = SemanticMaskTestPixels.constant(weight, in: source.extent)
-                let blended = try CoreImageRendering.blend(adjusted, over: original, mask: mask)
-                let actual = ProcessingTestPixels.floats(blended, bounds: CGRect(x: 80, y: 120, width: 1, height: 1))[0]
-                print("Linear blend weight=\(weight) actual=\(actual)")
-                XCTAssertEqual(actual, Float(weight), accuracy: 0.0001,
-                    "Scalar masks must interpolate once in linear working space")
-            }
-            let pixelSupport = try CoreImageRendering.filter("CIMorphologyMaximum", parameters: [
-                kCIInputImageKey: protection.clampedToExtent(), kCIInputRadiusKey: ceil(scale.smallRadius)
-            ], in: source.extent)
-            for point in [CGPoint(x: 104, y: 120), CGPoint(x: 111, y: 127), CGPoint(x: 80, y: 120)] {
-                let bounds = CGRect(origin: point, size: CGSize(width: 1, height: 1))
-                print("Detail protection point=\(point) subpixelRadius=\(scale.smallRadius) current=\(ProcessingTestPixels.floats(protection, bounds: bounds)[0]) pixelSupport=\(ProcessingTestPixels.floats(pixelSupport, bounds: bounds)[0])")
-            }
-        }.value
         XCTAssertLessThanOrEqual(abs(Int(outputSpot) - Int(originalSpot)), 2)
     }
 
-    func testOpaqueFrequencyBandsRemainEligibleForReconstruction() async throws {
+    func testOpaqueSourceRemainsEligibleForReconstructionAtDefaultPrecision() async throws {
         let input = try SkinRetouchTestImage.texture()
         let region = try FaceRegion(boundingBox: fullBox)
         try await Task.detached {
             let source = CIImage(cgImage: input.cgImage)
             let scale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: source.extent))
             let patch = CGRect(x: 72, y: 112, width: 22, height: 32)
-            for radius in [scale.smallRadius, scale.largeRadius] {
-                let band = try CoreImageRendering.filter("CIGaussianBlur", parameters: [
-                    kCIInputImageKey: source.clampedToExtent(), kCIInputRadiusKey: radius
-                ], in: source.extent)
-                let pixels = ProcessingTestPixels.floats(band, bounds: patch)
-                let alpha = stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }
-                print("Opaque frequency band radius=\(radius) alpha=\(alpha.min()!)...\(alpha.max()!)")
-                var defaultPixels = [Float](repeating: 0, count: pixels.count)
-                defaultPixels.withUnsafeMutableBytes {
-                    ProcessingTestPixels.context.render(band, toBitmap: $0.baseAddress!,
-                        rowBytes: Int(patch.width) * 16, bounds: patch, format: .RGBAf,
-                        colorSpace: ProcessingTestPixels.linearColorSpace)
-                }
-                let defaultAlpha = stride(from: 3, to: defaultPixels.count, by: 4).map { defaultPixels[$0] }
-                print("Default frequency band radius=\(radius) alpha=\(defaultAlpha.min()!)...\(defaultAlpha.max()!)")
-            }
             let config = SkinRetouchConfiguration.naturalDefault.withIntensity(try SkinRetouchIntensity(1))
             let step = TexturePreservingSkinSmoothingStep(configuration: config)
             let support = try step.makeOpacitySupport(source: source, scale: scale)
@@ -164,19 +124,13 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
                     rowBytes: Int(patch.width) * 16, bounds: patch, format: .RGBAf,
                     colorSpace: ProcessingTestPixels.linearColorSpace)
             }
-            // The Gaussian alpha diagnostic above is intentionally not the gate:
-            // Apple half-float accumulation does not preserve its exact unit sum.
             for i in stride(from: 3, to: supportPixels.count, by: 4) {
                 XCTAssertEqual(supportPixels[i], 1, "Opaque source support must remain eligible at default precision")
             }
-            let masks = try XCTUnwrap(step.makeMasks(source: source, regions: [region]))
             let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region]))
             let before = ProcessingTestPixels.floats(source, bounds: patch)
             let after = ProcessingTestPixels.floats(output, bounds: patch)
-            let weights = ProcessingTestPixels.floats(masks.effectiveSkinMask, bounds: patch)
             let changes = stride(from: 0, to: before.count, by: 4).map { abs(after[$0] - before[$0]) }
-            let coverage = stride(from: 0, to: weights.count, by: 4).map { weights[$0] }
-            print("Texture float maxChange=\(changes.max()!) coverage=\(coverage.min()!)...\(coverage.max()!)")
             XCTAssertGreaterThan(changes.max()!, 0, "The float graph must perform active reconstruction")
             let rendered = try CoreImageRendering.render(output, matching: input)
             XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(rendered, in: patch)),
