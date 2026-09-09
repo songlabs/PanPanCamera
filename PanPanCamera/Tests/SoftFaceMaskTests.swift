@@ -8,6 +8,12 @@ import XCTest
 enum ProcessingTestPixels {
     static let context = CIContext(options: [.cacheIntermediates: false])
     static let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
+    // RGBAf output alone does not select float intermediate buffers. Keep the
+    // scalar/formula checks separate from the production-like RGBA8 roundtrip.
+    private static let floatContext = CIContext(options: [
+        .cacheIntermediates: false, .workingFormat: CIFormat.RGBAf.rawValue
+    ])
+    static let linearColorSpace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
 
     static func image(width: Int = 100, height: Int = 100, alpha: UInt8 = 255) throws -> ProcessingImage {
         let value = min(UInt8(100), alpha)
@@ -34,10 +40,10 @@ enum ProcessingTestPixels {
     static func floats(_ image: CIImage, bounds: CGRect) -> [Float] {
         var pixels = [Float](repeating: 0, count: Int(bounds.width * bounds.height) * 4)
         pixels.withUnsafeMutableBytes {
-            // No color conversion: check actual grayscale mask weights, including
-            // out-of-range/NaN values that an RGBA8 render would silently clamp.
-            context.render(image, toBitmap: $0.baseAddress!, rowBytes: Int(bounds.width) * 16,
-                           bounds: bounds, format: .RGBAf, colorSpace: nil)
+            // Read linear weights with float intermediates, including values that
+            // an RGBA8 render would clamp or a half-float intermediate would round.
+            floatContext.render(image, toBitmap: $0.baseAddress!, rowBytes: Int(bounds.width) * 16,
+                                bounds: bounds, format: .RGBAf, colorSpace: linearColorSpace)
         }
         return pixels
     }

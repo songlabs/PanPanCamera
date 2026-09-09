@@ -136,7 +136,7 @@ final class FeatureProtectionMaskTests: XCTestCase {
         try await Task.detached {
             let extent = CGRect(x: 3, y: -5, width: 8, height: 8)
             func constant(_ value: CGFloat) -> CIImage {
-                CIImage(color: CIColor(red: value, green: value, blue: value)).cropped(to: extent)
+                SemanticMaskTestPixels.constant(value, in: extent)
             }
             let configuration = try SkinRetouchConfiguration(intensity: SkinRetouchIntensity(0.5), edgeProtectionStrength: 0.75)
             for (feature, edge): (CGFloat, CGFloat) in [(0, 0), (0.9, 0), (0, 1), (1, 1), (0.8, 0.8), (-0.2, 2)] {

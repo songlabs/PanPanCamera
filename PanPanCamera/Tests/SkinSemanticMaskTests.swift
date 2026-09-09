@@ -7,7 +7,9 @@ import XCTest
 /// Apple pixel fixtures prepared for the later unified run; no real skin evidence.
 enum SemanticMaskTestPixels {
     static func constant(_ value: CGFloat, in extent: CGRect, alpha: CGFloat = 1) -> CIImage {
-        CIImage(color: CIColor(red: value, green: value, blue: value, alpha: alpha)).cropped(to: extent)
+        // These are scalar weights, not sRGB-encoded display colors.
+        CIImage(color: CIColor(red: value, green: value, blue: value, alpha: alpha,
+                              colorSpace: ProcessingTestPixels.linearColorSpace)!).cropped(to: extent)
     }
     static func sample(_ image: CIImage, x: CGFloat, y: CGFloat) -> Float {
         ProcessingTestPixels.floats(image, bounds: CGRect(x: x, y: y, width: 1, height: 1))[0]

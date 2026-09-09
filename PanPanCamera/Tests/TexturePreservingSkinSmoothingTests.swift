@@ -108,6 +108,37 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
         XCTAssertLessThanOrEqual(abs(Int(outputSpot) - Int(originalSpot)), 2)
     }
 
+    func testOpaqueFrequencyBandsRemainEligibleForReconstruction() async throws {
+        let input = try SkinRetouchTestImage.texture()
+        let region = try FaceRegion(boundingBox: fullBox)
+        try await Task.detached {
+            let source = CIImage(cgImage: input.cgImage)
+            let scale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: source.extent))
+            let patch = CGRect(x: 72, y: 112, width: 22, height: 32)
+            for radius in [scale.smallRadius, scale.largeRadius] {
+                let band = try CoreImageRendering.filter("CIGaussianBlur", parameters: [
+                    kCIInputImageKey: source.clampedToExtent(), kCIInputRadiusKey: radius
+                ], in: source.extent)
+                let pixels = ProcessingTestPixels.floats(band, bounds: patch)
+                let alpha = stride(from: 3, to: pixels.count, by: 4).map { pixels[$0] }
+                print("Opaque frequency band radius=\(radius) alpha=\(alpha.min()!)...\(alpha.max()!)")
+                XCTAssertGreaterThanOrEqual(Double(alpha.min()!), SkinRetouchConfiguration.Policy.opaqueThreshold,
+                    "Opaque input must not trigger the reconstruction translucency bypass")
+            }
+            let config = SkinRetouchConfiguration.naturalDefault.withIntensity(try SkinRetouchIntensity(1))
+            let step = TexturePreservingSkinSmoothingStep(configuration: config)
+            let masks = try XCTUnwrap(step.makeMasks(source: source, regions: [region]))
+            let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region]))
+            let before = ProcessingTestPixels.floats(source, bounds: patch)
+            let after = ProcessingTestPixels.floats(output, bounds: patch)
+            let weights = ProcessingTestPixels.floats(masks.effectiveSkinMask, bounds: patch)
+            let changes = stride(from: 0, to: before.count, by: 4).map { abs(after[$0] - before[$0]) }
+            let coverage = stride(from: 0, to: weights.count, by: 4).map { weights[$0] }
+            print("Texture float maxChange=\(changes.max()!) coverage=\(coverage.min()!)...\(coverage.max()!)")
+            XCTAssertGreaterThan(changes.max()!, 0, "The float graph must perform active reconstruction")
+        }.value
+    }
+
     func testEdgeAndLineRetentionExceedDirectGaussianBaselineAtSameRadiusAndIntensity() async throws {
         let input = try SkinRetouchTestImage.texture()
         let configuration = SkinRetouchConfiguration.naturalDefault.withIntensity(.stronger)
