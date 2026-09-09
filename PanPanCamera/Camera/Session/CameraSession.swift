@@ -235,11 +235,17 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         session.addOutput(output)
         output.maxPhotoQualityPrioritization = .quality
         if #available(iOS 17.0, *) {
-            let supportedDimensions = output.supportedMaxPhotoDimensions
-            let largestDimension = supportedDimensions.max { lhs, rhs in
-                let lhsPixelCount = Int64(lhs.width) * Int64(lhs.height)
-                let rhsPixelCount = Int64(rhs.width) * Int64(rhs.height)
-                return lhsPixelCount < rhsPixelCount
+            let supportedDimensions = newInput.device.activeFormat.supportedMaxPhotoDimensions
+            var largestDimension: CMVideoDimensions?
+            var largestPixelCount: Int64 = -1
+            for dimension in supportedDimensions {
+                let width = Int64(dimension.width)
+                let height = Int64(dimension.height)
+                let pixelCount = width * height
+                if pixelCount > largestPixelCount {
+                    largestPixelCount = pixelCount
+                    largestDimension = dimension
+                }
             }
             if let largestDimension {
                 output.maxPhotoDimensions = largestDimension
