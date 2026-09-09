@@ -21,4 +21,21 @@ final class LocalizationTests: XCTestCase {
             XCTAssertFalse(permission.isEmpty, locale)
         }
     }
+
+    func testAppLanguageProvidesSystemAndFiveStableLocaleChoices() {
+        XCTAssertEqual(AppLanguage.allCases, [
+            .system, .japanese, .simplifiedChinese, .traditionalChinese, .english, .korean
+        ])
+        XCTAssertNil(AppLanguage.system.localeIdentifier)
+        XCTAssertEqual(AppLanguage.japanese.localeIdentifier, "ja")
+        XCTAssertEqual(AppLanguage.simplifiedChinese.localeIdentifier, "zh-Hans")
+        XCTAssertEqual(AppLanguage.traditionalChinese.localeIdentifier, "zh-Hant")
+        XCTAssertEqual(AppLanguage.english.localeIdentifier, "en")
+        XCTAssertEqual(AppLanguage.korean.localeIdentifier, "ko")
+        XCTAssertEqual(AppLanguage.storageKey, "appLanguage")
+
+        for language in AppLanguage.allCases {
+            XCTAssertEqual(AppLanguage(rawValue: language.rawValue), language)
+        }
+    }
 }

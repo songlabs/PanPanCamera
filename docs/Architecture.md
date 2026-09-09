@@ -85,7 +85,7 @@ The scope guard in `scripts/check_project.py` permits Vision only in FaceTrackin
 
 ## Localization boundary
 
-`L10n` defines 85 stable UI keys. Presentation uses `Text(L10n...)` or localized labels derived from model enums. Domain types do not depend on SwiftUI or localized strings. `Localizable.xcstrings` and `InfoPlist.xcstrings` each supply Japanese, Simplified Chinese, Traditional Chinese, English, and Korean. Japanese is the development/source language. Catalog entries are manually managed; automatic Swift string extraction is disabled to avoid replacing stable keys with implementation strings. Numerical slider text uses locale-aware number formatting. New UI copy must add an L10n case and all five translations.
+`L10n` defines 92 stable UI keys. Presentation uses `Text(L10n...)` or localized labels derived from model enums. `AppLanguage` supplies System Default plus the five compiled languages; `AppStorage` persists the stable raw value and the App root injects either its Locale or `autoupdatingCurrent` into SwiftUI. Domain types do not depend on SwiftUI or localized strings. `Localizable.xcstrings` and `InfoPlist.xcstrings` each supply Japanese, Simplified Chinese, Traditional Chinese, English, and Korean. Japanese is the development/source language. Catalog entries are manually managed; automatic Swift string extraction is disabled to avoid replacing stable keys with implementation strings. Numerical slider text uses locale-aware number formatting. New UI copy must add an L10n case and all five translations.
 
 ## Apple API references
 

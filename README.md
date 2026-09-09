@@ -94,9 +94,9 @@ Rendering（独立开发链路）
 
 ## 五语言
 
-正式资源包含 **日语 `ja`、简体中文 `zh-Hans`、繁体中文 `zh-Hant`、英语 `en`、韩语 `ko`**，Japanese 为项目 development region 与 String Catalog source language。
+正式资源包含 **日语 `ja`、简体中文 `zh-Hans`、繁体中文 `zh-Hant`、英语 `en`、韩语 `ko`**，Japanese 为项目 development region 与 String Catalog source language。设置页可选择上述语言或跟随系统；选择通过 `AppStorage` 持久化，并由 App Root 的 Locale environment 立即应用到 SwiftUI 界面。
 
-- `Localizable.xcstrings`：85 个 UI／无障碍／说明键，五语言均有非空完整翻译。
+- `Localizable.xcstrings`：92 个 UI／无障碍／说明键，五语言均有非空完整翻译。
 - `InfoPlist.xcstrings`：相机权限说明与 App 显示名称，五语言齐全。
 - PanPan 在所有语言中保持不翻译；数值使用本地化数字格式。
 - View 使用集中定义的 `L10n` 键。新增文字需同步添加五语言；catalog 为手动稳定键，关闭自动 Swift 字符串提取。

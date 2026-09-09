@@ -83,6 +83,13 @@ enum L10n: String, CaseIterable {
     case eyeMakeup = "makeup.eye"
     case brow = "makeup.brow"
     case makeupDetail = "makeup.detail"
+    case language = "settings.language"
+    case languageSystem = "language.system"
+    case languageJapanese = "language.japanese"
+    case languageSimplifiedChinese = "language.simplifiedChinese"
+    case languageTraditionalChinese = "language.traditionalChinese"
+    case languageEnglish = "language.english"
+    case languageKorean = "language.korean"
     case privacyTitle = "settings.privacy"
     case privacyDetail = "settings.privacy.detail"
     case versionScope = "settings.scope"
@@ -91,6 +98,39 @@ enum L10n: String, CaseIterable {
 
 extension Text {
     init(_ key: L10n) { self.init(LocalizedStringKey(key.rawValue)) }
+}
+
+enum AppLanguage: String, CaseIterable, Identifiable {
+    static let storageKey = "appLanguage"
+
+    case system
+    case japanese = "ja"
+    case simplifiedChinese = "zh-Hans"
+    case traditionalChinese = "zh-Hant"
+    case english = "en"
+    case korean = "ko"
+
+    var id: Self { self }
+
+    var localeIdentifier: String? {
+        self == .system ? nil : rawValue
+    }
+
+    var localeOverride: Locale? {
+        guard let localeIdentifier else { return nil }
+        return Locale(identifier: localeIdentifier)
+    }
+
+    var label: L10n {
+        switch self {
+        case .system: return .languageSystem
+        case .japanese: return .languageJapanese
+        case .simplifiedChinese: return .languageSimplifiedChinese
+        case .traditionalChinese: return .languageTraditionalChinese
+        case .english: return .languageEnglish
+        case .korean: return .languageKorean
+        }
+    }
 }
 
 extension CameraFailure {

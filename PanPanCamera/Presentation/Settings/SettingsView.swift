@@ -1,10 +1,37 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system
+
     var body: some View {
         PanelContainer(title: .settings) {
             VStack(alignment: .leading, spacing: 16) {
                 Text(L10n.appName).font(.largeTitle.bold())
+                Text(L10n.language).font(.headline)
+                NavigationLink {
+                    LanguageSettingsView()
+                } label: {
+                    HStack(spacing: 12) {
+                        Image(systemName: "globe")
+                            .frame(width: 24)
+                            .accessibilityHidden(true)
+                        Text(appLanguage.label)
+                        Spacer(minLength: 12)
+                        Image(systemName: "chevron.forward")
+                            .font(.caption.weight(.semibold))
+                            .foregroundStyle(.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .padding(14)
+                    .frame(maxWidth: .infinity, minHeight: 48, alignment: .leading)
+                    .background(Color(uiColor: .secondarySystemBackground),
+                                in: RoundedRectangle(cornerRadius: 14))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(PanPanTheme.ink)
+                .accessibilityLabel(Text(L10n.language))
+                .accessibilityValue(Text(appLanguage.label))
+                Divider()
                 Text(L10n.privacyTitle).font(.headline)
                 Text(L10n.privacyDetail).font(.subheadline)
                 Divider()
@@ -13,6 +40,35 @@ struct SettingsView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
         }
+    }
+}
+
+private struct LanguageSettingsView: View {
+    @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system
+
+    var body: some View {
+        List(AppLanguage.allCases) { language in
+            Button {
+                appLanguage = language
+            } label: {
+                HStack {
+                    Text(language.label)
+                    Spacer()
+                    if language == appLanguage {
+                        Image(systemName: "checkmark")
+                            .fontWeight(.semibold)
+                            .foregroundStyle(PanPanTheme.accent)
+                            .accessibilityHidden(true)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(PanPanTheme.ink)
+            .accessibilityAddTraits(language == appLanguage ? .isSelected : [])
+        }
+        .navigationTitle(Text(L10n.language))
+        .navigationBarTitleDisplayMode(.inline)
     }
 }
 

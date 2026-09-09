@@ -23,8 +23,13 @@ struct CameraView: View {
                 .padding(24)
             }
         }
-        .safeAreaInset(edge: .top, spacing: 0) { topControls }
-        .safeAreaInset(edge: .bottom, spacing: 0) { bottomControls }
+        .overlay {
+            VStack(spacing: 0) {
+                topControls
+                Spacer(minLength: 0)
+                bottomControls
+            }
+        }
         .task(id: shouldRunCamera) {
             guard !screenshot.isEnabled else { return }
             await camera.setActive(shouldRunCamera)
@@ -108,12 +113,11 @@ struct CameraView: View {
         .padding(.vertical, 3)
         .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 24))
         .padding(.horizontal, 16)
-        .padding(.top, 8)
         .disabled(camera.state.isCapturing || camera.state.isSwitching)
     }
 
     private var bottomControls: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
             HStack(alignment: .center, spacing: 4) {
                 bottomTool(.album, symbol: "photo.on.rectangle", panel: .album)
                 bottomTool(.skin, symbol: "sparkles", panel: .beauty)
@@ -156,9 +160,12 @@ struct CameraView: View {
         }
         .foregroundStyle(PanPanTheme.ink)
         .padding(.horizontal, 12)
-        .padding(.top, 18)
-        .padding(.bottom, 8)
-        .background(.regularMaterial, in: UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30))
+        .padding(.top, 12)
+        .background {
+            UnevenRoundedRectangle(topLeadingRadius: 30, topTrailingRadius: 30)
+                .fill(.regularMaterial)
+                .ignoresSafeArea(edges: .bottom)
+        }
     }
 
     private func bottomTool(_ label: L10n, symbol: String, panel: CameraPanel) -> some View {
