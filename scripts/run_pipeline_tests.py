@@ -13,6 +13,9 @@ SOURCES = (
     'FaceTracking/FaceDetecting.swift',
     'FaceTracking/FaceRegion.swift',
     'FaceTracking/MockFaceDetector.swift',
+    'FaceTracking/FacialLandmarks.swift',
+    'FaceTracking/FaceLandmarkDetecting.swift',
+    'FaceTracking/MockFaceLandmarkDetector.swift',
     'Rendering/ImageProcessingPipeline.swift',
     'Rendering/CoreImage/SkinRetouchConfiguration.swift',
 )
@@ -30,6 +33,8 @@ def main():
                     test_dir / 'ImageProcessingPipelineTests.swift')
     shutil.copyfile(ROOT / 'PanPanCamera/Tests/SkinRetouchConfigurationTests.swift',
                     test_dir / 'SkinRetouchConfigurationTests.swift')
+    shutil.copyfile(ROOT / 'PanPanCamera/Tests/FacialLandmarksTests.swift',
+                    test_dir / 'FacialLandmarksTests.swift')
     (package / 'Package.swift').write_text('''// swift-tools-version: 5.9
 import PackageDescription
 let package = Package(
@@ -42,7 +47,7 @@ let package = Package(
 ''', encoding='utf-8')
     result = subprocess.run(['swift', 'test', '--package-path', str(package), '--configuration', 'debug'])
     if result.returncode == 0:
-        print('PASS host Foundation pipeline/configuration XCTest. Core Image, Vision and Apple/device acceptance were NOT run.')
+        print('PASS host Foundation pipeline/configuration/mock landmarks XCTest. Core Image, Vision and Apple/device acceptance were NOT run.')
     return result.returncode
 
 

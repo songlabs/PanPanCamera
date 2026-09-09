@@ -13,15 +13,19 @@ That route is not evidence of successful real-face detection or device acceptanc
          -> MockFaceDetector<ProcessingImage>
          -> FaceDetectionResult.regions -> FaceRegion
          -> TexturePreservingSkinSmoothingStep
+            -> MockFaceLandmarkDetector -> FacialLandmarks (bound FaceRegion + local points)
             -> SoftFaceMaskGenerator (max union)
+            -> FeatureProtectionMaskGenerator (filled/expanded/feathered semantics)
             -> DetailProtectionMaskGenerator (image gradients)
+            -> ProtectionMaskCombiner: max(features, edges * edgeStrength)
             -> two spatial bases / low-base noise reduction
             -> signed original-detail reconstruction
-            -> intensity * face coverage * detail protection weight
+            -> intensity * face coverage * (1 - combined protection)
             -> one masked blend -> shared CoreImageRendering
       -> ImageProcessingOutput (rendered ProcessingImage + detection result)
 
-Alternate DEBUG outputs are original, faceMask, detailProtectionMask and difference.
+Alternate DEBUG outputs are original, faceMask, featureProtectionMask,
+detailProtectionMask, combinedProtectionMask and difference.
 Processed defaults to texture alone; NaturalSkinProcessingStep remains available for
 its existing tone tests and is not stacked. Original and processed-at-zero permit
 A/B with intensity 0, 0.25 and 0.5 without a slider or code changes to parameter defaults.
@@ -37,7 +41,12 @@ fully rendered CGImage; no lazy CIImage graph escapes the processing call.
 
 FaceDetecting<Image> and ImageProcessingStep<Image> keep their existing synchronous
 throwing interfaces. The pipeline has no concrete Mock, Vision, mask or renderer
-dependency. No second rendering architecture or future detector abstraction is added.
+dependency. The texture step optionally accepts FaceLandmarkDetecting<ProcessingImage>;
+DEBUG injects MockFaceLandmarkDetector. The backend never names the concrete mock.
+FacialLandmarks stores validated face-local normalized points bound to one FaceRegion.
+The pure semantic enum is shared with DetectedFace through an alias; the existing
+preview's image-normalized points and camera metadata do not enter photo processing.
+Missing/invalid/failed optional landmarks preserve the existing face + edge fallback.
 
 The pipeline's short NSLock admits one job; competing calls throw busy before decoding
 or enqueueing. Loading, detection, steps and rendering run on its serial worker queue,
@@ -54,13 +63,13 @@ All filters/graphs stay in the current call; caller-owned returned images should
 released when inspection finishes.
 
 The processing step returns the exact input CGImage for intensity zero or no faces,
-before constructing a CIImage, mask, filter or render. Subpixel/nil coverage also returns
+before invoking the landmark provider or constructing a CIImage, mask, filter or render. Subpixel/nil coverage also returns
 the input. Explicit diagnostic requests intentionally render visualization pixels;
 original mode returns the common decoded preview directly. Mask alpha is opaque.
 Processed-photo alpha is retained, with conservative bypass of transparent/translucent
 neighborhoods. Existing RGBA8 output and working/output color-space policy remain.
 
-MockFaceDetector, DebugPhotoProcessing and the brightness/face-mask probes are wholly
+MockFaceDetector, MockFaceLandmarkDetector, DebugPhotoProcessing and the brightness/face-mask probes are wholly
 inside DEBUG guards. Reusable retouch, mask and rendering types have no product/camera
 call sites. Scope checks compile Release redeclaration probes, inspect build conditions,
 reject product call sites and guard the one-context/no-new-queue rule. No formal UI,
@@ -73,22 +82,25 @@ filter/kernel parameters, adaptive scale tradeoff, DEBUG examples and pixel test
 ## Verification boundaries
 
 - python scripts/check_project.py: project membership, dependency scope and localization.
-- python -m unittest discover -s scripts/tests -v: 36 passing script/static tests, including
-  nine processing scope/Release-isolation checks.
-- scripts/check_swift_syntax.ps1: 65 Swift sources parse; four existing pure Swift domain
+- python -m unittest discover -s scripts/tests -v: 37 passing script/static tests, including
+  ten processing scope/Release-isolation checks.
+- scripts/check_swift_syntax.ps1: 73 Swift sources parse; four existing pure Swift domain
   files and three camera control helpers typecheck on the installed host toolchain.
   An additional parser invocation with DEBUG also passed. This is not Apple typecheck.
-- python scripts/run_pipeline_tests.py: same actual Foundation pipeline/configuration
+- python scripts/run_pipeline_tests.py: same actual Foundation pipeline/configuration/mock-landmark
   sources and XCTest files in an ignored host package. Attempted here but blocked before
   test execution by missing msvcrt.lib, oldnames.lib and msvcprt.lib. Separate Foundation
   typecheck/module emission also hit missing errno.h. No host XCTest ran.
-- Existing Xcode Debug test target now has 15 source files, including the three new
-  configuration/texture/protection suites and expanded DebugPhotoProcessingTests.
-  Twenty new XCTest methods are registered; none ran in the Windows environment.
+- Existing Xcode Debug test target now has 18 source files. This feature adds 22 XCTest
+  methods in three new suites and expanded DebugPhotoProcessingTests; all are pending
+  Apple execution. No Windows Core Image implementation or substitute pixel test exists.
 
 Texture-Preserving Natural Skin Retouch v1 已完成代码实现和当前环境可执行验证，
 但实际 Core Image 图像效果尚未在 Apple 平台验证。
-真实 Vision 人脸检测尚未验证。尚未完成 Apple 平台 / 真机验收。
+Facial Feature Protection v1 的实际 Core Image Mask 与像素行为尚未在 Apple 平台执行验证。
+真实 Vision 人脸检测 / landmarks 尚未验证。
+CIColorKernel(source:) 尚未完成 Apple SDK / Xcode 编译验证。
+尚未完成 Apple 平台 / 真机验收。
 Xcode Build, Apple pixel tests, Simulator, real photos, GPU, memory, thermals and
 device performance remain pending. Pushing triggers existing iOS CI; observing a
 trigger is not CI success. This task stops after trigger confirmation.

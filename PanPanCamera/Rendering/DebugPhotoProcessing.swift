@@ -10,7 +10,7 @@ import ImageIO
 enum DebugPhotoProcessing {
     enum Failure: Error { case invalidImageData, decodeFailed }
     enum Output: Sendable {
-        case original, faceMask, detailProtectionMask, processed, difference
+        case original, faceMask, featureProtectionMask, detailProtectionMask, combinedProtectionMask, processed, difference
         // Preserve existing developer call sites while using descriptive new modes.
         static let processedPhoto = Self.processed
         static let softFaceMask = Self.faceMask
@@ -37,23 +37,34 @@ enum DebugPhotoProcessing {
             case .original:
                 result = input.image
             case .processed:
-                result = try TexturePreservingSkinSmoothingStep(configuration: input.configuration)
+                result = try TexturePreservingSkinSmoothingStep(configuration: input.configuration,
+                    landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>())
                     .process(input.image, regions: regions)
             case .faceMask:
                 result = try DebugFaceMaskStep().process(input.image, regions: regions)
-            case .detailProtectionMask:
+            case .featureProtectionMask, .detailProtectionMask, .combinedProtectionMask:
                 let source = CIImage(cgImage: input.image.cgImage)
-                let mask: CIImage
-                if let scale = SkinRetouchScale(regions: regions, in: source.extent) {
-                    mask = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
-                } else {
-                    mask = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: source.extent)
+                let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: source.extent)
+                var feature: CIImage?
+                if input.output != .detailProtectionMask {
+                    let landmarks = try MockFaceLandmarkDetector<ProcessingImage>()
+                        .detectLandmarks(in: input.image, regions: regions)
+                    feature = try FeatureProtectionMaskGenerator().makeMask(landmarks: landmarks, regions: regions, in: source.extent)
+                }
+                var mask = feature ?? black
+                if input.output != .featureProtectionMask,
+                   let scale = SkinRetouchScale(regions: regions, in: source.extent) {
+                    let detail = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
+                    mask = input.output == .detailProtectionMask ? detail :
+                        try ProtectionMaskCombiner.combined(feature: feature, detail: detail, configuration: input.configuration)
                 }
                 result = try CoreImageRendering.render(mask, matching: input.image)
             case .difference:
                 let source = CIImage(cgImage: input.image.cgImage)
+                let landmarks = input.configuration.intensity.value == 0 ? [] :
+                    try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: input.image, regions: regions)
                 let processed = try TexturePreservingSkinSmoothingStep(configuration: input.configuration)
-                    .makeOutput(source: source, regions: regions) ?? source
+                    .makeOutput(source: source, regions: regions, landmarks: landmarks) ?? source
                 // Unamplified absolute difference for inspection only. Its alpha is
                 // diagnostic; alpha-preservation acceptance uses .processed pixels.
                 let difference = try CoreImageRendering.filter("CIDifferenceBlendMode", parameters: [

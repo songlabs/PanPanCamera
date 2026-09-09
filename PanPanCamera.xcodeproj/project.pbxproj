@@ -5,6 +5,86 @@
 	};
 	"objectVersion" = 56;
 	"objects" = {
+		"E00000000000000000000001" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FacialLandmarks.swift";
+			"sourceTree" = "<group>";
+		};
+		"E10000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00000000000000000000001";
+		};
+		"E00000000000000000000002" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FaceLandmarkDetecting.swift";
+			"sourceTree" = "<group>";
+		};
+		"E10000000000000000000002" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00000000000000000000002";
+		};
+		"E00000000000000000000003" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "MockFaceLandmarkDetector.swift";
+			"sourceTree" = "<group>";
+		};
+		"E10000000000000000000003" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00000000000000000000003";
+		};
+		"E00000000000000000000004" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FeatureProtectionMaskGenerator.swift";
+			"sourceTree" = "<group>";
+		};
+		"E10000000000000000000004" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00000000000000000000004";
+		};
+		"E00000000000000000000005" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "ProtectionMaskCombiner.swift";
+			"sourceTree" = "<group>";
+		};
+		"E10000000000000000000005" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00000000000000000000005";
+		};
+		"E00000000000000000000006" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FacialLandmarksTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"E10000000000000000000006" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00000000000000000000006";
+		};
+		"E00000000000000000000007" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FeatureProtectionMaskTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"E10000000000000000000007" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00000000000000000000007";
+		};
+		"E00000000000000000000008" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FacialFeatureProcessingTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"E10000000000000000000008" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "E00000000000000000000008";
+		};
 		"D00000000000000000000001" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -298,6 +378,9 @@
 		"03BB2ACE7F2EBCE68EAEDB4A" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"E00000000000000000000003",
+				"E00000000000000000000002",
+				"E00000000000000000000001",
 				"8396C60EF8BFCA74A803ECBE",
 				"6EB4F4854EEFEEF49DAC5566",
 				"2C1ED9E3C321B8C5F1B28992",
@@ -853,6 +936,8 @@
 		"62315AE240EA33C7515C50B6" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"E00000000000000000000005",
+				"E00000000000000000000004",
 				"D00000000000000000000001",
 				"D00000000000000000000002",
 				"D00000000000000000000003",
@@ -988,6 +1073,9 @@
 		"A9F99B2CD4B4341BBBB50D75" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"E00000000000000000000008",
+				"E00000000000000000000007",
+				"E00000000000000000000006",
 				"D00000000000000000000004",
 				"D00000000000000000000005",
 				"D00000000000000000000006",
@@ -1065,6 +1153,11 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"E10000000000000000000005",
+				"E10000000000000000000004",
+				"E10000000000000000000003",
+				"E10000000000000000000002",
+				"E10000000000000000000001",
 				"D10000000000000000000001",
 				"D10000000000000000000002",
 				"D10000000000000000000003",
@@ -1139,6 +1232,9 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"E10000000000000000000008",
+				"E10000000000000000000007",
+				"E10000000000000000000006",
 				"D10000000000000000000004",
 				"D10000000000000000000005",
 				"D10000000000000000000006",

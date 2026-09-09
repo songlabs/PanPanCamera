@@ -28,11 +28,7 @@ struct DetailProtectionMaskGenerator: Sendable {
     func effectiveMask(faceMask: CIImage, protection: CIImage,
                        configuration: SkinRetouchConfiguration) throws -> CIImage {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        let weight = try CoreImageRendering.grayMask(protection,
-            scale: -configuration.edgeProtectionStrength, bias: 1)
-        let coverage = try CoreImageRendering.filter("CIMultiplyCompositing", parameters: [
-            kCIInputImageKey: faceMask, kCIInputBackgroundImageKey: weight
-        ], in: faceMask.extent)
-        return try CoreImageRendering.grayMask(coverage, scale: configuration.intensity.value)
+        let combined = try ProtectionMaskCombiner.combined(feature: nil, detail: protection, configuration: configuration)
+        return try ProtectionMaskCombiner.effective(face: faceMask, combined: combined, configuration: configuration)
     }
 }

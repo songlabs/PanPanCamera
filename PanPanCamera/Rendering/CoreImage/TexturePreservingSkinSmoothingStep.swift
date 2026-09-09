@@ -6,11 +6,14 @@ import Foundation
 struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
     let configuration: SkinRetouchConfiguration
     private let maskGenerator: any FaceMaskGenerating
+    private let landmarkDetector: (any FaceLandmarkDetecting<ProcessingImage>)?
 
     init(configuration: SkinRetouchConfiguration = .naturalDefault,
-         maskGenerator: any FaceMaskGenerating = SoftFaceMaskGenerator()) {
+         maskGenerator: any FaceMaskGenerating = SoftFaceMaskGenerator(),
+         landmarkDetector: (any FaceLandmarkDetecting<ProcessingImage>)? = nil) {
         self.configuration = configuration
         self.maskGenerator = maskGenerator
+        self.landmarkDetector = landmarkDetector
     }
 
     func process(_ image: ProcessingImage, regions: [FaceRegion]) throws -> ProcessingImage {
@@ -18,21 +21,24 @@ struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
         // Strict identity: no CIImage, filter, mask, context or temporary raster.
         guard configuration.intensity.value > 0, !regions.isEmpty else { return image }
         let source = CIImage(cgImage: image.cgImage)
-        guard let output = try makeOutput(source: source, regions: regions) else { return image }
+        // Missing/failed optional detection keeps the existing face + edge path.
+        let landmarks = (try? landmarkDetector?.detectLandmarks(in: image, regions: regions)) ?? []
+        guard let output = try makeOutput(source: source, regions: regions, landmarks: landmarks) else { return image }
         return try CoreImageRendering.render(output, matching: image)
     }
 
     /// Job-local graph also exposes the nonzero-extent contract to Apple tests.
     /// No CIImage graph escapes the public ProcessingImage step or DEBUG entry.
-    func makeOutput(source: CIImage, regions: [FaceRegion]) throws -> CIImage? {
+    func makeOutput(source: CIImage, regions: [FaceRegion], landmarks: [FacialLandmarks] = []) throws -> CIImage? {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard configuration.intensity.value > 0, !regions.isEmpty else { return nil }
         guard let scale = SkinRetouchScale(regions: regions, in: source.extent),
               let faceMask = try maskGenerator.makeMask(regions: regions, in: source.extent) else { return nil }
         let detailGenerator = DetailProtectionMaskGenerator()
         let protection = try detailGenerator.makeMask(source: source, scale: scale)
-        let effectiveMask = try detailGenerator.effectiveMask(faceMask: faceMask, protection: protection,
-                                                              configuration: configuration)
+        let feature = try FeatureProtectionMaskGenerator().makeMask(landmarks: landmarks, regions: regions, in: source.extent)
+        let combined = try ProtectionMaskCombiner.combined(feature: feature, detail: protection, configuration: configuration)
+        let effectiveMask = try ProtectionMaskCombiner.effective(face: faceMask, combined: combined, configuration: configuration)
         let small = try lowPass(source, radius: scale.smallRadius)
         let large = try lowPass(source, radius: scale.largeRadius)
         let low: CIImage

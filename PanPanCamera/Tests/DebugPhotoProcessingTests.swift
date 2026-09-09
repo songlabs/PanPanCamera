@@ -190,6 +190,31 @@ final class DebugPhotoProcessingTests: XCTestCase {
         }
     }
 
+    func testFeatureAndCombinedDebugOutputsUseSameMasksAsProcessingWithoutRetainingModes() async throws {
+        let data = try encoded(image(width: 256, height: 256))
+        let original = try await DebugPhotoProcessing.process(data: data, output: .original)
+        let regions = original.detection.regions
+        let landmarks = try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: original.image, regions: regions)
+        for mode: DebugPhotoProcessing.Output in [.featureProtectionMask, .combinedProtectionMask] {
+            let output = try await DebugPhotoProcessing.process(data: data, output: mode)
+            let expected = try await Task.detached {
+                let source = CIImage(cgImage: original.image.cgImage)
+                let feature = try XCTUnwrap(FeatureProtectionMaskGenerator().makeMask(landmarks: landmarks, regions: regions, in: source.extent))
+                let scale = try XCTUnwrap(SkinRetouchScale(regions: regions, in: source.extent))
+                let detail = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
+                let mask = mode == .featureProtectionMask ? feature :
+                    try ProtectionMaskCombiner.combined(feature: feature, detail: detail, configuration: .naturalDefault)
+                return try CoreImageRendering.render(mask, matching: original.image)
+            }.value
+            XCTAssertEqual(ProcessingTestPixels.rgba(output.image), ProcessingTestPixels.rgba(expected))
+            XCTAssertEqual(output.detection.regions, regions)
+            // Asymmetric y positions detect accidental vertical flips in raster tiles.
+            XCTAssertGreaterThan(pixel(output.image, x: 107, y: 142)[0], pixel(output.image, x: 102, y: 123)[0])
+        }
+        let originalAgain = try await DebugPhotoProcessing.process(data: data, output: .original)
+        XCTAssertEqual(ProcessingTestPixels.rgba(original.image), ProcessingTestPixels.rgba(originalAgain.image))
+    }
+
     func testDebugABConfigurationsAreJobLocalAndZeroMatchesDecodedOriginal() async throws {
         let data = try encoded(SkinRetouchTestImage.texture())
         let original = try await DebugPhotoProcessing.process(data: data, output: .original)
@@ -197,7 +222,8 @@ final class DebugPhotoProcessingTests: XCTestCase {
             let configuration = SkinRetouchConfiguration.naturalDefault.withIntensity(intensity)
             let result = try await DebugPhotoProcessing.process(data: data, configuration: configuration)
             let reference = ImageProcessingPipeline<ProcessingImage>(detector: MockFaceDetector(),
-                steps: [TexturePreservingSkinSmoothingStep(configuration: configuration)])
+                steps: [TexturePreservingSkinSmoothingStep(configuration: configuration,
+                    landmarkDetector: MockFaceLandmarkDetector<ProcessingImage>())])
             let expected = try await reference.process(original.image)
             XCTAssertEqual(ProcessingTestPixels.rgba(result.image), ProcessingTestPixels.rgba(expected.image))
             if intensity == .original {

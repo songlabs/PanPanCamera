@@ -3,9 +3,7 @@ import Foundation
 /// Coordinates are normalized in Vision's oriented, unmirrored image, origin bottom-left.
 /// Array order is per-frame only: no tracking identity or primary-face selection is implied.
 struct DetectedFace: Equatable, Sendable {
-    enum Landmark: CaseIterable, Hashable, Sendable {
-        case leftEye, rightEye, nose, noseCrest, outerLips, innerLips, faceContour
-    }
+    typealias Landmark = FacialLandmarkRegion
 
     let boundingBox: CGRect
     let confidence: Float
