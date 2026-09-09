@@ -161,10 +161,11 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
     }
 
     func testTranslucentNeighborhoodStaysProtectedWhileOpaqueSkinIsProcessed() async throws {
-        let input = try SkinRetouchTestImage.make { x, y in
+        let input = try SkinRetouchTestImage.make { (x: Int, y: Int) -> [UInt8] in
             let alpha: UInt8 = x < 64 ? 128 : 255
-            let value = UInt8(150 + ((x * 17 + y * 13) % 21) - 10)
-            let premultiplied = UInt8(Int(value) * Int(alpha) / 255)
+            let spatialHash: Int = x * 17 + y * 13
+            let value: Int = 140 + spatialHash % 21
+            let premultiplied = UInt8(value * Int(alpha) / 255)
             return [premultiplied, premultiplied, premultiplied, alpha]
         }
         let region = try FaceRegion(boundingBox: fullBox)
