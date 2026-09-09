@@ -110,14 +110,17 @@ struct MockSkinMaskProvider: SkinMaskProviding {
     }
 
     private func ellipse(_ rect: CGRect, feather: CGFloat, in extent: CGRect) throws -> CIImage {
-        let innerRadius = max(0, 100 * (1 - 2 * feather / min(rect.width, rect.height)))
-        // Transform the reference gradient before cropping, including nonzero origins.
+        let radius = rect.height / 2
+        let innerRadius = max(0, radius * (1 - 2 * feather / min(rect.width, rect.height)))
+        // Keep the gradient in image pixels. A fixed 100-unit reference scaled
+        // down to a one-pixel feature can require an enormous intermediate ROI.
         guard let filter = CIFilter(name: "CIRadialGradient", parameters: [
-            "inputCenter": CIVector(x: 0, y: 0), "inputRadius0": innerRadius, "inputRadius1": 100,
+            "inputCenter": CIVector(x: 0, y: 0), "inputRadius0": innerRadius, "inputRadius1": radius,
             "inputColor0": CIColor(red: 1, green: 1, blue: 1), "inputColor1": CIColor(red: 0, green: 0, blue: 0)
         ]), let radial = filter.outputImage else { throw CoreImageRendering.Failure.filterUnavailable }
-        return radial.transformed(by: CGAffineTransform(a: rect.width / 200, b: 0, c: 0, d: rect.height / 200,
+        return radial.transformed(by: CGAffineTransform(a: rect.width / rect.height, b: 0, c: 0, d: 1,
                                                         tx: rect.midX, ty: rect.midY)).cropped(to: extent)
+            .insertingIntermediate()
     }
 
     private func ramp(from start: CGPoint, to end: CGPoint, in extent: CGRect) throws -> CIImage {

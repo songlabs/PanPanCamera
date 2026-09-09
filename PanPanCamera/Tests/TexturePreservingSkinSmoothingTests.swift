@@ -124,6 +124,16 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
                 print("Opaque frequency band radius=\(radius) alpha=\(alpha.min()!)...\(alpha.max()!)")
                 XCTAssertGreaterThanOrEqual(Double(alpha.min()!), SkinRetouchConfiguration.Policy.opaqueThreshold,
                     "Opaque input must not trigger the reconstruction translucency bypass")
+                var defaultPixels = [Float](repeating: 0, count: pixels.count)
+                defaultPixels.withUnsafeMutableBytes {
+                    ProcessingTestPixels.context.render(band, toBitmap: $0.baseAddress!,
+                        rowBytes: Int(patch.width) * 16, bounds: patch, format: .RGBAf,
+                        colorSpace: ProcessingTestPixels.linearColorSpace)
+                }
+                let defaultAlpha = stride(from: 3, to: defaultPixels.count, by: 4).map { defaultPixels[$0] }
+                print("Default frequency band radius=\(radius) alpha=\(defaultAlpha.min()!)...\(defaultAlpha.max()!)")
+                XCTAssertGreaterThanOrEqual(Double(defaultAlpha.min()!), SkinRetouchConfiguration.Policy.opaqueThreshold,
+                    "Default intermediate precision must not classify an opaque frequency band as translucent")
             }
             let config = SkinRetouchConfiguration.naturalDefault.withIntensity(try SkinRetouchIntensity(1))
             let step = TexturePreservingSkinSmoothingStep(configuration: config)
