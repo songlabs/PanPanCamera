@@ -272,7 +272,7 @@ Face / Landmark / Skin Data
 → Natural Skin Retouch Output
 ```
 
-**Tone Consistency ≠ Skin Whitening。** Tone v1 只调整很轻微的低频亮度不均，参考来自当前图像 Effective Skin Area 的加权局部统计，没有固定 brightness／exposure 提升、目标肤色、去黄、粉色或 hue 调整；本次没有实现 chroma consistency。局部尺度为 `clamp(0.025 × 最小可用脸短边, 4, 32)` 像素，参考尺度为其 3 倍。修正为 `clamp(0.2 × (reference - local), ±maxLuminanceCorrection)`，再应用现有 Effective Skin Mask、Tone 强度及光影／高光／深阴影／透明度／统计支持／通道余量保护。新配置默认 `toneConsistencyStrength = 0.25`、`maxLuminanceCorrection = 0.006`（上限 0.012）；总 intensity 仍为 0.25，默认最终修正界为 0.000375 线性工作空间单位，RGBA8 下可能量化为零。**这些是工程初值，尚未通过真实照片视觉验收。**
+**Tone Consistency ≠ Skin Whitening。** Tone v1 只调整很轻微的低频亮度不均，参考来自当前图像 Effective Skin Area 的加权局部统计，没有固定 brightness／exposure 提升、目标肤色、去黄、粉色或 hue 调整；本次没有实现 chroma consistency。局部尺度为 `clamp(0.025 × 最小可用脸短边, 4, 32)` 像素，参考尺度为其 3 倍。修正为 `clamp(0.2 × (reference - local), ±maxLuminanceCorrection)`，再应用现有 Effective Skin Mask、Tone 强度及光影／高光／深阴影／透明度／统计支持／通道余量保护。产品 Final mapping 使用 `toneConsistencyStrength = 0.50`、`maxLuminanceCorrection = 0.006`（上限 0.012）；默认总 intensity 仍为 0.25，默认最终修正界为 0.00075 线性工作空间单位，RGBA8 下仍可能量化为零。**这些是工程初值，尚未通过真实照片视觉验收。**
 
 `NaturalSkinRetouchSteps.make(...)` 是唯一组合入口，默认 Texture → Tone；现有 `ImageProcessingPipeline` 继续管理加载、人脸检测、worker、顺序、busy 和错误。组合层只返回 Step 数组，没有第二个 Pipeline／Task／线程队列。两个组件各保持现有 CGImage 渲染边界，Combined 最多渲染两次、使用同一个 CIContext；providers 与既有 Mask helpers 在各自输入上可能执行两次。本任务没有修改 Texture 算法或任何 Mask 算法。旧 `NaturalSkinProcessingStep` 的固定 brightness +0.008／saturation 1.005 实验代码及测试保留，不用于默认 DEBUG 链路。
 

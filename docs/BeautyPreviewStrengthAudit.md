@@ -81,12 +81,12 @@ At UI/Auto 50, with fitted face width `W` and height `H`, each geometry input is
 
 | Effect | Effective strength | Individual requested visible movement | Radius |
 | --- | --- | --- | --- |
-| Slim | 0.25 | left/right `+/- 0.015 W` | `0.22 W` |
-| Width | 0.25 | left/right `+/- 0.0055 W` | `0.18 W` |
-| Chin sides | 0.25 | left/right `+/- 0.0025 W` | `0.17 W` |
-| Chin center | 0.25 | upward `0.0045 H` | `0.20 W` |
-| Forehead | 0.25 | downward `0.003 H` | `0.19 W` |
-| Cheekbones | 0.25 | left/right `+/- 0.00375 W` | `0.16 W` |
+| Slim | 0.25 | left/right `+/- 0.030 W` | `0.22 W` |
+| Width | 0.25 | left/right `+/- 0.011 W` | `0.18 W` |
+| Chin sides | 0.25 | left/right `+/- 0.005 W` | `0.17 W` |
+| Chin center | 0.25 | upward `0.009 H` | `0.20 W` |
+| Forehead | 0.25 | downward `0.006 H` | `0.19 W` |
+| Cheekbones | 0.25 | left/right `+/- 0.0075 W` | `0.16 W` |
 
 All use the same inner-radius fraction 0.30 and outer-radius falloff. The final
 map is the sum of these vectors times their local coverage, with inverse signs
@@ -116,28 +116,32 @@ independent of the other enabled effects; diagnostics distinguish the two.
 
 | Skin setting | Preview | Photo |
 | --- | --- | --- |
-| Detail retention for smoothing | 0.94 | 0.90 |
+| Detail retention for smoothing | 0.88 | 0.80 |
 | Smoothing noise reduction | 0.006 | 0.015 |
-| Local brightening candidate | 0.03 | 0.03 |
-| Tone consistency coefficient | 0.20 | 0.25 |
+| Local brightening candidate | 0.06 | 0.06 |
+| Tone consistency coefficient | 0.40 | 0.50 |
 | Tone luminance correction cap | 0.004 | 0.006 |
 
 The effective skin mask includes intensity once, plus region/feature/detail
 protection. Tone removes intensity for reference-support estimation, then applies
-it once in its final blend. The smoothing mid-frequency coefficient `0.5` is a
+it once in its final blend. Smoothing detail attenuation (`1 - retention`), the
+brightening candidate, tone blend coefficient and every geometry displacement
+ratio are now twice the investigated baseline. The mid-frequency coefficient `0.5` is a
 frequency-retention policy, and tone's `0.5` arithmetic bias cancels on decoding.
 Neither halves all effects. At UI/Auto 50 the tone correction upper bound before
-additional protection is `0.25 * 0.20 * 0.004 = 0.0002` linear luminance in Preview
-versus `0.000375` in Photo. These conservative settings contribute to weak skin
-visibility and remain unchanged by the geometry repair.
+additional protection is `0.25 * 0.40 * 0.004 = 0.0004` linear luminance in Preview
+versus `0.00075` in Photo. The correction cap is unchanged, so this mapping
+amplifies the final adjustment only once.
 
 ## Minimal repair and validation boundary
 
 The common map now adds each signed inverse displacement weighted by the same
 radial falloff. Neutral bias is added only once. Encoding scale bounds the sum
 of vector magnitudes, ensuring 0...1 RG without clipping, and cancels in decoding.
-Single-effect displacement, radius, falloff, Auto and all skin settings are
-unchanged. Camera acquisition, Vision, UI layout, saving and lifecycle are unchanged.
+The composition repair did not alter isolated amplitudes. The subsequent product
+mapping update doubles only each implemented effect's candidate amplitude; radius,
+falloff, Auto semantics, masks, camera acquisition, Vision, UI layout, saving and
+lifecycle remain unchanged.
 
 New tests cover all eight implemented UI strengths at 0/0.25/0.5/0.75/1, direct
 CameraService publication for all five geometry controls, the configuration/frame

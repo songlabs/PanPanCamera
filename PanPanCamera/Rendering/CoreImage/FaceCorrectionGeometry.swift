@@ -34,6 +34,13 @@ struct FaceCorrectionGeometryResult: Equatable, Sendable {
 /// movements. It is pure geometry so zero/invalid/incomplete inputs are testable
 /// without running Core Image. Coordinates are image pixels with a bottom-left origin.
 enum FaceCorrectionGeometry {
+    static let maximumSlimDisplacementRatio: CGFloat = 0.120
+    static let maximumWidthDisplacementRatio: CGFloat = 0.044
+    static let maximumChinSideDisplacementRatio: CGFloat = 0.020
+    static let maximumChinCenterDisplacementRatio: CGFloat = 0.036
+    static let maximumForeheadDisplacementRatio: CGFloat = 0.024
+    static let maximumCheekbonesDisplacementRatio: CGFloat = 0.030
+
     static func warps(faces: [DetectedFace], configuration: BeautyConfiguration,
                       extent: CGRect) -> [FaceCorrectionWarp] {
         result(faces: faces, configuration: configuration, extent: extent).warps
@@ -60,14 +67,10 @@ enum FaceCorrectionGeometry {
 
         var result: [FaceCorrectionWarp] = []
         let slim = CGFloat(configuration.effectiveFaceSlim)
-        // Face Auto defaults to 0.5, so Slim = 100 previously moved each jaw
-        // edge only 1.4% of face width. That is sub-visible after Preview scaling.
-        // Keep the same local radius, but allow a clear 3% per-side movement at
-        // the default Auto value (6% only when both controls are at maximum).
         let appliedSlim = configuration.isFaceCorrectionBypassed ? 0 : slim
         let candidateSmallFaceWarps = sidePair(left: leftLower, right: rightLower, extent: extent,
             inset: box.width * 0.018, radius: box.width * 0.22,
-            movement: box.width * 0.060 * appliedSlim,
+            movement: box.width * maximumSlimDisplacementRatio * appliedSlim,
             leftKind: .slimLeft, rightKind: .slimRight, permitsZeroMovement: true)
         let activeSmallFaceWarps = candidateSmallFaceWarps.filter {
             !configuration.isFaceCorrectionBypassed && slim > 0 && visibleMagnitude($0) >= 0.05
@@ -82,7 +85,7 @@ enum FaceCorrectionGeometry {
         if !configuration.isFaceCorrectionBypassed {
             let width = CGFloat(configuration.effectiveFaceWidth)
             if width > 0 {
-                let movement = box.width * 0.022 * width
+                let movement = box.width * maximumWidthDisplacementRatio * width
                 appendSidePair(to: &result, left: leftWidth, right: rightWidth, extent: extent,
                                inset: box.width * 0.015, radius: box.width * 0.18,
                                movement: movement, leftKind: .widthLeft, rightKind: .widthRight)
@@ -90,13 +93,14 @@ enum FaceCorrectionGeometry {
 
             let chinStrength = CGFloat(configuration.effectiveChin)
             if chinStrength > 0 {
-                let sideMovement = box.width * 0.010 * chinStrength
+                let sideMovement = box.width * maximumChinSideDisplacementRatio * chinStrength
                 appendSidePair(to: &result, left: leftLower, right: rightLower, extent: extent,
                                inset: box.width * 0.025, radius: box.width * 0.17,
                                movement: sideMovement, leftKind: .chinLeft, rightKind: .chinRight)
                 append(&result, kind: .chinCenter, point: chin, extent: extent,
                        centerOffset: .zero, radius: box.width * 0.20,
-                       visibleOffset: CGVector(dx: 0, dy: box.height * 0.018 * chinStrength))
+                       visibleOffset: CGVector(
+                        dx: 0, dy: box.height * maximumChinCenterDisplacementRatio * chinStrength))
             }
 
             let forehead = CGFloat(configuration.effectiveForehead)
@@ -108,7 +112,7 @@ enum FaceCorrectionGeometry {
                 if gap >= face.boundingBox.height * 0.10,
                    gap <= face.boundingBox.height * 0.50 {
                     let y = browTop + gap * 0.62
-                    let movement = box.height * 0.012 * forehead
+                    let movement = box.height * maximumForeheadDisplacementRatio * forehead
                     let radius = box.width * 0.19
                     let horizontal = box.width * 0.15
                     let centerX = (leftBrow.x + rightBrow.x) / 2
@@ -125,7 +129,7 @@ enum FaceCorrectionGeometry {
 
             let cheekbones = CGFloat(configuration.effectiveCheekbones)
             if cheekbones > 0 {
-                let movement = box.width * 0.015 * cheekbones
+                let movement = box.width * maximumCheekbonesDisplacementRatio * cheekbones
                 appendSidePair(to: &result, left: leftCheekbone, right: rightCheekbone,
                                extent: extent, inset: box.width * 0.020,
                                radius: box.width * 0.16, movement: movement,
