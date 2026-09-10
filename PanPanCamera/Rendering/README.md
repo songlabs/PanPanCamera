@@ -20,7 +20,7 @@ final uses native pixels. Preview then maps the main face's contour/eyebrow land
 the five local Face Correction controls. Their feathered signed vectors are added into one
 cached RG displacement map and one explicit vector-sampling CI kernel; missing/incomplete landmarks
 fall back to the original Preview layer. Face Auto batch-sets the category parameters,
-and each implemented control is rendered directly at its concrete strength.
+and each implemented control is rendered at Auto multiplied by its concrete strength.
 Face geometry is intentionally absent from final-photo processing. Both branches remain
 entirely local. There is no upload, third-party SDK, skin segmentation, eye/nose/mouth
 warp, blemish or dark-circle algorithm. Apple/device acceptance remains pending.
