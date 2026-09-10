@@ -9,8 +9,8 @@ enum FaceTool: String, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
-/// User-facing values. `auto` is the overall strength used by the processing
-/// configuration; selecting a tool never changes its stored value.
+/// User-facing values. `auto` is a category-wide batch control; selecting a
+/// concrete tool never changes any other stored value.
 struct BeautyParameters: Equatable, Sendable {
     static let range: ClosedRange<Double> = 0...100
     static let defaultValue: Double = 50
@@ -28,12 +28,20 @@ struct BeautyParameters: Equatable, Sendable {
 
     mutating func setValue(_ value: Double, for tool: SkinTool) {
         guard value.isFinite else { return }
-        skin[tool] = Self.clamp(value)
+        let value = Self.clamp(value)
+        skin[tool] = value
+        if tool == .auto {
+            for child in SkinTool.allCases where child != .auto { skin[child] = value }
+        }
     }
 
     mutating func setValue(_ value: Double, for tool: FaceTool) {
         guard value.isFinite else { return }
-        face[tool] = Self.clamp(value)
+        let value = Self.clamp(value)
+        face[tool] = value
+        if tool == .auto {
+            for child in FaceTool.allCases where child != .auto { face[child] = value }
+        }
     }
 
     private static func clamp(_ value: Double) -> Double {
@@ -96,22 +104,22 @@ struct BeautyConfiguration: Equatable, Sendable {
 
     static let disabled = Self()
 
-    var effectiveSmoothing: Double { overallStrength * smoothingStrength }
-    var effectiveBrightening: Double { overallStrength * brighteningStrength }
-    var effectiveTone: Double { overallStrength * toneStrength }
-    var effectiveFaceSlim: Double { faceOverallStrength * faceSlimStrength }
-    var effectiveFaceWidth: Double { faceOverallStrength * faceWidthStrength }
-    var effectiveChin: Double { faceOverallStrength * chinStrength }
-    var effectiveForehead: Double { faceOverallStrength * foreheadStrength }
-    var effectiveCheekbones: Double { faceOverallStrength * cheekbonesStrength }
+    var effectiveSmoothing: Double { smoothingStrength }
+    var effectiveBrightening: Double { brighteningStrength }
+    var effectiveTone: Double { toneStrength }
+    var effectiveFaceSlim: Double { faceSlimStrength }
+    var effectiveFaceWidth: Double { faceWidthStrength }
+    var effectiveChin: Double { chinStrength }
+    var effectiveForehead: Double { foreheadStrength }
+    var effectiveCheekbones: Double { cheekbonesStrength }
 
     var isPhotoBypassed: Bool {
-        !enabled || overallStrength == 0 ||
+        !enabled ||
             (effectiveSmoothing == 0 && effectiveBrightening == 0 && effectiveTone == 0)
     }
 
     var isFaceCorrectionBypassed: Bool {
-        !enabled || faceOverallStrength == 0 ||
+        !enabled ||
             (effectiveFaceSlim == 0 && effectiveFaceWidth == 0 && effectiveChin == 0 &&
                 effectiveForehead == 0 && effectiveCheekbones == 0)
     }
