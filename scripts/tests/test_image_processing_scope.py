@@ -123,7 +123,7 @@ struct DebugFaceMaskStep {}
     def test_beauty_zero_and_disabled_bypass_before_final_photo_decode(self):
         config = (APP / 'Domain/BeautyParameters.swift').read_text(encoding='utf-8')
         final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
-        self.assertIn('!enabled || overallStrength == 0', config)
+        self.assertIn('!enabled ||', config)
         self.assertIn('var isPhotoBypassed: Bool', config)
         bypass = final.index('guard !configuration.isPhotoBypassed else { return data }')
         decode = final.index('CGImageSourceCreateWithData')

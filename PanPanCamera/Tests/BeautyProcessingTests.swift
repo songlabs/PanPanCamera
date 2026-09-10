@@ -108,7 +108,7 @@ final class BeautyProcessingTests: XCTestCase {
                     parameters.setValue(strength * 100, for: tool)
                     configurations.replace(parameters.processingConfiguration)
                     let snapshot = configurations.snapshot()
-                    XCTAssertEqual(snapshot[keyPath: key], auto * strength, accuracy: 0.000_001)
+                    XCTAssertEqual(snapshot[keyPath: key], strength, accuracy: 0.000_001)
                     for size in [CGSize(width: 200, height: 300), CGSize(width: 100, height: 150)] {
                         frames.replace(BeautyPreviewFrame(pixelBuffer: buffer, orientation: .up,
                             mirrored: false, faces: [completeFace()], configuration: snapshot))

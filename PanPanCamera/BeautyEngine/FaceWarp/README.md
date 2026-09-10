@@ -4,7 +4,8 @@ The first product Face Correction path lives in `Rendering/CoreImage`, alongside
 existing Preview renderer. It consumes the current `DetectedFace` contour/eyebrow
 landmarks and implements Preview-only Auto, Slim, Width, Chin, Forehead and Cheekbones.
 
-Auto is a bounded overall multiplier for the five geometry controls, not an AI model.
+Auto batch-sets all face parameters; implemented geometry controls use their concrete
+strength directly, not Auto as an additional multiplier.
 The largest face wins, with distance to image center as a deterministic tie-breaker.
 Local movements are feathered into one RG displacement map and one Core Image kernel
 that explicitly decodes pixel sampling offsets. Missing/incomplete landmarks bypass

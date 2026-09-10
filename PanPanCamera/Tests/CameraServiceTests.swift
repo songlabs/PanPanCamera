@@ -133,8 +133,28 @@ final class CameraServiceTests: XCTestCase {
         camera.beautyParameters.setValue(10, for: SkinTool.auto)
         XCTAssertEqual(captured?.overallStrength, 0.86)
         XCTAssertEqual(captured?.smoothingStrength, 0.72)
-        XCTAssertEqual(captured?.effectiveFaceSlim ?? -1, 0.2432, accuracy: 0.000_001)
+        XCTAssertEqual(captured?.effectiveFaceSlim ?? -1, 0.38, accuracy: 0.000_001)
         XCTAssertEqual(commands.captures.last?.beauty, captured)
+    }
+
+    func testPreviewAndCaptureShareBatchStrengthWithoutSecondMultiplication() async throws {
+        let commands = SessionCommands()
+        let camera = service(permission: .init(current: { .authorized }, request: { .authorized }),
+                             commands: commands)
+        await camera.setActive(true)
+        await deliver(.status(.running), to: commands)
+
+        camera.beautyParameters.setValue(50, for: SkinTool.auto)
+        camera.beautyParameters.setValue(50, for: FaceTool.auto)
+        let preview = try XCTUnwrap(commands.beautyConfigurations.last)
+        XCTAssertEqual(preview.effectiveSmoothing, 0.5, accuracy: 0.000_001)
+        XCTAssertEqual(preview.effectiveFaceSlim, 0.5, accuracy: 0.000_001)
+
+        camera.capture()
+        let capture = try XCTUnwrap(commands.captures.last?.beauty)
+        XCTAssertEqual(capture, preview)
+        XCTAssertEqual(capture.effectiveSmoothing, 0.5, accuracy: 0.000_001)
+        XCTAssertEqual(capture.effectiveFaceSlim, 0.5, accuracy: 0.000_001)
     }
 
     func testSliderMutationsPublishEveryStrengthWithoutRecreatingSession() throws {

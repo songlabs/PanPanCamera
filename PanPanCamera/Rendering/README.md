@@ -19,13 +19,14 @@ uses the same definition on a smaller aspect-filled image with lighter internal 
 final uses native pixels. Preview then maps the main face's contour/eyebrow landmarks to
 the five local Face Correction controls. Their feathered signed vectors are added into one
 cached RG displacement map and one explicit vector-sampling CI kernel; missing/incomplete landmarks
-fall back to the original Preview layer. Face Auto is only their overall multiplier.
+fall back to the original Preview layer. Face Auto batch-sets the category parameters,
+and each implemented control is rendered directly at its concrete strength.
 Face geometry is intentionally absent from final-photo processing. Both branches remain
 entirely local. There is no upload, third-party SDK, skin segmentation, eye/nose/mouth
 warp, blemish or dark-circle algorithm. Apple/device acceptance remains pending.
 
 See [the Preview strength audit](../../docs/BeautyPreviewStrengthAudit.md) for the
-parameter chain, default Auto multiplication, skin quality differences, and the
+historical parameter chain, skin quality differences, and the
 overlapping-field overwrite repair. Requested overlay vectors are individual effect
 inputs; the final map combines all active vectors at each pixel.
 

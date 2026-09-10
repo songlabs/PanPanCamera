@@ -27,8 +27,8 @@ struct BeautyPreviewProcessingResult {
     let geometryDebug: FaceGeometryDebugSnapshot?
 }
 
-/// Product amplitudes at a normalized UI strength of 1. The overall/category
-/// multipliers remain in `BeautyConfiguration`; each value is applied once.
+/// Product amplitudes at a normalized UI strength of 1. Each concrete parameter
+/// from `BeautyConfiguration` is applied once.
 enum BeautyEffectAmplitude {
     static let brightening = 0.06
     static let previewSmoothingDetailRetention = 0.88
