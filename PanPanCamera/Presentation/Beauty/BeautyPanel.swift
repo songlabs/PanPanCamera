@@ -6,8 +6,8 @@ struct BeautyPanel: View {
     @Binding var category: BeautyCategory
 
     var body: some View {
-        PanelContainer(title: category.label) {
-            VStack(spacing: 20) {
+        PanelContainer(title: category.label, compact: category == .face) {
+            VStack(spacing: category == .face ? 8 : 20) {
                 Picker(selection: $category) {
                     ForEach(BeautyCategory.allCases) { category in Text(category.label).tag(category) }
                 } label: { Text(L10n.beautyCategory) }
@@ -16,7 +16,6 @@ struct BeautyPanel: View {
                     SkinBeautyPanel(parameters: $parameters)
                     UnimplementedNotice(message: .beautySkinUnavailableDetail)
                 } else {
-                    UnimplementedNotice(message: .beautyFacePreviewDetail)
                     FaceReshapePanel(parameters: $parameters)
                 }
             }
@@ -47,16 +46,19 @@ struct ParameterSlider: View {
 struct ParameterToolButton: View {
     let label: L10n
     let selected: Bool
+    var compact: Bool = false
     let action: () -> Void
 
     var body: some View {
         Button(action: action) {
             Text(label)
-                .font(.subheadline.weight(selected ? .semibold : .regular))
+                .font((compact ? Font.footnote : .subheadline)
+                    .weight(selected ? .semibold : .regular))
                 .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: compact)
                 .padding(.horizontal, 8)
-                .padding(.vertical, 12)
-                .frame(maxWidth: .infinity, minHeight: 48)
+                .padding(.vertical, compact ? 6 : 12)
+                .frame(maxWidth: .infinity, minHeight: compact ? 44 : 48)
                 .background(selected ? PanPanTheme.softPink : Color(uiColor: .secondarySystemBackground),
                             in: RoundedRectangle(cornerRadius: 16))
                 .overlay {

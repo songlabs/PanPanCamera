@@ -281,37 +281,142 @@
         }
       }
     },
-    "beauty.face.previewDetail": {
+    "beauty.face.overallDetail": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "小顔・顔幅・あご・額・頬骨はプレビューにリアルタイムで反映されます。その他の顔補正と写真への適用は現在準備中です。"
+            "value": "5つの顔補正の強さを一括調整 · プレビューのみ"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "小脸、脸宽、下巴、额头和颧骨会实时显示在预览中。其他面部调整及照片应用功能仍在准备中。"
+            "value": "统一调节五项美型强度 · 仅预览"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "小臉、臉寬、下巴、額頭和顴骨會即時顯示在預覽中。其他臉部調整及照片套用功能仍在準備中。"
+            "value": "統一調節五項美型強度 · 僅預覽"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face slimming, width, chin, forehead, and cheekbones update the preview in real time. Other face controls and photo output are still in preparation."
+            "value": "Scale all five reshape effects · Preview only"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "작은 얼굴, 얼굴 폭, 턱, 이마, 광대뼈 조정은 미리보기에 실시간으로 반영됩니다. 다른 얼굴 보정과 사진 적용 기능은 준비 중입니다."
+            "value": "다섯 가지 얼굴 보정 강도 조절 · 미리보기만"
+          }
+        }
+      }
+    },
+    "beauty.face.overallRange": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 補正なし · 100% 各項目の設定どおりの強さ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 不调整 · 100% 按各项设定全强度应用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 不調整 · 100% 按各項設定全強度套用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% off · 100% full strength at each setting"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 보정 없음 · 100% 각 항목의 설정 강도 그대로"
+          }
+        }
+      }
+    },
+    "beauty.face.strengthRange": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "強さ：0% 補正なし · 100% 最大（全体の強さに連動）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "强度：0% 不调整 · 100% 最大（随总强度）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "強度：0% 不調整 · 100% 最大（隨總強度）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Strength: 0% off · 100% max, scaled by Overall"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "강도: 0% 보정 없음 · 100% 최대 (전체 강도에 비례)"
+          }
+        }
+      }
+    },
+    "beauty.face.unavailableDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "この項目はまだ適用されません"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此项调整尚未生效"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "此項調整尚未生效"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This adjustment is not yet applied"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이 항목은 아직 적용되지 않습니다"
           }
         }
       }
@@ -1477,31 +1582,66 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "頬骨"
+            "value": "頬骨幅を狭く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "颧骨"
+            "value": "收窄颧骨"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "顴骨"
+            "value": "收窄顴骨"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Cheekbones"
+            "value": "Narrow cheekbones"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "광대"
+            "value": "광대 폭 좁히기"
+          }
+        }
+      }
+    },
+    "face.cheekbones.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "頬骨付近の両側を内側へ · プレビューのみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "颧骨附近两侧向内收窄 · 仅预览"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顴骨附近兩側向內收窄 · 僅預覽"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move cheekbone areas inward · Preview only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "광대 주변 양쪽을 안쪽으로 · 미리보기만"
           }
         }
       }
@@ -1512,31 +1652,66 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "あご"
+            "value": "あごを細く短く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "下巴"
+            "value": "收窄并缩短下巴"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "下巴"
+            "value": "收窄並縮短下巴"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Chin"
+            "value": "Narrow & shorten chin"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "턱"
+            "value": "턱 좁히고 줄이기"
+          }
+        }
+      }
+    },
+    "face.chin.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "両側を内側へ、あご先を上へ · プレビューのみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下颌两侧内收、下巴底部上提 · 仅预览"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下顎兩側內收、下巴底部上提 · 僅預覽"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move jaw sides inward and chin tip up · Preview only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "턱 양쪽은 안쪽으로, 턱끝은 위로 · 미리보기만"
           }
         }
       }
@@ -1652,31 +1827,66 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "額"
+            "value": "額を下げる"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "额头"
+            "value": "下移额头"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "額頭"
+            "value": "下移額頭"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Forehead"
+            "value": "Lower forehead"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "이마"
+            "value": "이마 내리기"
+          }
+        }
+      }
+    },
+    "face.forehead.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "額の一部を下へ移動 · プレビューのみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "额头局部向下移动 · 仅预览"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "額頭局部向下移動 · 僅預覽"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move local forehead areas down · Preview only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "이마 일부를 아래로 · 미리보기만"
           }
         }
       }
@@ -1926,37 +2136,107 @@
         }
       }
     },
+    "face.slim.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下あごの両側を内側へ · プレビューのみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下颌两侧向内收窄 · 仅预览"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下顎兩側向內收窄 · 僅預覽"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move lower jaw sides inward · Preview only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아래턱 양쪽을 안쪽으로 · 미리보기만"
+          }
+        }
+      }
+    },
     "face.width": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "顔幅"
+            "value": "顔幅を狭く"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "脸宽"
+            "value": "收窄脸宽"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "臉寬"
+            "value": "收窄臉寬"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face width"
+            "value": "Narrow face"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "얼굴 폭"
+            "value": "얼굴 폭 좁히기"
+          }
+        }
+      }
+    },
+    "face.width.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顔の中央付近の両側を内側へ · プレビューのみ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "面部中段两侧向内收窄 · 仅预览"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "臉部中段兩側向內收窄 · 僅預覽"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Move mid-face sides inward · Preview only"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "얼굴 중간 양쪽을 안쪽으로 · 미리보기만"
           }
         }
       }
@@ -2241,181 +2521,6 @@
         }
       }
     },
-    "makeup.blush": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "チーク"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "腮红"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "腮紅"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Blush"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "블러셔"
-          }
-        }
-      }
-    },
-    "makeup.brow": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アイブロウ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "眉妆"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "眉妝"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Brows"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "눈썹"
-          }
-        }
-      }
-    },
-    "makeup.detail": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "メイクの項目選択のみ対応しています。色やメイクの効果はまだ適用されません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前仅支持选择美妆类别，尚未应用颜色或美妆效果。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "目前僅支援選擇美妝類別，尚未套用顏色或美妝效果。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Category selection only. Colors and makeup effects are not applied yet."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "지금은 메이크업 종류만 선택할 수 있어요. 색상과 메이크업 효과는 아직 적용되지 않아요."
-          }
-        }
-      }
-    },
-    "makeup.eye": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "アイメイク"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "眼妆"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "眼妝"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Eyes"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "아이 메이크업"
-          }
-        }
-      }
-    },
-    "makeup.lip": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "リップ"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "唇妆"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "唇妝"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Lips"
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "립"
-          }
-        }
-      }
-    },
     "language.english": {
       "extractionState": "manual",
       "localizations": {
@@ -2622,6 +2727,181 @@
           "stringUnit": {
             "state": "translated",
             "value": "繁體中文"
+          }
+        }
+      }
+    },
+    "makeup.blush": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "チーク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "腮红"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "腮紅"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blush"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "블러셔"
+          }
+        }
+      }
+    },
+    "makeup.brow": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アイブロウ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "眉妆"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "眉妝"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Brows"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "눈썹"
+          }
+        }
+      }
+    },
+    "makeup.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "メイクの項目選択のみ対応しています。色やメイクの効果はまだ適用されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "当前仅支持选择美妆类别，尚未应用颜色或美妆效果。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目前僅支援選擇美妝類別，尚未套用顏色或美妝效果。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Category selection only. Colors and makeup effects are not applied yet."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "지금은 메이크업 종류만 선택할 수 있어요. 색상과 메이크업 효과는 아직 적용되지 않아요."
+          }
+        }
+      }
+    },
+    "makeup.eye": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "アイメイク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "眼妆"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "眼妝"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Eyes"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "아이 메이크업"
+          }
+        }
+      }
+    },
+    "makeup.lip": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "リップ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "唇妆"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "唇妝"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lips"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "립"
           }
         }
       }

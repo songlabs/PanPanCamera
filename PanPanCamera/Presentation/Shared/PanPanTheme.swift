@@ -46,6 +46,7 @@ struct UnimplementedNotice: View {
 
 struct PanelContainer<Content: View>: View {
     let title: L10n
+    var compact: Bool = false
     @ViewBuilder var content: () -> Content
     @Environment(\.dismiss) private var dismiss
 
@@ -53,7 +54,9 @@ struct PanelContainer<Content: View>: View {
         NavigationStack {
             ScrollView {
                 content()
-                    .padding(20)
+                    .padding(.horizontal, compact ? 16 : 20)
+                    .padding(.top, compact ? 4 : 20)
+                    .padding(.bottom, compact ? 8 : 20)
                     .frame(maxWidth: 640)
                     .frame(maxWidth: .infinity)
             }
@@ -76,6 +79,6 @@ struct PanelContainer<Content: View>: View {
             return [.large]
         }
         #endif
-        return [.medium, .large]
+        return compact ? [.fraction(0.38), .large] : [.medium, .large]
     }
 }

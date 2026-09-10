@@ -52,7 +52,15 @@ enum L10n: String, CaseIterable {
     case auto = "beauty.auto"
     case beautyOverall = "beauty.overall"
     case beautySkinUnavailableDetail = "beauty.skin.unavailableDetail"
-    case beautyFacePreviewDetail = "beauty.face.previewDetail"
+    case faceOverallDetail = "beauty.face.overallDetail"
+    case faceOverallRange = "beauty.face.overallRange"
+    case faceStrengthRange = "beauty.face.strengthRange"
+    case faceUnavailableDetail = "beauty.face.unavailableDetail"
+    case faceSlimDetail = "face.slim.detail"
+    case faceWidthDetail = "face.width.detail"
+    case faceChinDetail = "face.chin.detail"
+    case faceForeheadDetail = "face.forehead.detail"
+    case faceCheekbonesDetail = "face.cheekbones.detail"
     case smooth = "skin.smooth"
     case brighten = "skin.brighten"
     case tone = "skin.tone"
@@ -179,7 +187,7 @@ extension SkinTool {
 extension FaceTool {
     var label: L10n {
         switch self {
-        case .auto: return .auto
+        case .auto: return .beautyOverall
         case .slim: return .slim
         case .width: return .faceWidth
         case .chin: return .chin
@@ -192,6 +200,28 @@ extension FaceTool {
         case .noseLength: return .noseLength
         case .mouthShape: return .mouthShape
         case .mouthWidth: return .mouthWidth
+        }
+    }
+
+    var previewDetail: L10n {
+        switch self {
+        case .auto: return .faceOverallDetail
+        case .slim: return .faceSlimDetail
+        case .width: return .faceWidthDetail
+        case .chin: return .faceChinDetail
+        case .forehead: return .faceForeheadDetail
+        case .cheekbones: return .faceCheekbonesDetail
+        case .eyes, .eyeSpacing, .eyeHeight, .noseWidth, .noseLength, .mouthShape, .mouthWidth:
+            return .faceUnavailableDetail
+        }
+    }
+
+    var strengthRangeDetail: L10n? {
+        switch self {
+        case .auto: return .faceOverallRange
+        case .slim, .width, .chin, .forehead, .cheekbones: return .faceStrengthRange
+        case .eyes, .eyeSpacing, .eyeHeight, .noseWidth, .noseLength, .mouthShape, .mouthWidth:
+            return nil
         }
     }
 }
