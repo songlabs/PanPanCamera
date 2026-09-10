@@ -8,10 +8,10 @@ The [iOS CI](https://github.com/songlabs/PanPanCamera/actions/workflows/ci.yml?q
 
 | Verification | Current suite / required evidence |
 | --- | --- |
-| Debug XCTest | 45 methods: BeautyParameters 5, CameraState 6, Localization 1, ScreenshotConfiguration 5, CameraService 10, CameraSessionControl 5, PhotoCaptureLifecycle 4, FaceDetection 9. New face tests are pending Apple execution; read actual totals from PanPanCameraTests.xcresult. |
+| Debug XCTest | 210 methods are statically declared across 24 test sources, including Face Correction parameter/geometry/bypass/mirror tests. Read actual executed totals from PanPanCameraTests.xcresult. |
 | Release Screenshot isolation XCTest | 5 methods; read ReleaseScreenshotTests.xcresult summary, not the Debug result. |
 | Release Simulator Build | Require the dedicated xcodebuild build step to succeed. This is not a device Archive. |
-| Delivery scripts | 27 Python tests, including strict three-part versions and dynamically generated PNG corruption cases. |
+| Delivery scripts | 45 Python tests, including strict three-part versions, Face Correction scope and dynamically generated PNG corruption cases. |
 | Screenshot output | Exactly 10 PNGs: five-language camera screens plus ja beauty/reshape/filter/makeup/settings. Read actual device/iOS and native resolution from that run. |
 | PNG validation | Require IDAT, valid complete zlib data, IHDR-consistent scanlines, filters, CRC, file coverage and native resolution; also require macOS sips reads. |
 | Artifact review | Download panpan-simulator-screenshots; open all images and check target screens, languages, black frames, permission dialogs and visible text overflow. Record that inspection separately from workflow success. |
@@ -25,7 +25,7 @@ Permission tests deterministically suspend authorization across inactivity and r
 ## Additional Xcode / Simulator checks
 
 1. Open PanPanCamera.xcodeproj and the shared scheme. The deployment target is iOS 17; CI pins Xcode 26.3 and selects an available iOS 26.x iPhone. Running on iOS 17 and building with the minimum documented Xcode toolchain remain separate, unexecuted checks.
-2. Run the current 45-method Debug suite and 5 Release isolation methods, preserving the .xcresult outside tracked files.
+2. Run the current 210-method Debug suite and 5 Release isolation methods, preserving the .xcresult outside tracked files.
 3. Check ja, zh-Hans, zh-Hant, en and ko compiled resources; confirm PanPan is untranslated. System permission dialogs and every panel in every language still need visual acceptance.
 4. Check small and large iPhones, default/accessibility text sizes, VoiceOver, safe areas, scrolling and long English/Korean text. Screenshot Mode uses large sheets; separately inspect ordinary medium sheets.
 5. Simulator Screenshot uses a Debug-only SwiftUI testing background and bypasses CameraSession creation and permission requests. It cannot validate real preview, flash, captures or switching. Release/TestFlight ignore screenshot arguments.
@@ -91,13 +91,21 @@ If these conditions cannot be produced, retain Pending rather than treating unit
 ### Parameters and privacy
 
 - [ ] Pending — six skin and thirteen face controls retain independent 0–100 values across panel changes.
-- [ ] Pending — face correction, blemish, dark-circle, filter and makeup notices remain accurate; those controls do not alter pixels.
+- [ ] Pending — Face Correction notice names the five live Preview controls and accurately says the remaining controls/photo application are pending.
+- [ ] Pending — blemish, dark-circle, eye/nose/mouth, filter and makeup controls do not alter pixels.
 - [ ] Pending — video/portrait/album/timer/ratio remain explicitly unavailable; no simulated effects.
 - [ ] Pending — add-only Photos save works; no camera/photo/face upload, network request or face-data persistence occurs.
 
 ### Beauty Preview and Final Photo
 
 - [ ] Pending — overall strength 0 reveals the original preview path; 0 to 100 changes the live face result without reopening the panel.
+- [ ] Pending — Face Auto scales the same five local effects; Slim narrows the lower face without shrinking eyes/nose/mouth.
+- [ ] Pending — Width changes the side contour only; Chin remains subtle without a sharp V-face result.
+- [ ] Pending — Forehead changes only when stable eyebrow/face geometry exists; inspect hairline, brows, glasses and hair edges.
+- [ ] Pending — Cheekbones stay local and do not produce dents; rapidly scrub every Face Correction slider.
+- [ ] Pending — move near/far and left/right, wear glasses, leave/re-enter the frame, and compare front/rear cameras.
+- [ ] Pending — in multi-face scenes, the largest face wins, with nearest-center tie-breaking; selection does not oscillate visibly.
+- [ ] Pending — Face Correction affects Preview only; captured-photo pixels do not acquire these five geometry changes.
 - [ ] Pending — smoothing retains texture and protects eyes, lips, brows, hair/background and text from visible blur or halos.
 - [ ] Pending — brightening and tone stay subtle across different skin tones and lighting, without clipping or global color/gamma shifts.
 - [ ] Pending — zero/one/multiple faces, profile, occlusion and rapid movement do not freeze or black out preview.

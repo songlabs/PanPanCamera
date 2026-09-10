@@ -5,6 +5,16 @@
 	};
 	"objectVersion" = 56;
 	"objects" = {
+		"C20000000000000000000001" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "FaceCorrectionGeometry.swift";
+			"sourceTree" = "<group>";
+		};
+		"C30000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "C20000000000000000000001";
+		};
 		"B20000000000000000000001" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -1075,6 +1085,7 @@
 		"62315AE240EA33C7515C50B6" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"C20000000000000000000001",
 				"B20000000000000000000002",
 				"B20000000000000000000003",
 				"B20000000000000000000004",
@@ -1307,6 +1318,7 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"C30000000000000000000001",
 				"B30000000000000000000001",
 				"B30000000000000000000002",
 				"B30000000000000000000003",

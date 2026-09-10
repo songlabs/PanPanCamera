@@ -52,7 +52,7 @@ enum L10n: String, CaseIterable {
     case auto = "beauty.auto"
     case beautyOverall = "beauty.overall"
     case beautySkinUnavailableDetail = "beauty.skin.unavailableDetail"
-    case beautyFaceUnavailableDetail = "beauty.face.unavailableDetail"
+    case beautyFacePreviewDetail = "beauty.face.previewDetail"
     case smooth = "skin.smooth"
     case brighten = "skin.brighten"
     case tone = "skin.tone"

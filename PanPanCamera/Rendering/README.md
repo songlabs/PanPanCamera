@@ -13,12 +13,16 @@ Photo and silent paths bypass their former work when Beauty is disabled/zero whe
 source format permits. Failures do not replace the original preview, while final failures
 produce the existing capture error instead of saving damaged data.
 
-BeautyImageProcessor defines the shared effect order and parameter mapping: texture-
+BeautyImageProcessor defines the skin effect order and parameter mapping: texture-
 preserving smoothing, bounded local brightening, then neutral tone consistency. Preview
 uses the same definition on a smaller aspect-filled image with lighter internal settings;
-final uses native pixels. Both reuse VisionFaceDetector's result contract and facial
-landmarks for feature protection. There is no upload, third-party SDK, skin segmentation,
-face warp, blemish or dark-circle algorithm. Apple/device acceptance remains pending.
+final uses native pixels. Preview then maps the main face's contour/eyebrow landmarks to
+the five local Face Correction controls. Their feathered fields are composed into one
+cached displacement map and one `CIDisplacementDistortion`; missing/incomplete landmarks
+fall back to the original Preview layer. Face Auto is only their overall multiplier.
+Face geometry is intentionally absent from final-photo processing. Both branches remain
+entirely local. There is no upload, third-party SDK, skin segmentation, eye/nose/mouth
+warp, blemish or dark-circle algorithm. Apple/device acceptance remains pending.
 
 ## Independent DEBUG route
 
@@ -143,14 +147,14 @@ only for compatibility/testing. No additional legacy kernel is introduced.
 ## Verification boundaries
 
 - python scripts/check_project.py: project membership, dependency scope and localization.
-- python -m unittest discover -s scripts/tests -v: 44 passing script/static tests,
+- python -m unittest discover -s scripts/tests -v: 45 passing script/static tests,
   including Beauty capture, bypass, back-pressure and Release-isolation checks.
-- scripts/check_swift_syntax.ps1: 87 Swift sources parse; four pure Swift Domain
+- scripts/check_swift_syntax.ps1: 88 Swift sources parse; four pure Swift Domain
   files and three camera control helpers typecheck on the installed host toolchain.
   An additional parser invocation with DEBUG also passed. This is not Apple typecheck.
 - Previous host Foundation XCTest/typecheck attempts lacked msvcrt.lib, oldnames.lib,
   msvcprt.lib and errno.h. This task does not retry or repair those known paths.
-- Existing Xcode Debug test target now has 24 source files, with 203 test methods by
+- Existing Xcode Debug test target now has 24 source files, with 210 test methods by
   static count. New configuration, snapshot, frame-store, coordinate and synthetic-image
   methods are not executed on Apple here. Float formula tests explicitly request RGBAf
   intermediates, separate from public RGBA8 tests.

@@ -11,7 +11,8 @@ final class FinalBeautyProcessor: @unchecked Sendable {
 
     func processPhotoData(_ data: Data, configuration: BeautyConfiguration) -> Data? {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        guard !configuration.isBypassed else { return data }
+        // Face Correction is intentionally Preview-only in this task.
+        guard !configuration.isPhotoBypassed else { return data }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil),
               let image = CGImageSourceCreateImageAtIndex(source, 0, [
                 kCGImageSourceShouldCacheImmediately: true
@@ -37,7 +38,8 @@ final class FinalBeautyProcessor: @unchecked Sendable {
 
     func processSilentFrame(_ frame: SilentFrame, configuration: BeautyConfiguration) -> Data? {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        guard !configuration.isBypassed else { return silentEncoder.encode(frame) }
+        // Face Correction is intentionally Preview-only in this task.
+        guard !configuration.isPhotoBypassed else { return silentEncoder.encode(frame) }
         do {
             let detected = try detector.detect(frame.pixelBuffer, orientation: frame.orientation)
             guard !detected.isEmpty else { return silentEncoder.encode(frame) }

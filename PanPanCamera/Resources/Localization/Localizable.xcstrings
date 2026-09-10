@@ -281,37 +281,37 @@
         }
       }
     },
-    "beauty.face.unavailableDetail": {
+    "beauty.face.previewDetail": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "顔補正は現在パラメータ調整のみです。プレビューと写真にはまだ適用されません。"
+            "value": "小顔・顔幅・あご・額・頬骨はプレビューにリアルタイムで反映されます。その他の顔補正と写真への適用は現在準備中です。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "面部调整目前仅保存参数，尚未应用到预览和照片。"
+            "value": "小脸、脸宽、下巴、额头和颧骨会实时显示在预览中。其他面部调整及照片应用功能仍在准备中。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "臉部調整目前僅儲存參數，尚未套用到預覽和照片。"
+            "value": "小臉、臉寬、下巴、額頭和顴骨會即時顯示在預覽中。其他臉部調整及照片套用功能仍在準備中。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Face correction currently stores parameters only and is not yet applied to the preview or photo."
+            "value": "Face slimming, width, chin, forehead, and cheekbones update the preview in real time. Other face controls and photo output are still in preparation."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "얼굴 보정은 현재 매개변수만 저장하며 미리보기와 사진에는 아직 적용되지 않습니다."
+            "value": "작은 얼굴, 얼굴 폭, 턱, 이마, 광대뼈 조정은 미리보기에 실시간으로 반영됩니다. 다른 얼굴 보정과 사진 적용 기능은 준비 중입니다."
           }
         }
       }

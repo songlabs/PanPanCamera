@@ -10,16 +10,27 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(values.selectedFace, .auto)
         XCTAssertEqual(values.processingConfiguration, BeautyConfiguration(
             enabled: true, overallStrength: 0.5, smoothingStrength: 0.5,
-            brighteningStrength: 0.5, toneStrength: 0.5))
+            brighteningStrength: 0.5, toneStrength: 0.5,
+            faceOverallStrength: 0.5, faceSlimStrength: 0.5,
+            faceWidthStrength: 0.5, chinStrength: 0.5,
+            foreheadStrength: 0.5, cheekbonesStrength: 0.5))
     }
 
     func testConfigurationClampsEveryNormalizedInputAndRejectsNonfiniteValues() {
         let values = BeautyConfiguration(enabled: true, overallStrength: 2,
-            smoothingStrength: -1, brighteningStrength: .infinity, toneStrength: .nan)
+            smoothingStrength: -1, brighteningStrength: .infinity, toneStrength: .nan,
+            faceOverallStrength: 2, faceSlimStrength: -1, faceWidthStrength: .infinity,
+            chinStrength: .nan, foreheadStrength: 4, cheekbonesStrength: -4)
         XCTAssertEqual(values.overallStrength, 1)
         XCTAssertEqual(values.smoothingStrength, 0)
         XCTAssertEqual(values.brighteningStrength, 0)
         XCTAssertEqual(values.toneStrength, 0)
+        XCTAssertEqual(values.faceOverallStrength, 1)
+        XCTAssertEqual(values.faceSlimStrength, 0)
+        XCTAssertEqual(values.faceWidthStrength, 0)
+        XCTAssertEqual(values.chinStrength, 0)
+        XCTAssertEqual(values.foreheadStrength, 1)
+        XCTAssertEqual(values.cheekbonesStrength, 0)
     }
 
     func testDisabledAndZeroOverallConfigurationsBypass() {
@@ -28,14 +39,27 @@ final class BeautyParametersTests: XCTestCase {
             smoothingStrength: 1, brighteningStrength: 1, toneStrength: 1).isBypassed)
         XCTAssertFalse(BeautyConfiguration(enabled: true, overallStrength: 1,
             smoothingStrength: 1).isBypassed)
+        XCTAssertTrue(BeautyConfiguration(enabled: true, faceOverallStrength: 0,
+            faceSlimStrength: 1).isFaceCorrectionBypassed)
+        let faceOnly = BeautyConfiguration(enabled: true, faceOverallStrength: 1,
+                                           faceSlimStrength: 1)
+        XCTAssertFalse(faceOnly.isBypassed)
+        XCTAssertTrue(faceOnly.isPhotoBypassed)
     }
 
     func testOverallStrengthScalesEveryImplementedEffectWithSharedSemantics() {
         let values = BeautyConfiguration(enabled: true, overallStrength: 0.8,
-            smoothingStrength: 0.5, brighteningStrength: 0.25, toneStrength: 1)
+            smoothingStrength: 0.5, brighteningStrength: 0.25, toneStrength: 1,
+            faceOverallStrength: 0.6, faceSlimStrength: 0.5, faceWidthStrength: 0.25,
+            chinStrength: 1, foreheadStrength: 0.75, cheekbonesStrength: 0.1)
         XCTAssertEqual(values.effectiveSmoothing, 0.4, accuracy: 0.000_001)
         XCTAssertEqual(values.effectiveBrightening, 0.2, accuracy: 0.000_001)
         XCTAssertEqual(values.effectiveTone, 0.8, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveFaceSlim, 0.3, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveFaceWidth, 0.15, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveChin, 0.6, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveForehead, 0.45, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveCheekbones, 0.06, accuracy: 0.000_001)
     }
 
     func testBothParameterGroupsClampToSliderRange() {
@@ -91,5 +115,24 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(values.value(for: FaceTool.slim), 38)
         XCTAssertEqual(values.value(for: FaceTool.auto), 50)
         XCTAssertEqual(values.value(for: SkinTool.auto), 10)
+    }
+
+    func testFaceCorrectionStatePropagatesWithoutUsingUnimplementedControls() {
+        var values = BeautyParameters()
+        values.setValue(80, for: FaceTool.auto)
+        values.setValue(25, for: FaceTool.slim)
+        values.setValue(40, for: FaceTool.width)
+        values.setValue(60, for: FaceTool.chin)
+        values.setValue(75, for: FaceTool.forehead)
+        values.setValue(10, for: FaceTool.cheekbones)
+        values.setValue(100, for: FaceTool.eyes)
+
+        let configuration = values.processingConfiguration
+        XCTAssertEqual(configuration.faceOverallStrength, 0.8, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveFaceSlim, 0.2, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveFaceWidth, 0.32, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveChin, 0.48, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveForehead, 0.6, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveCheekbones, 0.08, accuracy: 0.000_001)
     }
 }

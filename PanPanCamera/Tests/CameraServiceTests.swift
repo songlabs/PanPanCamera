@@ -124,11 +124,16 @@ final class CameraServiceTests: XCTestCase {
         await deliver(.status(.running), to: commands)
         camera.beautyParameters.setValue(86, for: SkinTool.auto)
         camera.beautyParameters.setValue(72, for: .smooth)
+        camera.beautyParameters.setValue(64, for: FaceTool.auto)
+        camera.beautyParameters.setValue(38, for: .slim)
+        XCTAssertEqual(commands.beautyConfigurations.last?.faceOverallStrength, 0.64)
+        XCTAssertEqual(commands.beautyConfigurations.last?.faceSlimStrength, 0.38)
         camera.capture()
         let captured = commands.captures.last?.beauty
         camera.beautyParameters.setValue(10, for: SkinTool.auto)
         XCTAssertEqual(captured?.overallStrength, 0.86)
         XCTAssertEqual(captured?.smoothingStrength, 0.72)
+        XCTAssertEqual(captured?.effectiveFaceSlim ?? -1, 0.2432, accuracy: 0.000_001)
         XCTAssertEqual(commands.captures.last?.beauty, captured)
     }
 

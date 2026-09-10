@@ -16,7 +16,7 @@ struct BeautyPanel: View {
                     SkinBeautyPanel(parameters: $parameters)
                     UnimplementedNotice(message: .beautySkinUnavailableDetail)
                 } else {
-                    UnimplementedNotice(message: .beautyFaceUnavailableDetail)
+                    UnimplementedNotice(message: .beautyFacePreviewDetail)
                     FaceReshapePanel(parameters: $parameters)
                 }
             }

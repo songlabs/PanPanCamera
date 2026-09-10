@@ -6,13 +6,15 @@ same configuration semantics drive the latest-frame preview and native-source fi
 photo processors. Skin Auto is the overall strength. Smoothing, local brightening and
 neutral tone consistency are implemented; processing is entirely on-device.
 
-Future boundaries:
+Current and future boundaries:
 
 - `Skin/`: future higher-level policy beyond the current Rendering implementation.
-- `FaceWarp/`: local face geometry adjustments; future landmarks are a separate input.
+- `FaceWarp/`: five conservative landmark-driven adjustments are implemented for Preview;
+  final-photo geometry and the remaining face controls are future work.
 - `Makeup/`: local makeup composition.
 - `Filters/`: local filter presets.
 
-Face warp, blemish, dark-circle correction, makeup and filters are not implemented.
+Final-photo face warp, eye/nose/mouth warp, blemish, dark-circle correction, makeup and
+filters are not implemented.
 Do not add a fake pass-through engine, cloud client, speculative protocol tree or
 third-party beauty SDK.

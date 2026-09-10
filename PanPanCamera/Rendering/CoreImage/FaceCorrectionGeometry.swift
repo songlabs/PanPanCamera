@@ -1,0 +1,294 @@
+import CoreImage
+import Foundation
+
+/// A small, local visible movement in the already oriented Preview image.
+/// The Core Image step converts this forward movement to an inverse sampling offset.
+struct FaceCorrectionWarp: Equatable, Sendable {
+    enum Kind: Equatable, Sendable {
+        case slimLeft, slimRight
+        case widthLeft, widthRight
+        case chinLeft, chinCenter, chinRight
+        case foreheadLeft, foreheadRight
+        case cheekbonesLeft, cheekbonesRight
+    }
+
+    let kind: Kind
+    let center: CGPoint
+    let radius: CGFloat
+    let visibleOffset: CGVector
+}
+
+/// Converts the main face's Vision landmarks into conservative, feathered local
+/// movements. It is pure geometry so zero/invalid/incomplete inputs are testable
+/// without running Core Image. Coordinates are image pixels with a bottom-left origin.
+enum FaceCorrectionGeometry {
+    static func warps(faces: [DetectedFace], configuration: BeautyConfiguration,
+                      extent: CGRect) -> [FaceCorrectionWarp] {
+        guard !configuration.isFaceCorrectionBypassed,
+              isValid(extent), let face = primaryFace(in: faces) else {
+            return []
+        }
+        let contour = validLandmarks(.faceContour, in: face)
+        guard contour.count >= 5 else { return [] }
+
+        let box = pixelRect(face.boundingBox, in: extent)
+        guard box.width >= 8, box.height >= 8 else { return [] }
+
+        let leftLower = closest(contour, to: CGPoint(x: 0.12, y: 0.30), in: face.boundingBox)
+        let rightLower = closest(contour, to: CGPoint(x: 0.88, y: 0.30), in: face.boundingBox)
+        let leftWidth = closest(contour, to: CGPoint(x: 0.08, y: 0.52), in: face.boundingBox)
+        let rightWidth = closest(contour, to: CGPoint(x: 0.92, y: 0.52), in: face.boundingBox)
+        let leftCheekbone = closest(contour, to: CGPoint(x: 0.10, y: 0.64), in: face.boundingBox)
+        let rightCheekbone = closest(contour, to: CGPoint(x: 0.90, y: 0.64), in: face.boundingBox)
+        let chin = closest(contour, to: CGPoint(x: 0.50, y: 0.04), in: face.boundingBox)
+
+        var result: [FaceCorrectionWarp] = []
+        let slim = CGFloat(configuration.effectiveFaceSlim)
+        if slim > 0 {
+            let movement = box.width * 0.028 * slim
+            appendSidePair(to: &result, left: leftLower, right: rightLower, extent: extent,
+                           inset: box.width * 0.018, radius: box.width * 0.22,
+                           movement: movement, leftKind: .slimLeft, rightKind: .slimRight)
+        }
+
+        let width = CGFloat(configuration.effectiveFaceWidth)
+        if width > 0 {
+            let movement = box.width * 0.022 * width
+            appendSidePair(to: &result, left: leftWidth, right: rightWidth, extent: extent,
+                           inset: box.width * 0.015, radius: box.width * 0.18,
+                           movement: movement, leftKind: .widthLeft, rightKind: .widthRight)
+        }
+
+        let chinStrength = CGFloat(configuration.effectiveChin)
+        if chinStrength > 0 {
+            let sideMovement = box.width * 0.010 * chinStrength
+            appendSidePair(to: &result, left: leftLower, right: rightLower, extent: extent,
+                           inset: box.width * 0.025, radius: box.width * 0.17,
+                           movement: sideMovement, leftKind: .chinLeft, rightKind: .chinRight)
+            append(&result, kind: .chinCenter, point: chin, extent: extent,
+                   centerOffset: .zero, radius: box.width * 0.20,
+                   visibleOffset: CGVector(dx: 0, dy: box.height * 0.018 * chinStrength))
+        }
+
+        let forehead = CGFloat(configuration.effectiveForehead)
+        if forehead > 0,
+           let leftBrow = average(validLandmarks(.leftEyebrow, in: face)),
+           let rightBrow = average(validLandmarks(.rightEyebrow, in: face)) {
+            let browTop = max(leftBrow.y, rightBrow.y)
+            let gap = face.boundingBox.maxY - browTop
+            if gap >= face.boundingBox.height * 0.10,
+               gap <= face.boundingBox.height * 0.50 {
+                let y = browTop + gap * 0.62
+                let movement = box.height * 0.012 * forehead
+                let radius = box.width * 0.19
+                let horizontal = box.width * 0.15
+                let centerX = (leftBrow.x + rightBrow.x) / 2
+                append(&result, kind: .foreheadLeft,
+                       point: CGPoint(x: centerX, y: y), extent: extent,
+                       centerOffset: CGVector(dx: -horizontal, dy: 0), radius: radius,
+                       visibleOffset: CGVector(dx: 0, dy: -movement))
+                append(&result, kind: .foreheadRight,
+                       point: CGPoint(x: centerX, y: y), extent: extent,
+                       centerOffset: CGVector(dx: horizontal, dy: 0), radius: radius,
+                       visibleOffset: CGVector(dx: 0, dy: -movement))
+            }
+        }
+
+        let cheekbones = CGFloat(configuration.effectiveCheekbones)
+        if cheekbones > 0 {
+            let movement = box.width * 0.015 * cheekbones
+            appendSidePair(to: &result, left: leftCheekbone, right: rightCheekbone,
+                           extent: extent, inset: box.width * 0.020,
+                           radius: box.width * 0.16, movement: movement,
+                           leftKind: .cheekbonesLeft, rightKind: .cheekbonesRight)
+        }
+        return result
+    }
+
+    static func primaryFace(in faces: [DetectedFace]) -> DetectedFace? {
+        faces.filter {
+            let box = $0.boundingBox
+            return isValid(box) && box.minX >= 0 && box.minY >= 0 && box.maxX <= 1 && box.maxY <= 1
+        }
+            .max { lhs, rhs in
+                let leftArea = lhs.boundingBox.width * lhs.boundingBox.height
+                let rightArea = rhs.boundingBox.width * rhs.boundingBox.height
+                if abs(leftArea - rightArea) > 0.000_001 { return leftArea < rightArea }
+                return distanceFromCenter(lhs.boundingBox) > distanceFromCenter(rhs.boundingBox)
+            }
+    }
+
+    private static func appendSidePair(to result: inout [FaceCorrectionWarp],
+                                       left: CGPoint, right: CGPoint, extent: CGRect,
+                                       inset: CGFloat, radius: CGFloat, movement: CGFloat,
+                                       leftKind: FaceCorrectionWarp.Kind,
+                                       rightKind: FaceCorrectionWarp.Kind) {
+        append(&result, kind: leftKind, point: left, extent: extent,
+               centerOffset: CGVector(dx: inset, dy: 0), radius: radius,
+               visibleOffset: CGVector(dx: movement, dy: 0))
+        append(&result, kind: rightKind, point: right, extent: extent,
+               centerOffset: CGVector(dx: -inset, dy: 0), radius: radius,
+               visibleOffset: CGVector(dx: -movement, dy: 0))
+    }
+
+    private static func append(_ result: inout [FaceCorrectionWarp],
+                               kind: FaceCorrectionWarp.Kind, point: CGPoint, extent: CGRect,
+                               centerOffset: CGVector, radius: CGFloat,
+                               visibleOffset: CGVector) {
+        let center = pixelPoint(point, in: extent)
+        let adjusted = CGPoint(x: center.x + centerOffset.dx, y: center.y + centerOffset.dy)
+        guard isFinite(adjusted.x), isFinite(adjusted.y), isFinite(radius), radius >= 1,
+              isFinite(visibleOffset.dx), isFinite(visibleOffset.dy),
+              hypot(visibleOffset.dx, visibleOffset.dy) >= 0.05 else { return }
+        result.append(FaceCorrectionWarp(kind: kind, center: adjusted, radius: radius,
+                                         visibleOffset: visibleOffset))
+    }
+
+    private static func validLandmarks(_ name: FacialLandmarkRegion,
+                                       in face: DetectedFace) -> [CGPoint] {
+        guard let points = face.landmarks[name] else { return [] }
+        let marginX = face.boundingBox.width * 0.12
+        let marginY = face.boundingBox.height * 0.12
+        let accepted = face.boundingBox.insetBy(dx: -marginX, dy: -marginY)
+        return points.filter { isFinite($0.x) && isFinite($0.y) && accepted.contains($0) }
+    }
+
+    private static func closest(_ points: [CGPoint], to target: CGPoint, in box: CGRect) -> CGPoint {
+        points.min {
+            squaredDistance(relative($0, in: box), target) <
+                squaredDistance(relative($1, in: box), target)
+        } ?? box.center
+    }
+
+    private static func average(_ points: [CGPoint]) -> CGPoint? {
+        guard !points.isEmpty else { return nil }
+        let sum = points.reduce(CGPoint.zero) { partial, point in
+            CGPoint(x: partial.x + point.x, y: partial.y + point.y)
+        }
+        return CGPoint(x: sum.x / CGFloat(points.count), y: sum.y / CGFloat(points.count))
+    }
+
+    private static func relative(_ point: CGPoint, in box: CGRect) -> CGPoint {
+        CGPoint(x: (point.x - box.minX) / box.width, y: (point.y - box.minY) / box.height)
+    }
+
+    private static func pixelPoint(_ point: CGPoint, in extent: CGRect) -> CGPoint {
+        CGPoint(x: extent.minX + point.x * extent.width,
+                y: extent.minY + point.y * extent.height)
+    }
+
+    private static func pixelRect(_ rect: CGRect, in extent: CGRect) -> CGRect {
+        CGRect(x: extent.minX + rect.minX * extent.width,
+               y: extent.minY + rect.minY * extent.height,
+               width: rect.width * extent.width, height: rect.height * extent.height)
+    }
+
+    private static func squaredDistance(_ lhs: CGPoint, _ rhs: CGPoint) -> CGFloat {
+        let dx = lhs.x - rhs.x, dy = lhs.y - rhs.y
+        return dx * dx + dy * dy
+    }
+
+    private static func distanceFromCenter(_ rect: CGRect) -> CGFloat {
+        squaredDistance(rect.center, CGPoint(x: 0.5, y: 0.5))
+    }
+
+    private static func isValid(_ rect: CGRect) -> Bool {
+        isFinite(rect.minX) && isFinite(rect.minY) && isFinite(rect.width) && isFinite(rect.height) &&
+            !rect.isNull && !rect.isInfinite && !rect.isEmpty
+    }
+
+    private static func isFinite(_ value: CGFloat) -> Bool { value.isFinite }
+}
+
+private extension CGRect {
+    var center: CGPoint { CGPoint(x: midX, y: midY) }
+}
+
+/// Builds one bounded displacement map from all local movements and applies one
+/// built-in Core Image distortion. No CIContext, pixel buffer, or history is created here.
+final class FaceCorrectionPreviewStep: @unchecked Sendable {
+    private let lock = NSLock()
+    private var cachedWarps: [FaceCorrectionWarp] = []
+    private var cachedExtent = CGRect.null
+    private var cachedMap: CIImage?
+    private var cachedScale: CGFloat = 0
+
+    func makeOutput(source: CIImage, faces: [DetectedFace],
+                    configuration: BeautyConfiguration) throws -> CIImage? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        let warps = FaceCorrectionGeometry.warps(faces: faces, configuration: configuration,
+                                                  extent: source.extent)
+        guard !warps.isEmpty else {
+            clearCache()
+            return nil
+        }
+        let (displacement, scale) = try displacementMap(for: warps, extent: source.extent)
+        return try CoreImageRendering.filter("CIDisplacementDistortion", parameters: [
+            kCIInputImageKey: source.clampedToExtent(),
+            "inputDisplacementImage": displacement,
+            kCIInputScaleKey: scale
+        ], in: source.extent)
+    }
+
+    private func displacementMap(for warps: [FaceCorrectionWarp],
+                                 extent: CGRect) throws -> (CIImage, CGFloat) {
+        lock.lock()
+        defer { lock.unlock() }
+        if warps == cachedWarps, extent == cachedExtent,
+           let cachedMap, cachedScale > 0 { return (cachedMap, cachedScale) }
+
+        let largest = warps.map { hypot($0.visibleOffset.dx, $0.visibleOffset.dy) }.max() ?? 0
+        guard largest >= 0.05 else { throw BeautyImageProcessor.Failure.invalidExtent }
+
+        // CIDisplacementDistortion samples the input in the map's direction, so the
+        // encoded vector is the inverse of the user-visible landmark movement.
+        let scale = max(1, largest * 2)
+        // Create encoded values through CIColorMatrix arithmetic so 0.5 stays neutral
+        // in the renderer's linear working space instead of passing through color conversion.
+        var displacement = try CoreImageRendering.filter("CIColorMatrix", parameters: [
+            kCIInputImageKey: CIImage(color: CIColor(red: 0, green: 0, blue: 0, alpha: 1)),
+            "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBiasVector": CIVector(x: 0.5, y: 0.5, z: 0, w: 1)
+        ], in: extent)
+        for warp in warps {
+            let red = min(1, max(0, 0.5 - warp.visibleOffset.dx / scale))
+            let green = min(1, max(0, 0.5 - warp.visibleOffset.dy / scale))
+            let falloff = try CoreImageRendering.filter("CIRadialGradient", parameters: [
+                "inputCenter": CIVector(cgPoint: warp.center),
+                "inputRadius0": warp.radius * 0.30,
+                "inputRadius1": warp.radius,
+                "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: 1),
+                "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 0)
+            ], in: extent)
+            let gradient = try CoreImageRendering.filter("CIColorMatrix", parameters: [
+                kCIInputImageKey: falloff,
+                "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
+                "inputBiasVector": CIVector(x: red, y: green, z: 0, w: 0)
+            ], in: extent)
+            displacement = try CoreImageRendering.filter("CISourceOverCompositing", parameters: [
+                kCIInputImageKey: gradient,
+                kCIInputBackgroundImageKey: displacement
+            ], in: extent)
+        }
+        cachedWarps = warps
+        cachedExtent = extent
+        cachedMap = displacement
+        cachedScale = scale
+        return (displacement, scale)
+    }
+
+    private func clearCache() {
+        lock.lock()
+        cachedWarps = []
+        cachedExtent = .null
+        cachedMap = nil
+        cachedScale = 0
+        lock.unlock()
+    }
+}

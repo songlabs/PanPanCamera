@@ -25,7 +25,7 @@ CameraSession serializes configuration, input replacement and rollback, start/st
 
 Vision runs synchronously on the separate serial `camera.panpan.faces` queue. Video buffers remain unrotated/unmirrored; the capture rotation coordinator supplies Vision's EXIF quarter turn. A lock-protected per-generation mailbox throttles admission, rejects obsolete results and bounds main-queue notifications to one. CameraService publishes only the latest result. See [FaceDetection.md](FaceDetection.md) for the coordinate contract, lifecycle and validation limits.
 
-The main-thread UIView owns preview-layer geometry, preview mirroring, and a rotation coordinator. The original preview layer remains underneath as both the zero-strength path and render-failure fallback. A bounded 1280-pixel-long-edge Metal surface presents Core Image output only while an implemented Beauty effect is active and a face is available. It uses the same aspect-fill crop and explicit orientation/front-mirror policy. One retained camera frame and one in-flight command buffer bound preview backlog. Photo output has its own rotation coordinator on the session side. Photos preserve the native sensor frame, so some edges outside the full-screen preview can appear in the result. These policies need the device checks in `DeviceValidation.md`.
+The main-thread UIView owns preview-layer geometry, preview mirroring, and a rotation coordinator. The original preview layer remains underneath as both the zero-strength path and render-failure fallback. A bounded 1280-pixel-long-edge Metal surface presents Core Image output only while an implemented Beauty effect is active and a face is available. It uses the same aspect-fill crop and explicit orientation/front-mirror policy. Preview-only Face Correction consumes already transformed landmarks, selects the largest/nearest-center face, and applies one cached feathered displacement map. One retained camera frame, one cached map and one in-flight command buffer bound preview backlog. Photo output has its own rotation coordinator on the session side; Face Correction does not enter that branch. Photos preserve the native sensor frame, so some edges outside the full-screen preview can appear in the result. These policies need the device checks in `DeviceValidation.md`.
 
 ## Permission and lifecycle
 
@@ -53,9 +53,9 @@ The delegate returns original photo data. The shutter command snapshots the curr
 
 ## Beauty processing boundary
 
-Skin and face values start at 50, clamp to 0–100, reject non-finite inputs, and are independent per tool and category. Skin Auto is the overall strength. `BeautyConfiguration` maps overall, smoothing, brightening and tone to normalized immutable values shared by preview and final processing. Zero overall or no implemented effect is an exact bypass. Smoothing uses the existing texture reconstruction plus landmark/edge protection, brightening is a bounded local face-mask lift, and tone uses the existing neutral luminance-consistency pass.
+Skin and face values start at 50, clamp to 0–100, reject non-finite inputs, and are independent per tool and category. Skin Auto is the skin overall strength; Face Auto is the overall multiplier for the five implemented Preview geometry controls. `BeautyConfiguration` maps both groups to normalized immutable values. Zero overall or no implemented effect is an exact branch-specific bypass. Smoothing uses the existing texture reconstruction plus landmark/edge protection, brightening is a bounded local face-mask lift, tone uses the existing neutral luminance-consistency pass, and Preview Face Correction uses contour/eyebrow-driven local displacement.
 
-There is still no reliable blemish, dark-circle or face-warp implementation; those controls remain parameter-only and the panel says so. Filter and makeup selections also remain drafts. There is no stable cross-frame face tracker or semantic skin segmentation; preview reuses the bounded latest Vision observation, and final capture runs the same detector contract on its own source image.
+There is still no blemish, dark-circle, eye, nose or mouth processor; those controls remain parameter-only and the panel says so. Face Correction is not applied to captured photos. Filter and makeup selections also remain drafts. There is no stable cross-frame face tracker or semantic skin segmentation; preview reuses the bounded latest Vision observation, and final capture runs the same detector contract on its own source image for skin processing only.
 
 ## Detection module and next-stage plan
 
@@ -77,9 +77,9 @@ FaceTracking/                 detection and landmarks implemented
 FaceTracker                   future work, not implemented
 ```
 
-Presentation owns Views and localization. Application coordinates camera activity and processing state. Camera owns acquisition and capture-graph control. FaceTracking consumes unrotated buffers with explicit orientation and produces face/landmark results. Domain maps parameter snapshots. Rendering owns the shared Core Image effect definition, final encoder, and minimal Metal presentation bridge.
+Presentation owns Views and localization. Application coordinates camera activity and processing state. Camera owns acquisition and capture-graph control. FaceTracking consumes unrotated buffers with explicit orientation and produces face/landmark results. Domain maps parameter snapshots. Rendering owns the Core Image skin effects, Preview-only face geometry, final encoder, and minimal Metal presentation bridge.
 
-The implemented skin values map from 0–100 to normalized 0–1 engine inputs. UI selection itself never changes a value, and capture holds a value snapshot. Stable face tracking remains future work.
+The implemented skin and five Face Correction values map from 0–100 to normalized 0–1 engine inputs. UI selection itself never changes a value, and capture holds a value snapshot; the snapshot's Face Correction fields are deliberately ignored by final-photo geometry. Stable face tracking remains future work.
 
 The scope guard permits Vision only in FaceTracking, video data acquisition only in Camera, Core Image only in Rendering, and Metal only in the Core Image preview presentation bridge. Core ML, network clients, movie recording and external dependencies remain rejected.
 

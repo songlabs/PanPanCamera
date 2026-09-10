@@ -123,9 +123,23 @@ struct DebugFaceMaskStep {}
         config = (APP / 'Domain/BeautyParameters.swift').read_text(encoding='utf-8')
         final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
         self.assertIn('!enabled || overallStrength == 0', config)
-        bypass = final.index('guard !configuration.isBypassed else { return data }')
+        self.assertIn('var isPhotoBypassed: Bool', config)
+        bypass = final.index('guard !configuration.isPhotoBypassed else { return data }')
         decode = final.index('CGImageSourceCreateWithData')
         self.assertLess(bypass, decode)
+
+    def test_face_correction_is_preview_only_bounded_and_local(self):
+        geometry = (APP / 'Rendering/CoreImage/FaceCorrectionGeometry.swift').read_text(encoding='utf-8')
+        geometry_code = '\n'.join(line.split('//')[0] for line in geometry.splitlines())
+        preview = (APP / 'Rendering/CoreImage/BeautyImageProcessor.swift').read_text(encoding='utf-8')
+        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
+        self.assertIn('faceCorrection.makeOutput', preview)
+        self.assertNotIn('FaceCorrectionPreviewStep', final)
+        self.assertEqual(geometry.count('"CIDisplacementDistortion"'), 1)
+        self.assertIn('configuration.isFaceCorrectionBypassed', geometry)
+        self.assertNotRegex(geometry_code, r'\b(?:UIImage|CIContext|DispatchQueue|Task|URLSession|Vision)\b')
+        self.assertIn('private var cachedMap: CIImage?', geometry)
+        self.assertNotRegex(geometry, r'\[(?:CIImage|CVPixelBuffer)\]')
 
     def test_pipeline_does_not_depend_on_a_mask_algorithm(self):
         code = (APP / 'Rendering/ImageProcessingPipeline.swift').read_text(encoding='utf-8')

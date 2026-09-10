@@ -8,6 +8,32 @@ contract on the original PhotoOutput data or native silent pixel buffer. Texture
 tone remain separate explainable low-frequency approximations, not semantic skin
 detection, identity verification or a visually accepted result.
 
+## Preview-only Face Correction
+
+`FaceCorrectionGeometry` selects the largest valid face, then the face nearest the
+image center on an area tie. It requires a usable face contour; Forehead additionally
+requires both eyebrow regions. Auto is a 0...1 overall multiplier for Slim, Width,
+Chin, Forehead and Cheekbones. Each control produces small inward or vertical movements
+around contour/eyebrow anchors. At full effective strength the largest single movement
+is capped at 2.8% of face width or 1.8% of face height; default UI values multiply to
+25% effective strength.
+
+`FaceCorrectionPreviewStep` encodes those movements as feathered radial fields over a
+neutral displacement map and applies one built-in `CIDisplacementDistortion`. The latest
+map is cached until landmarks, configuration or target extent changes. It creates no
+CIContext, UIImage, queue, task, pixel-buffer cache or per-face history. The existing
+1280-pixel Preview bound, latest-frame slot and single in-flight Metal command buffer
+remain unchanged. Zero, no face, invalid/incomplete contour and unavailable Forehead
+eyebrows bypass the applicable geometry without crashing or retaining stale data.
+
+The Preview processor applies orientation, residual rotation, one front-camera mirror
+and aspect-fill before geometry mapping, so landmarks and pixels share the same output
+coordinates. FinalBeautyProcessor checks the skin-only bypass and never calls the Face
+Correction step; captured-photo geometry remains outside this task. Eye/nose/mouth
+controls and stable face tracking remain unimplemented. All behavior is on-device and
+no image or landmark data is uploaded or persisted. Naturalness, filter direction,
+frame rate, latency, thermals and device rotation still require real-iPhone acceptance.
+
 ## Architecture retained
 
 ImageProcessingPipeline still admits one job under its lock, rejects competing requests
@@ -616,8 +642,9 @@ high-frequency detail, fallback, original error propagation, stage order and mod
 Float formula tests explicitly request RGBAf intermediates; public ProcessingImage
 tests separately cover RGBA8 output. None of these Apple tests was executed here.
 
-Windows checks: 44 Python tests passed, including Beauty capture/back-pressure scope checks;
-project checks passed for 63 app and 24 XCTest sources; 87 Swift sources parsed.
+Windows checks: 45 Python tests passed, including Beauty capture/back-pressure and
+Face Correction Preview-only scope checks; project checks passed for 64 app and
+24 XCTest sources; 88 Swift sources parsed.
 Four pure Swift Domain files and three camera control
 helpers passed host typechecking. Release redeclaration probes passed including the
 new mock. No Apple framework typecheck occurred. Previous host Foundation attempts

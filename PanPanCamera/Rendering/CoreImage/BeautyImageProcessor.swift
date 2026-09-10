@@ -3,11 +3,12 @@ import Foundation
 
 enum BeautyProcessingQuality: Equatable, Sendable { case preview, final }
 
-/// Shared Core Image effect definition. Preview supplies a smaller aspect-filled
-/// image while final capture supplies native photo pixels; parameter mapping and
-/// effect order remain identical.
+/// Shared skin-effect definition plus Preview-only face geometry. Preview supplies
+/// a smaller aspect-filled image while final capture supplies native photo pixels;
+/// Face Correction deliberately stops at the Preview boundary.
 struct BeautyImageProcessor: Sendable {
     enum Failure: Error { case invalidExtent }
+    private let faceCorrection = FaceCorrectionPreviewStep()
 
     func previewImage(for frame: BeautyPreviewFrame, displayRotationAngle: CGFloat,
                       targetSize: CGSize) throws -> CIImage? {
@@ -59,14 +60,22 @@ struct BeautyImageProcessor: Sendable {
         let fittedFaces = Self.fittedFaces(orientedFaces, sourceExtent: sourceExtent,
                                            targetExtent: target, transform: transform)
         guard !fittedFaces.isEmpty else { return nil }
-        return try process(image, faces: fittedFaces, configuration: frame.configuration,
-                           quality: .preview)
+        let skinResult = try process(image, faces: fittedFaces, configuration: frame.configuration,
+                                     quality: .preview)
+        if let faceResult = try faceCorrection.makeOutput(
+            source: skinResult, faces: fittedFaces, configuration: frame.configuration
+        ) {
+            return faceResult
+        }
+        // If only Face Correction is active but usable landmarks are unavailable,
+        // keep the original AVCaptureVideoPreviewLayer visible instead of rendering raw pixels again.
+        return frame.configuration.isPhotoBypassed ? nil : skinResult
     }
 
     func process(_ source: CIImage, faces: [DetectedFace], configuration: BeautyConfiguration,
                  quality: BeautyProcessingQuality) throws -> CIImage {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        guard !configuration.isBypassed, !faces.isEmpty else { return source }
+        guard !configuration.isPhotoBypassed, !faces.isEmpty else { return source }
         guard !source.extent.isEmpty, !source.extent.isInfinite, !source.extent.isNull else {
             throw Failure.invalidExtent
         }
