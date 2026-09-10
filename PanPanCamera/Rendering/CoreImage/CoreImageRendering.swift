@@ -36,8 +36,8 @@ enum CoreImageRendering {
 
     static func createCGImage(_ image: CIImage, colorSpace: CGColorSpace?) -> CGImage? {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        context.createCGImage(image, from: image.extent, format: .RGBA8,
-                              colorSpace: colorSpace, deferred: false)
+        return context.createCGImage(image, from: image.extent, format: .RGBA8,
+                                     colorSpace: colorSpace, deferred: false)
     }
 
     static func render(_ image: CIImage, to texture: MTLTexture, commandBuffer: MTLCommandBuffer,
