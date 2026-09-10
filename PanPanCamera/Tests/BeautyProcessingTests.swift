@@ -26,6 +26,33 @@ final class BeautyProcessingTests: XCTestCase {
         }
     }
 
+    func testSkinProductAmplitudesAreTwicePreviousBaselineWithoutChangingStrength() {
+        XCTAssertEqual(BeautyEffectAmplitude.brightening, 0.03 * 2, accuracy: 0.000_001)
+        XCTAssertEqual(1 - BeautyEffectAmplitude.previewSmoothingDetailRetention,
+                       (1 - 0.94) * 2, accuracy: 0.000_001)
+        XCTAssertEqual(1 - BeautyEffectAmplitude.finalSmoothingDetailRetention,
+                       (1 - 0.90) * 2, accuracy: 0.000_001)
+        XCTAssertEqual(BeautyEffectAmplitude.previewToneConsistency,
+                       0.20 * 2, accuracy: 0.000_001)
+        XCTAssertEqual(BeautyEffectAmplitude.finalToneConsistency,
+                       0.25 * 2, accuracy: 0.000_001)
+    }
+
+    func testFaceProductAmplitudesAreTwicePreviousBaseline() {
+        XCTAssertEqual(FaceCorrectionGeometry.maximumSlimDisplacementRatio,
+                       0.060 * 2, accuracy: 0.000_001)
+        XCTAssertEqual(FaceCorrectionGeometry.maximumWidthDisplacementRatio,
+                       0.022 * 2, accuracy: 0.000_001)
+        XCTAssertEqual(FaceCorrectionGeometry.maximumChinSideDisplacementRatio,
+                       0.010 * 2, accuracy: 0.000_001)
+        XCTAssertEqual(FaceCorrectionGeometry.maximumChinCenterDisplacementRatio,
+                       0.018 * 2, accuracy: 0.000_001)
+        XCTAssertEqual(FaceCorrectionGeometry.maximumForeheadDisplacementRatio,
+                       0.012 * 2, accuracy: 0.000_001)
+        XCTAssertEqual(FaceCorrectionGeometry.maximumCheekbonesDisplacementRatio,
+                       0.015 * 2, accuracy: 0.000_001)
+    }
+
     func testPreviewFrameStoreKeepsOnlyNewestFrameAndConsumesOnce() throws {
         let store = BeautyPreviewFrameStore()
         let first = try pixelBuffer()
@@ -216,7 +243,7 @@ final class BeautyProcessingTests: XCTestCase {
             magnitudes.append(abs(left.visibleOffset.dx))
         }
 
-        for (actual, expected) in zip(magnitudes, [0, 0.9, 1.8, 2.7, 3.6]) {
+        for (actual, expected) in zip(magnitudes, [0, 1.8, 3.6, 5.4, 7.2]) {
             XCTAssertEqual(actual, expected, accuracy: 0.000_001)
         }
         for pair in zip(magnitudes, magnitudes.dropFirst()) {
@@ -244,9 +271,9 @@ final class BeautyProcessingTests: XCTestCase {
         let full = FaceCorrectionGeometry.result(faces: [completeFace()],
             configuration: parameters.processingConfiguration, extent: extent)
         XCTAssertEqual(full.smallFaceWarps, full.warps)
-        XCTAssertEqual(try warp(.slimLeft, in: full.smallFaceWarps).visibleOffset.dx, 3.6,
+        XCTAssertEqual(try warp(.slimLeft, in: full.smallFaceWarps).visibleOffset.dx, 7.2,
                        accuracy: 0.000_001)
-        XCTAssertEqual(try warp(.slimRight, in: full.smallFaceWarps).visibleOffset.dx, -3.6,
+        XCTAssertEqual(try warp(.slimRight, in: full.smallFaceWarps).visibleOffset.dx, -7.2,
                        accuracy: 0.000_001)
     }
 

@@ -27,6 +27,16 @@ struct BeautyPreviewProcessingResult {
     let geometryDebug: FaceGeometryDebugSnapshot?
 }
 
+/// Product amplitudes at a normalized UI strength of 1. The overall/category
+/// multipliers remain in `BeautyConfiguration`; each value is applied once.
+enum BeautyEffectAmplitude {
+    static let brightening = 0.06
+    static let previewSmoothingDetailRetention = 0.88
+    static let finalSmoothingDetailRetention = 0.80
+    static let previewToneConsistency = 0.40
+    static let finalToneConsistency = 0.50
+}
+
 /// Shared skin-effect definition plus Preview-only face geometry. Preview supplies
 /// a smaller aspect-filled image while final capture supplies native photo pixels;
 /// Face Correction deliberately stops at the Preview boundary.
@@ -143,7 +153,9 @@ struct BeautyImageProcessor: Sendable {
 
         if configuration.effectiveSmoothing > 0 {
             let config = try skinConfiguration(intensity: configuration.effectiveSmoothing,
-                detailRetention: quality == .preview ? 0.94 : 0.9,
+                detailRetention: quality == .preview
+                    ? BeautyEffectAmplitude.previewSmoothingDetailRetention
+                    : BeautyEffectAmplitude.finalSmoothingDetailRetention,
                 noiseReduction: quality == .preview ? 0.006 : 0.015,
                 toneStrength: 0, luminanceCorrection: 0)
             let step = TexturePreservingSkinSmoothingStep(configuration: config)
@@ -161,7 +173,7 @@ struct BeautyImageProcessor: Sendable {
                                                    landmarks: geometry.landmarks)?.effectiveSkinMask {
                 let adjusted = try CoreImageRendering.filter("CIColorControls", parameters: [
                     kCIInputImageKey: image,
-                    kCIInputBrightnessKey: 0.03,
+                    kCIInputBrightnessKey: BeautyEffectAmplitude.brightening,
                     kCIInputSaturationKey: 1.0,
                     kCIInputContrastKey: 1.0
                 ], in: image.extent)
@@ -172,7 +184,9 @@ struct BeautyImageProcessor: Sendable {
         if configuration.effectiveTone > 0 {
             let config = try skinConfiguration(intensity: configuration.effectiveTone,
                 detailRetention: 0.94, noiseReduction: 0,
-                toneStrength: quality == .preview ? 0.2 : 0.25,
+                toneStrength: quality == .preview
+                    ? BeautyEffectAmplitude.previewToneConsistency
+                    : BeautyEffectAmplitude.finalToneConsistency,
                 luminanceCorrection: quality == .preview ? 0.004 : 0.006)
             let masks = TexturePreservingSkinSmoothingStep(configuration: config)
             if let effective = try masks.makeMasks(source: image, regions: geometry.regions,
