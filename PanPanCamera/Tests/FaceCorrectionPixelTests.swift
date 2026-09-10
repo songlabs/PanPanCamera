@@ -188,6 +188,54 @@ final class FaceCorrectionPixelTests: XCTestCase {
         }.value
     }
 
+    func testMetalDestinationPixelFormatCapabilityProbe() async throws {
+        try await Task.detached { [self] in
+            let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(),
+                                       "Metal is required for the destination format probe")
+            let queue = try XCTUnwrap(device.makeCommandQueue())
+            let renderer = CoreImageRendering.MetalRenderer(device: queue.device)
+            let ramp = try coordinateRamp()
+
+            for pixelFormat in [MTLPixelFormat.bgra8Unorm_srgb, .bgra8Unorm] {
+                let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: pixelFormat,
+                    width: Int(extent.width), height: Int(extent.height), mipmapped: false)
+                descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+                descriptor.storageMode = .shared
+                let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+                let command = try XCTUnwrap(queue.makeCommandBuffer())
+                renderer.render(ramp, to: texture, commandBuffer: command,
+                                bounds: extent, colorSpace: colorSpace)
+                command.commit()
+                command.waitUntilCompleted()
+
+                var bytes = [UInt8](repeating: 0, count: Int(extent.width * extent.height) * 4)
+                bytes.withUnsafeMutableBytes {
+                    texture.getBytes($0.baseAddress!, bytesPerRow: Int(extent.width) * 4,
+                        from: MTLRegionMake2D(0, 0, Int(extent.width), Int(extent.height)), mipmapLevel: 0)
+                }
+                let alpha = stride(from: 3, to: bytes.count, by: 4).map { bytes[$0] }
+                let rgbNonzero = stride(from: 0, to: bytes.count, by: 4).reduce(into: 0) { count, index in
+                    if bytes[index] != 0 || bytes[index + 1] != 0 || bytes[index + 2] != 0 {
+                        count += 1
+                    }
+                }
+                let green = stride(from: 1, to: bytes.count, by: 4).map { bytes[$0] }
+                let report: [String: Any] = [
+                    "pixelFormat": pixelFormat == .bgra8Unorm_srgb ? "bgra8Unorm_srgb" : "bgra8Unorm",
+                    "commandBufferStatus": command.status.rawValue,
+                    "commandBufferError": command.error.map { String(describing: $0) } ?? "none",
+                    "alphaWritten": alpha.allSatisfy { $0 == 255 },
+                    "opaquePixelCount": alpha.reduce(into: 0) { if $1 == 255 { $0 += 1 } },
+                    "rgbNonzeroPixelCount": rgbNonzero,
+                    "coordinateSpan": Int(green.max() ?? 0) - Int(green.min() ?? 0)
+                ]
+                print("Metal destination pixel format probe: " +
+                      String(decoding: try JSONSerialization.data(withJSONObject: report,
+                          options: [.sortedKeys]), as: UTF8.self))
+            }
+        }.value
+    }
+
     func testProductionMetalRenderTargetContainsLocalizedPixelChanges() async throws {
         try await Task.detached { [self] in
             let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "Metal is required for Preview pixel verification")
