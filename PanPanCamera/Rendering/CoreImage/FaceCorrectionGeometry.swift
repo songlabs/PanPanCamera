@@ -45,7 +45,11 @@ enum FaceCorrectionGeometry {
         var result: [FaceCorrectionWarp] = []
         let slim = CGFloat(configuration.effectiveFaceSlim)
         if slim > 0 {
-            let movement = box.width * 0.028 * slim
+            // Face Auto defaults to 0.5, so Slim = 100 previously moved each jaw
+            // edge only 1.4% of face width. That is sub-visible after Preview scaling.
+            // Keep the same local radius, but allow a clear 3% per-side movement at
+            // the default Auto value (6% only when both controls are at maximum).
+            let movement = box.width * 0.060 * slim
             appendSidePair(to: &result, left: leftLower, right: rightLower, extent: extent,
                            inset: box.width * 0.018, radius: box.width * 0.22,
                            movement: movement, leftKind: .slimLeft, rightKind: .slimRight)

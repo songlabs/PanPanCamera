@@ -135,4 +135,13 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(configuration.effectiveForehead, 0.6, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveCheekbones, 0.08, accuracy: 0.000_001)
     }
+
+    func testSlimSliderMapsZeroFiftyAndHundredToNormalizedProcessorValues() {
+        var values = BeautyParameters()
+        for (uiValue, normalized) in [(0.0, 0.0), (50.0, 0.5), (100.0, 1.0)] {
+            values.setValue(uiValue, for: FaceTool.slim)
+            XCTAssertEqual(values.processingConfiguration.faceSlimStrength, normalized,
+                           accuracy: 0.000_001)
+        }
+    }
 }
