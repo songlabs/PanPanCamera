@@ -57,6 +57,56 @@ final class BeautyProcessingTests: XCTestCase {
         XCTAssertTrue(noFace === source)
     }
 
+    func testNewestConfigurationReachesPreviewGeometryForEveryControlAndResolution() throws {
+        let configurations = BeautyConfigurationStore()
+        let frames = BeautyPreviewFrameStore()
+        let processor = BeautyImageProcessor()
+        let buffer = try pixelBuffer(width: 200, height: 300)
+        let controls: [(FaceTool, FaceCorrectionWarp.Kind, KeyPath<BeautyConfiguration, Double>)] = [
+            (.slim, .slimLeft, \.effectiveFaceSlim), (.width, .widthLeft, \.effectiveFaceWidth),
+            (.chin, .chinCenter, \.effectiveChin), (.forehead, .foreheadLeft, \.effectiveForehead),
+            (.cheekbones, .cheekbonesLeft, \.effectiveCheekbones)
+        ]
+        for auto in [0.5, 1.0] {
+            for (tool, kind, key) in controls {
+                var parameters = BeautyParameters()
+                parameters.setValue(0, for: SkinTool.auto)
+                for other in FaceTool.allCases { parameters.setValue(0, for: other) }
+                parameters.setValue(auto * 100, for: FaceTool.auto)
+                parameters.setValue(100, for: tool)
+                let full = try warp(kind, in: FaceCorrectionGeometry.warps(faces: [completeFace()],
+                    configuration: parameters.processingConfiguration,
+                    extent: CGRect(x: 0, y: 0, width: 200, height: 300)))
+                for strength in [0.0, 0.25, 0.5, 0.75, 1.0, 0.0] {
+                    parameters.setValue(strength * 100, for: tool)
+                    configurations.replace(parameters.processingConfiguration)
+                    let snapshot = configurations.snapshot()
+                    XCTAssertEqual(snapshot[keyPath: key], auto * strength, accuracy: 0.000_001)
+                    for size in [CGSize(width: 200, height: 300), CGSize(width: 100, height: 150)] {
+                        frames.replace(BeautyPreviewFrame(pixelBuffer: buffer, orientation: .up,
+                            mirrored: false, faces: [completeFace()], configuration: snapshot))
+                        let frame = try XCTUnwrap(frames.take())
+                        XCTAssertEqual(frame.configuration, snapshot)
+                        let result = try runOffMain {
+                            try processor.previewResult(for: frame, displayRotationAngle: 0, targetSize: size)
+                        }
+                        if strength == 0 { XCTAssertNil(result.image) }
+                        else { XCTAssertNotNil(result.image) }
+                        let fittedBox = try XCTUnwrap(result.geometryDebug?.faceBox)
+                        let geometry = try XCTUnwrap(result.geometryDebug?.warps)
+                        if strength == 0 { XCTAssertTrue(geometry.isEmpty); continue }
+                        let actual = try warp(kind, in: geometry)
+                        let scale = size.width / 200
+                        XCTAssertEqual(actual.visibleOffset.dx, full.visibleOffset.dx * strength * scale, accuracy: 1e-9)
+                        XCTAssertEqual(actual.visibleOffset.dy, full.visibleOffset.dy * strength * scale, accuracy: 1e-9)
+                        XCTAssertEqual(actual.radius, full.radius * scale, accuracy: 1e-9)
+                        XCTAssertEqual(fittedBox.width, 120 * scale, accuracy: 1e-9)
+                    }
+                }
+            }
+        }
+    }
+
     func testLocalBrighteningChangesFaceCenterButPreservesFarCorner() throws {
         let extent = CGRect(x: 0, y: 0, width: 64, height: 64)
         let source = CIImage(color: CIColor(red: 0.4, green: 0.4, blue: 0.4)).cropped(to: extent)

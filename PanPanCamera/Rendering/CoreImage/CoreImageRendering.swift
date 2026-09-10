@@ -34,6 +34,21 @@ enum CoreImageRendering {
     // the input CGImage's output color space. Do not disable color management.
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
+    #if DEBUG
+    /// One working-space map sample for opt-in strength diagnostics. Reuses the
+    /// existing bitmap context and never saves an image or creates another queue.
+    static func diagnosticRGBA(_ image: CIImage, at point: CGPoint) -> [Float] {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        var rgba = [Float](repeating: 0, count: 4)
+        rgba.withUnsafeMutableBytes {
+            context.render(image, toBitmap: $0.baseAddress!, rowBytes: 16,
+                bounds: CGRect(x: floor(point.x), y: floor(point.y), width: 1, height: 1),
+                format: .RGBAf, colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+        }
+        return rgba
+    }
+    #endif
+
     static func createCGImage(_ image: CIImage, colorSpace: CGColorSpace?) -> CGImage? {
         dispatchPrecondition(condition: .notOnQueue(.main))
         return context.createCGImage(image, from: image.extent, format: .RGBA8,

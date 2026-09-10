@@ -137,6 +137,26 @@ final class CameraServiceTests: XCTestCase {
         XCTAssertEqual(commands.captures.last?.beauty, captured)
     }
 
+    func testSliderMutationsPublishEveryStrengthWithoutRecreatingSession() throws {
+        let commands = SessionCommands()
+        let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
+        let controls: [(FaceTool, KeyPath<BeautyConfiguration, Double>)] = [
+            (.slim, \.faceSlimStrength), (.width, \.faceWidthStrength), (.chin, \.chinStrength),
+            (.forehead, \.foreheadStrength), (.cheekbones, \.cheekbonesStrength)
+        ]
+        for (tool, key) in controls {
+            for strength in [0.0, 0.25, 0.5, 0.75, 1.0, 0.0] {
+                let count = commands.beautyConfigurations.count
+                camera.beautyParameters.setValue(strength * 100, for: tool)
+                XCTAssertEqual(commands.beautyConfigurations.count, count + 1)
+                let actual = try XCTUnwrap(commands.beautyConfigurations.last)
+                XCTAssertEqual(actual[keyPath: key], strength, accuracy: 0.000_001)
+                XCTAssertEqual(actual.faceOverallStrength, 0.5)
+            }
+        }
+        XCTAssertTrue(commands.captures.isEmpty)
+    }
+
     func testSwitchFailurePublishesSemanticFailureAndClearsBusyState() async {
         let commands = SessionCommands()
         let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)

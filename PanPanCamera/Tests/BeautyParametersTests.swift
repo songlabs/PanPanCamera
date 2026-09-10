@@ -136,12 +136,30 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(configuration.effectiveCheekbones, 0.08, accuracy: 0.000_001)
     }
 
-    func testSlimSliderMapsZeroFiftyAndHundredToNormalizedProcessorValues() {
+    func testEveryImplementedSliderPreservesFiveStrengthsAndAppliesAutoOnce() {
         var values = BeautyParameters()
-        for (uiValue, normalized) in [(0.0, 0.0), (50.0, 0.5), (100.0, 1.0)] {
-            values.setValue(uiValue, for: FaceTool.slim)
-            XCTAssertEqual(values.processingConfiguration.faceSlimStrength, normalized,
-                           accuracy: 0.000_001)
+        for auto in [0.5, 1.0] {
+            values.setValue(auto * 100, for: FaceTool.auto)
+            values.setValue(auto * 100, for: SkinTool.auto)
+            for strength in [0.0, 0.25, 0.5, 0.75, 1.0] {
+                for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones] {
+                    values.setValue(strength * 100, for: tool)
+                }
+                for tool in [SkinTool.smooth, .brighten, .tone] {
+                    values.setValue(strength * 100, for: tool)
+                }
+                let config = values.processingConfiguration
+                for actual in [config.faceSlimStrength, config.faceWidthStrength, config.chinStrength,
+                               config.foreheadStrength, config.cheekbonesStrength,
+                               config.smoothingStrength, config.brighteningStrength, config.toneStrength] {
+                    XCTAssertEqual(actual, strength, accuracy: 0.000_001)
+                }
+                for actual in [config.effectiveFaceSlim, config.effectiveFaceWidth, config.effectiveChin,
+                               config.effectiveForehead, config.effectiveCheekbones,
+                               config.effectiveSmoothing, config.effectiveBrightening, config.effectiveTone] {
+                    XCTAssertEqual(actual, auto * strength, accuracy: 0.000_001)
+                }
+            }
         }
     }
 }

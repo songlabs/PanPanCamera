@@ -15,6 +15,10 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
     private let lock = NSLock()
     private var inFlight = false
     private var generation = 0
+    #if DEBUG
+    private var diagnosticSuccess: Bool?
+    private var diagnosticTime: TimeInterval = -.infinity
+    #endif
 
     init?(device: MTLDevice) {
         guard let commandQueue = device.makeCommandQueue() else { return nil }
@@ -90,8 +94,18 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
         lock.lock()
         inFlight = false
         let current = token == generation
+        #if DEBUG
+        let now = ProcessInfo.processInfo.systemUptime
+        let report = current && diagnosticSuccess != success &&
+            now - diagnosticTime >= 1 &&
+            ProcessInfo.processInfo.arguments.contains("-PanPanBeautyStrengthDiagnostics")
+        if report { diagnosticSuccess = success; diagnosticTime = now }
+        #endif
         lock.unlock()
         guard current else { return }
+        #if DEBUG
+        if report { print("BeautyStrength Preview render completed: success=\(success)") }
+        #endif
         DispatchQueue.main.async { completion(success, geometryDebug) }
     }
 }

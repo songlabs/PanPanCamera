@@ -17,12 +17,17 @@ BeautyImageProcessor defines the skin effect order and parameter mapping: textur
 preserving smoothing, bounded local brightening, then neutral tone consistency. Preview
 uses the same definition on a smaller aspect-filled image with lighter internal settings;
 final uses native pixels. Preview then maps the main face's contour/eyebrow landmarks to
-the five local Face Correction controls. Their feathered fields are composed into one
+the five local Face Correction controls. Their feathered signed vectors are added into one
 cached RG displacement map and one explicit vector-sampling CI kernel; missing/incomplete landmarks
 fall back to the original Preview layer. Face Auto is only their overall multiplier.
 Face geometry is intentionally absent from final-photo processing. Both branches remain
 entirely local. There is no upload, third-party SDK, skin segmentation, eye/nose/mouth
 warp, blemish or dark-circle algorithm. Apple/device acceptance remains pending.
+
+See [the Preview strength audit](../../docs/BeautyPreviewStrengthAudit.md) for the
+parameter chain, default Auto multiplication, skin quality differences, and the
+overlapping-field overwrite repair. Requested overlay vectors are individual effect
+inputs; the final map combines all active vectors at each pixel.
 
 The temporary Face Geometry Debug Overlay consumes `FaceGeometryDebugSnapshot` from that
 same Preview render operation. The snapshot is created only after the native buffer,

@@ -272,6 +272,59 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
     private var cachedExtent = CGRect.null
     private var cachedMap: CIImage?
     private var cachedScale: CGFloat = 0
+    #if DEBUG
+    private var diagnosticConfiguration: BeautyConfiguration?
+    private var diagnosticTime: TimeInterval = -.infinity
+    private var diagnosticHadWarps = false
+
+    /// Opt-in, configuration-change-only readback, limited to once per second.
+    /// Samples the actual production map; does not log images or landmark positions.
+    func logStrengthDiagnostics(configuration: BeautyConfiguration,
+                                geometry: FaceCorrectionGeometryResult, extent: CGRect) throws {
+        guard ProcessInfo.processInfo.arguments.contains("-PanPanBeautyStrengthDiagnostics") else { return }
+        let now = ProcessInfo.processInfo.systemUptime
+        lock.lock()
+        let hasWarps = !geometry.warps.isEmpty
+        let shouldLog = (configuration != diagnosticConfiguration || hasWarps != diagnosticHadWarps) &&
+            now - diagnosticTime >= 1
+        if shouldLog {
+            diagnosticConfiguration = configuration
+            diagnosticTime = now
+            diagnosticHadWarps = hasWarps
+        }
+        lock.unlock()
+        guard shouldLog else { return }
+
+        let strengths: [(String, Double, Double)] = [
+            ("Slim", configuration.faceSlimStrength, configuration.effectiveFaceSlim),
+            ("Width", configuration.faceWidthStrength, configuration.effectiveFaceWidth),
+            ("Chin", configuration.chinStrength, configuration.effectiveChin),
+            ("Forehead", configuration.foreheadStrength, configuration.effectiveForehead),
+            ("Cheekbones", configuration.cheekbonesStrength, configuration.effectiveCheekbones)
+        ]
+        print("BeautyStrength frame snapshot: faceAuto=\(configuration.faceOverallStrength) " +
+              "faceWidth=\(geometry.faceBox?.width ?? 0) faceHeight=\(geometry.faceBox?.height ?? 0) " +
+              "activeWarps=\(geometry.warps.count)")
+        for (name, ui, effective) in strengths {
+            print("BeautyStrength \(name): uiValue=\(ui * 100) uiStrength=\(ui) " +
+                  "effectiveStrength=\(effective) previewStrength=\(effective) processorStrength=\(effective)")
+        }
+        print("BeautyStrength skin: auto=\(configuration.overallStrength) " +
+              "smooth=\(configuration.smoothingStrength)->\(configuration.effectiveSmoothing) " +
+              "brighten=\(configuration.brighteningStrength)->\(configuration.effectiveBrightening) " +
+              "tone=\(configuration.toneStrength)->\(configuration.effectiveTone)")
+        guard !geometry.warps.isEmpty else { return }
+        let map = try displacementMap(for: geometry.warps, extent: extent)
+        for warp in geometry.warps where extent.contains(warp.center) {
+            let rgba = CoreImageRendering.diagnosticRGBA(map.image, at: warp.center)
+            let visible = CGVector(dx: (0.5 - CGFloat(rgba[0])) * map.scale,
+                                   dy: (0.5 - CGFloat(rgba[1])) * map.scale)
+            print("BeautyStrength \(warp.kind): radius=\(warp.radius) " +
+                  "requestedVisibleOffset=\(warp.visibleOffset) mapScale=\(map.scale) " +
+                  "sampledCombinedVisibleOffset=\(visible)")
+        }
+    }
+    #endif
 
     func makeOutput(source: CIImage, faces: [DetectedFace],
                     configuration: BeautyConfiguration) throws -> CIImage? {
@@ -313,7 +366,11 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
 
         // Encode inverse sampling offsets: R = X, G = Y, 0.5 = zero.
         // The matching kernel decodes these values into CI pixels exactly once.
-        let scale = max(1, largest * 2)
+        // Overlapping effects contribute vectors, not opaque layers. Bound the
+        // sum so RG stays in 0...1 without clipping or normalizing strength again.
+        let scale = max(1, 2 * warps.reduce(CGFloat.zero) {
+            $0 + hypot($1.visibleOffset.dx, $1.visibleOffset.dy)
+        })
         // Create encoded values through CIColorMatrix arithmetic so 0.5 stays neutral
         // in the renderer's linear working space instead of passing through color conversion.
         var displacement = try CoreImageRendering.filter("CIColorMatrix", parameters: [
@@ -325,8 +382,6 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
             "inputBiasVector": CIVector(x: 0.5, y: 0.5, z: 0, w: 1)
         ], in: extent)
         for warp in warps {
-            let red = min(1, max(0, 0.5 - warp.visibleOffset.dx / scale))
-            let green = min(1, max(0, 0.5 - warp.visibleOffset.dy / scale))
             let falloff = try CoreImageRendering.filter("CIRadialGradient", parameters: [
                 "inputCenter": CIVector(cgPoint: warp.center),
                 "inputRadius0": warp.radius * 0.30,
@@ -334,18 +389,12 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
                 "inputColor0": CIColor(red: 1, green: 1, blue: 1, alpha: 1),
                 "inputColor1": CIColor(red: 0, green: 0, blue: 0, alpha: 0)
             ], in: extent)
-            let gradient = try CoreImageRendering.filter("CIColorMatrix", parameters: [
-                kCIInputImageKey: falloff,
-                "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-                "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-                "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
-                "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 1),
-                "inputBiasVector": CIVector(x: red, y: green, z: 0, w: 0)
-            ], in: extent)
-            displacement = try CoreImageRendering.filter("CISourceOverCompositing", parameters: [
-                kCIInputImageKey: gradient,
-                kCIInputBackgroundImageKey: displacement
-            ], in: extent)
+            guard let kernel = Self.accumulateDisplacement,
+                  let accumulated = kernel.apply(extent: extent, roiCallback: { _, rect in rect }, arguments: [
+                    displacement, falloff,
+                    CIVector(x: -warp.visibleOffset.dx / scale, y: -warp.visibleOffset.dy / scale)
+                  ]) else { throw CoreImageRendering.Failure.filterUnavailable }
+            displacement = accumulated
         }
         cachedWarps = warps
         cachedExtent = extent
@@ -353,6 +402,18 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
         cachedScale = scale
         return (displacement, scale)
     }
+
+    // Source-over previously erased earlier effects wherever a later radial
+    // field had alpha 1 (in particular Chin over Slim). Add only the weighted
+    // signed delta; retain the single neutral bias and opaque map alpha.
+    private static let accumulateDisplacement = CIKernel(source: """
+        kernel vec4 accumulateFaceDisplacement(sampler accumulated, sampler falloff, vec2 offset) {
+            vec2 p = destCoord();
+            vec2 value = sample(accumulated, samplerTransform(accumulated, p)).rg;
+            float weight = sample(falloff, samplerTransform(falloff, p)).a;
+            return vec4(value + weight * offset, 0.0, 1.0);
+        }
+        """)
 
     // CIDisplacementDistortion accepts a grayscale texture, not our RG vector
     // contract. Decode explicitly instead of assuming its inputScale implements

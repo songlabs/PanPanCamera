@@ -125,6 +125,128 @@ final class FaceCorrectionPixelTests: XCTestCase {
         }.value
     }
 
+    func testOverlappingVectorsAccumulateWithoutErasureClippingOrOrderDependence() async throws {
+        try await Task.detached { [self] in
+            let source = try coordinateRamp()
+            let center = CGPoint(x: extent.midX, y: extent.midY)
+            let step = FaceCorrectionPreviewStep()
+            let offsets = [CGVector(dx: 12, dy: 0), CGVector(dx: 2, dy: 0), CGVector(dx: 0, dy: 7)]
+            let warps = offsets.map {
+                FaceCorrectionWarp(kind: .slimLeft, center: center, radius: 48, visibleOffset: $0)
+            }
+            for ordered in [warps, Array(warps.reversed())] {
+                let map = try step.displacementMap(for: ordered, extent: extent)
+                let encoded = floatPixel(map.image, at: center)
+                XCTAssertEqual((Double(encoded[0]) - 0.5) * Double(map.scale), -14, accuracy: 0.05)
+                XCTAssertEqual((Double(encoded[1]) - 0.5) * Double(map.scale), -7, accuracy: 0.05)
+                XCTAssertEqual(encoded[3], 1, accuracy: 0.001)
+                let output = try XCTUnwrap(step.makeOutput(source: source, warps: ordered))
+                let before = floatPixel(source, at: center), after = floatPixel(output, at: center)
+                XCTAssertEqual(Double(after[0] - before[0]) * Double(extent.width), -14, accuracy: 0.25)
+                XCTAssertEqual(Double(after[1] - before[1]) * Double(extent.height), -7, accuracy: 0.25)
+            }
+            let opposite = FaceCorrectionWarp(kind: .slimRight, center: center, radius: 48,
+                                              visibleOffset: CGVector(dx: -12, dy: 0))
+            let cancelled = try XCTUnwrap(step.makeOutput(source: source, warps: [warps[0], opposite]))
+            let expected = floatPixel(source, at: center), actual = floatPixel(cancelled, at: center)
+            XCTAssertEqual(actual[0], expected[0], accuracy: 0.001)
+            XCTAssertEqual(actual[1], expected[1], accuracy: 0.001)
+        }.value
+    }
+
+    func testEveryFaceControlChangesFixedPreviewPixelsAtZeroHalfAndFull() async throws {
+        try await Task.detached { [self] in
+            let buffer = try fixtureBuffer()
+            let source = CIImage(cvPixelBuffer: buffer)
+            let processor = BeautyImageProcessor()
+            let original = try pixels(source).bytes
+            let topLeftRows = rowsStartAtTop(try pixels(coordinateRamp()).bytes)
+            for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones] {
+                var outputs: [[UInt8]] = []
+                var changes: [Double] = []
+                for strength in [0.0, 0.5, 1.0] {
+                    var parameters = BeautyParameters()
+                    parameters.setValue(0, for: SkinTool.auto)
+                    for other in FaceTool.allCases where other != .auto { parameters.setValue(0, for: other) }
+                    parameters.setValue(strength * 100, for: tool)
+                    let result = try processor.previewResult(for: BeautyPreviewFrame(pixelBuffer: buffer,
+                        orientation: .up, mirrored: false, faces: [fixtureFace()],
+                        configuration: parameters.processingConfiguration), displayRotationAngle: 0,
+                        targetSize: extent.size)
+                    let bytes = try pixels(result.image ?? source).bytes
+                    if strength == 0 { XCTAssertNil(result.image); XCTAssertEqual(bytes, original) }
+                    else { XCTAssertNotNil(result.image) }
+                    let diff = difference(original, bytes, warps: result.geometryDebug?.warps ?? [],
+                                          topLeftRows: topLeftRows)
+                    if strength > 0 {
+                        XCTAssertGreaterThan(diff.inside.changed, 0, tool.rawValue)
+                        XCTAssertLessThanOrEqual(diff.outside.maximum, 2, tool.rawValue)
+                        XCTAssertLessThanOrEqual(diff.outside.mean, 0.05, tool.rawValue)
+                    }
+                    outputs.append(bytes)
+                    changes.append(diff.all.mean)
+                }
+                XCTAssertNotEqual(outputs[0], outputs[1], tool.rawValue)
+                XCTAssertNotEqual(outputs[1], outputs[2], tool.rawValue)
+                XCTAssertGreaterThan(changes[1], changes[0], tool.rawValue)
+                XCTAssertGreaterThan(changes[2], changes[1], tool.rawValue)
+                print("BeautyStrength fixed Preview pixels: \(tool.rawValue) zero/half/full mean differences=\(changes)")
+            }
+        }.value
+    }
+
+    func testDefaultEffectsRetainEveryControlsPixelContributionAndLatestStrength() async throws {
+        try await Task.detached { [self] in
+            let source = try coordinateRamp()
+            let face = fixtureFace()
+            let step = FaceCorrectionPreviewStep()
+            let controls: [(FaceTool, FaceCorrectionWarp.Kind)] = [
+                (.slim, .slimLeft), (.width, .widthLeft), (.chin, .chinCenter),
+                (.forehead, .foreheadLeft), (.cheekbones, .cheekbonesLeft)
+            ]
+            for (tool, kind) in controls {
+                var samples: [[Float]] = []
+                var expected: CGVector = .zero
+                for strength in [0.0, 0.5, 1.0, 0.0] {
+                    var parameters = BeautyParameters() // Other face controls stay enabled at 50.
+                    parameters.setValue(strength * 100, for: tool)
+                    let config = parameters.processingConfiguration
+                    let warps = FaceCorrectionGeometry.warps(faces: [face], configuration: config, extent: extent)
+                    parameters.setValue(100, for: tool)
+                    let fullWarps = FaceCorrectionGeometry.warps(faces: [face],
+                        configuration: parameters.processingConfiguration, extent: extent)
+                    let anchor = try XCTUnwrap(fullWarps.first { $0.kind == kind })
+                    // Match the one-pixel readback's sample center exactly.
+                    let point = CGPoint(x: floor(anchor.center.x) + 0.5, y: floor(anchor.center.y) + 0.5)
+                    let output = try XCTUnwrap(step.makeOutput(source: source, warps: warps))
+                    samples.append(floatPixel(output, at: point))
+                    // Independent oracle: changing one slider adds only that tool's
+                    // feathered vectors, even while every other effect remains on.
+                    let toolKinds: [FaceCorrectionWarp.Kind]
+                    switch tool {
+                    case .slim: toolKinds = [.slimLeft, .slimRight]
+                    case .width: toolKinds = [.widthLeft, .widthRight]
+                    case .chin: toolKinds = [.chinLeft, .chinCenter, .chinRight]
+                    case .forehead: toolKinds = [.foreheadLeft, .foreheadRight]
+                    default: toolKinds = [.cheekbonesLeft, .cheekbonesRight]
+                    }
+                    expected = fullWarps.filter { toolKinds.contains($0.kind) }.reduce(CGVector.zero) { total, warp in
+                        let distance = hypot(point.x - warp.center.x, point.y - warp.center.y)
+                        let weight = min(1, max(0, (warp.radius - distance) / (warp.radius * 0.7)))
+                        return CGVector(dx: total.dx - warp.visibleOffset.dx * weight,
+                                        dy: total.dy - warp.visibleOffset.dy * weight)
+                    }
+                }
+                for (index, strength) in [(1, 0.5), (2, 1.0), (3, 0.0)] {
+                    let dx = Double(samples[index][0] - samples[0][0]) * Double(extent.width)
+                    let dy = Double(samples[index][1] - samples[0][1]) * Double(extent.height)
+                    XCTAssertEqual(dx, Double(expected.dx) * strength, accuracy: 0.15, tool.rawValue)
+                    XCTAssertEqual(dy, Double(expected.dy) * strength, accuracy: 0.15, tool.rawValue)
+                }
+            }
+        }.value
+    }
+
     func testMapAndSamplingPreservePixelUnitsXYSignFalloffAndNonzeroExtent() async throws {
         try await Task.detached { [self] in
             // RG coordinate ramps reveal the sampled X/Y position, independently
@@ -361,9 +483,14 @@ final class FaceCorrectionPixelTests: XCTestCase {
             CGPoint(x: 0.18, y: 0.24), CGPoint(x: 0.34, y: 0.08), CGPoint(x: 0.50, y: 0.03),
             CGPoint(x: 0.66, y: 0.08), CGPoint(x: 0.82, y: 0.24), CGPoint(x: 0.90, y: 0.42),
             CGPoint(x: 0.92, y: 0.58)]
-        return DetectedFace(boundingBox: box, confidence: 1, landmarks: [.faceContour: points.map {
-            CGPoint(x: box.minX + $0.x * box.width, y: box.minY + $0.y * box.height)
-        }])
+        func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
+            CGPoint(x: box.minX + x * box.width, y: box.minY + y * box.height)
+        }
+        return DetectedFace(boundingBox: box, confidence: 1, landmarks: [
+            .faceContour: points.map { point($0.x, $0.y) },
+            .leftEyebrow: [point(0.24, 0.70), point(0.36, 0.72)],
+            .rightEyebrow: [point(0.64, 0.72), point(0.76, 0.70)]
+        ])
     }
 
     private func fixtureBuffer() throws -> CVPixelBuffer {

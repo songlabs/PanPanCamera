@@ -20,8 +20,11 @@ is capped at 6% of face width or 1.8% of face height; default UI values multiply
 
 `FaceCorrectionPreviewStep` encodes those movements as feathered radial fields over a
 neutral RG displacement map and applies one explicit vector-sampling `CIKernel`. R/G
-encode inverse X/Y sampling offsets around 0.5, with `scale = max(1, 2 * largestOffset)`
-in CI pixels. The kernel samples at `destination + (RG - 0.5) * scale`, using
+encode inverse X/Y sampling offsets around 0.5, with
+`scale = max(1, 2 * sum(offset magnitudes))` in CI pixels. Each feathered signed vector
+is added to the map; later effects cannot cover earlier vectors. The sum bound avoids
+clipping and cancels during decoding, so it does not scale the visible strength.
+The kernel samples at `destination + (RG - 0.5) * scale`, using
 `samplerTransform` for source coordinates and an expanded source ROI. The former
 `CIDisplacementDistortion` accepts a grayscale texture; its documented contract does
 not provide this RG vector decoding. The latest
@@ -57,6 +60,19 @@ It writes PNGs and
 in the test log. Files are overwritten on the next diagnostic run. Images are local
 only: no PhotoKit save, upload, or xcresult image attachment. These are Apple runtime
 tests, not a real-face appearance or visible CAMetalLayer acceptance test.
+
+The strength investigation and multi-effect overwrite repair are recorded in
+[`docs/BeautyPreviewStrengthAudit.md`](../../../docs/BeautyPreviewStrengthAudit.md).
+New regressions cover all five controls at zero/half/full, their combined pixel
+contributions, overlapping X/Y vectors, reversed order, and returning to zero with
+the same processor/cache. Configuration/Preview geometry tests also cover quarter
+steps, Auto at 0.5 and 1, and half-size drawables. These additions still need Apple
+execution. In a DEBUG launch, `-PanPanBeautyStrengthDiagnostics` opts into logs on
+configuration changes at most once per second: frame-snapshot UI/effective values,
+all active warp radii/requested offsets, and actual combined map samples through
+the shared bitmap context. A separate renderer transition log identifies successful
+render completion or fallback; map readback alone does not prove visible presentation.
+No images or landmark positions are logged. Release omits these diagnostics.
 
 ## Architecture retained
 

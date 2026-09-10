@@ -11,6 +11,7 @@ struct FaceGeometryDebugSnapshot: Equatable, Sendable {
     let faceBox: CGRect?
     let contour: [CGPoint]
     let smallFaceWarps: [FaceCorrectionWarp]
+    let warps: [FaceCorrectionWarp]
     let smallFaceUI: Double
     let normalizedSmallFace: Double
     let auto: Double
@@ -91,12 +92,18 @@ struct BeautyImageProcessor: Sendable {
                                            targetExtent: target, transform: transform)
         let geometry = FaceCorrectionGeometry.result(faces: fittedFaces,
             configuration: frame.configuration, extent: target)
+        #if DEBUG
+        // Diagnostic failure must not turn an otherwise valid Preview into a bypass.
+        try? faceCorrection.logStrengthDiagnostics(configuration: frame.configuration,
+                                                   geometry: geometry, extent: target)
+        #endif
         let debug = FaceGeometryDebugSnapshot(
             extent: target,
             faceDetected: !fittedFaces.isEmpty,
             faceBox: geometry.faceBox,
             contour: geometry.contour,
             smallFaceWarps: geometry.smallFaceWarps,
+            warps: geometry.warps,
             smallFaceUI: frame.configuration.faceSlimStrength * 100,
             normalizedSmallFace: frame.configuration.faceSlimStrength,
             auto: frame.configuration.faceOverallStrength,
