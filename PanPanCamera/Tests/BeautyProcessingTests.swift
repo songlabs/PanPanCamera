@@ -140,6 +140,40 @@ final class BeautyProcessingTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(output).extent, extent)
     }
 
+    func testSlimJawDisplacementIsZeroThenContinuousAndInwardThroughHundred() throws {
+        let extent = CGRect(x: 0, y: 0, width: 200, height: 300)
+        var parameters = BeautyParameters()
+        parameters.setValue(50, for: FaceTool.auto)
+        for tool in [FaceTool.width, .chin, .forehead, .cheekbones] {
+            parameters.setValue(0, for: tool)
+        }
+
+        var magnitudes: [CGFloat] = []
+        for uiValue in [0.0, 25.0, 50.0, 75.0, 100.0] {
+            parameters.setValue(uiValue, for: FaceTool.slim)
+            let warps = FaceCorrectionGeometry.warps(faces: [completeFace()],
+                configuration: parameters.processingConfiguration, extent: extent)
+            if uiValue == 0 {
+                XCTAssertTrue(warps.isEmpty)
+                magnitudes.append(0)
+                continue
+            }
+            let left = try warp(.slimLeft, in: warps)
+            let right = try warp(.slimRight, in: warps)
+            XCTAssertGreaterThan(left.visibleOffset.dx, 0)
+            XCTAssertLessThan(right.visibleOffset.dx, 0)
+            XCTAssertEqual(left.visibleOffset.dx, -right.visibleOffset.dx, accuracy: 0.000_001)
+            magnitudes.append(abs(left.visibleOffset.dx))
+        }
+
+        for (actual, expected) in zip(magnitudes, [0, 0.9, 1.8, 2.7, 3.6]) {
+            XCTAssertEqual(actual, expected, accuracy: 0.000_001)
+        }
+        for pair in zip(magnitudes, magnitudes.dropFirst()) {
+            XCTAssertLessThan(pair.0, pair.1)
+        }
+    }
+
     func testFaceOnlyConfigurationDoesNotDecodeOrRewritePhotoData() throws {
         let original = Data([0x50, 0x41, 0x4E, 0x50, 0x41, 0x4E])
         let output = try runOffMain {
