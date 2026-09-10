@@ -78,7 +78,8 @@ struct DebugFaceMaskStep {}
 
     def test_metal_is_only_the_core_image_preview_presentation_target(self):
         users = [path for path in APP.rglob('*.swift')
-                 if re.search(r'^import Metal$', path.read_text(encoding='utf-8'), re.M)]
+                 if 'Tests' not in path.parts
+                 and re.search(r'^import Metal$', path.read_text(encoding='utf-8'), re.M)]
         self.assertEqual(set(users), {
             APP / 'Presentation/Camera/CameraPreview.swift',
             APP / 'Rendering/CoreImage/BeautyPreviewRenderer.swift',
@@ -135,7 +136,7 @@ struct DebugFaceMaskStep {}
         final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
         self.assertIn('faceCorrection.makeOutput', preview)
         self.assertNotIn('FaceCorrectionPreviewStep', final)
-        self.assertEqual(geometry.count('"CIDisplacementDistortion"'), 1)
+        self.assertNotIn('"CIDisplacementDistortion"', geometry)
         self.assertIn('configuration.isFaceCorrectionBypassed', geometry)
         self.assertNotRegex(geometry_code, r'\b(?:UIImage|CIContext|DispatchQueue|Task|URLSession|Vision)\b')
         self.assertIn('private var cachedMap: CIImage?', geometry)

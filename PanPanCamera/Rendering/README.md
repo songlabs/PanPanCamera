@@ -18,7 +18,7 @@ preserving smoothing, bounded local brightening, then neutral tone consistency. 
 uses the same definition on a smaller aspect-filled image with lighter internal settings;
 final uses native pixels. Preview then maps the main face's contour/eyebrow landmarks to
 the five local Face Correction controls. Their feathered fields are composed into one
-cached displacement map and one `CIDisplacementDistortion`; missing/incomplete landmarks
+cached RG displacement map and one explicit vector-sampling CI kernel; missing/incomplete landmarks
 fall back to the original Preview layer. Face Auto is only their overall multiplier.
 Face geometry is intentionally absent from final-photo processing. Both branches remain
 entirely local. There is no upload, third-party SDK, skin segmentation, eye/nose/mouth
@@ -28,7 +28,7 @@ The temporary Face Geometry Debug Overlay consumes `FaceGeometryDebugSnapshot` f
 same Preview render operation. The snapshot is created only after the native buffer,
 Vision faces and CIImage have passed through the production quarter-turn, residual
 rotation, one front mirror and centered aspect-fill crop. `FaceCorrectionGeometryResult`
-provides both the active warps sent to `CIDisplacementDistortion` and the zero-strength
+provides both the active warps sent to the vector-sampling kernel and the zero-strength
 small-face center/radius zones; zero zones expose a zero vector and are not admitted to
 the displacement map. The UIKit layer only converts final Metal drawable pixels from
 bottom-left to Preview points from top-left. It does not run Vision, use safe-area sizes,

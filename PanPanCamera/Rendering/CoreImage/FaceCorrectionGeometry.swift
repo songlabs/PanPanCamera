@@ -264,8 +264,8 @@ private extension CGRect {
     var center: CGPoint { CGPoint(x: midX, y: midY) }
 }
 
-/// Builds one bounded displacement map from all local movements and applies one
-/// built-in Core Image distortion. No CIContext, pixel buffer, or history is created here.
+/// Builds one bounded RG vector map and samples the source with explicit pixel offsets.
+/// No CIContext, pixel buffer, or history is created here.
 final class FaceCorrectionPreviewStep: @unchecked Sendable {
     private let lock = NSLock()
     private var cachedWarps: [FaceCorrectionWarp] = []
@@ -288,15 +288,21 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
             return nil
         }
         let (displacement, scale) = try displacementMap(for: warps, extent: source.extent)
-        return try CoreImageRendering.filter("CIDisplacementDistortion", parameters: [
-            kCIInputImageKey: source.clampedToExtent(),
-            "inputDisplacementImage": displacement,
-            kCIInputScaleKey: scale
-        ], in: source.extent)
+        guard let kernel = Self.vectorDisplacement,
+              let output = kernel.apply(extent: source.extent, roiCallback: { index, rect in
+                  // RG is bounded to 0...1, so each source-coordinate component
+                  // can move by at most scale / 2. Include interpolation support.
+                  index == 0 ? rect.insetBy(dx: -scale / 2 - 1, dy: -scale / 2 - 1) : rect
+              }, arguments: [source.clampedToExtent(), displacement, scale]) else {
+            throw CoreImageRendering.Failure.filterUnavailable
+        }
+        return output.cropped(to: source.extent)
     }
 
-    private func displacementMap(for warps: [FaceCorrectionWarp],
-                                 extent: CGRect) throws -> (CIImage, CGFloat) {
+    // Internal so Apple pixel tests can inspect the actual cached production map.
+    func displacementMap(for warps: [FaceCorrectionWarp],
+                         extent: CGRect) throws -> (image: CIImage, scale: CGFloat) {
+        dispatchPrecondition(condition: .notOnQueue(.main))
         lock.lock()
         defer { lock.unlock() }
         if warps == cachedWarps, extent == cachedExtent,
@@ -305,8 +311,8 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
         let largest = warps.map { hypot($0.visibleOffset.dx, $0.visibleOffset.dy) }.max() ?? 0
         guard largest >= 0.05 else { throw BeautyImageProcessor.Failure.invalidExtent }
 
-        // CIDisplacementDistortion samples the input in the map's direction, so the
-        // encoded vector is the inverse of the user-visible landmark movement.
+        // Encode inverse sampling offsets: R = X, G = Y, 0.5 = zero.
+        // The matching kernel decodes these values into CI pixels exactly once.
         let scale = max(1, largest * 2)
         // Create encoded values through CIColorMatrix arithmetic so 0.5 stays neutral
         // in the renderer's linear working space instead of passing through color conversion.
@@ -347,6 +353,21 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
         cachedScale = scale
         return (displacement, scale)
     }
+
+    // CIDisplacementDistortion accepts a grayscale texture, not our RG vector
+    // contract. Decode explicitly instead of assuming its inputScale implements
+    // (RG - 0.5) * scale. samplerTransform converts CI pixels to sampler space;
+    // there is no division by image width/height or second normalization.
+    // Like the existing reconstruction kernel, this uses the legacy CI language
+    // API; compilation and sampling are covered by Apple runtime tests.
+    private static let vectorDisplacement = CIKernel(source: """
+        kernel vec4 faceVectorDisplacement(sampler source, sampler displacement, float scale) {
+            vec2 destination = destCoord();
+            vec2 encoded = sample(displacement, samplerTransform(displacement, destination)).rg;
+            vec2 sourcePosition = destination + (encoded - vec2(0.5)) * scale;
+            return sample(source, samplerTransform(source, sourcePosition));
+        }
+        """)
 
     private func clearCache() {
         lock.lock()

@@ -15,11 +15,16 @@ image center on an area tie. It requires a usable face contour; Forehead additio
 requires both eyebrow regions. Auto is a 0...1 overall multiplier for Slim, Width,
 Chin, Forehead and Cheekbones. Each control produces small inward or vertical movements
 around contour/eyebrow anchors. At full effective strength the largest single movement
-is capped at 2.8% of face width or 1.8% of face height; default UI values multiply to
+is capped at 6% of face width or 1.8% of face height; default UI values multiply to
 25% effective strength.
 
 `FaceCorrectionPreviewStep` encodes those movements as feathered radial fields over a
-neutral displacement map and applies one built-in `CIDisplacementDistortion`. The latest
+neutral RG displacement map and applies one explicit vector-sampling `CIKernel`. R/G
+encode inverse X/Y sampling offsets around 0.5, with `scale = max(1, 2 * largestOffset)`
+in CI pixels. The kernel samples at `destination + (RG - 0.5) * scale`, using
+`samplerTransform` for source coordinates and an expanded source ROI. The former
+`CIDisplacementDistortion` accepts a grayscale texture; its documented contract does
+not provide this RG vector decoding. The latest
 map is cached until landmarks, configuration or target extent changes. It creates no
 CIContext, UIImage, queue, task, pixel-buffer cache or per-face history. The existing
 1280-pixel Preview bound, latest-frame slot and single in-flight Metal command buffer
@@ -33,6 +38,15 @@ Correction step; captured-photo geometry remains outside this task. Eye/nose/mou
 controls and stable face tracking remain unimplemented. All behavior is on-device and
 no image or landmark data is uploaded or persisted. Naturalness, filter direction,
 frame rate, latency, thermals and device rotation still require real-iPhone acceptance.
+
+`FaceCorrectionPixelTests` (DEBUG only) renders a fixed synthetic grid through the
+production Preview processor and shared CIContext, compares zero/100 and the former
+filter consumer, and checks locality, map channels, signed sampling displacement,
+nonzero extents, bypasses and a Metal target matching Preview. It writes PNGs and
+`metrics.json` to the test host's temporary `FaceCorrectionPixels/` directory, printed
+in the test log. Files are overwritten on the next diagnostic run. Images are local
+only: no PhotoKit save, upload, or xcresult image attachment. These are Apple runtime
+tests, not a real-face appearance or visible CAMetalLayer acceptance test.
 
 ## Architecture retained
 
