@@ -40,11 +40,23 @@ enum CoreImageRendering {
                                      colorSpace: colorSpace, deferred: false)
     }
 
-    static func render(_ image: CIImage, to texture: MTLTexture, commandBuffer: MTLCommandBuffer,
-                       bounds: CGRect, colorSpace: CGColorSpace) {
-        dispatchPrecondition(condition: .notOnQueue(.main))
-        context.render(image, to: texture, commandBuffer: commandBuffer,
-                       bounds: bounds, colorSpace: colorSpace)
+    /// Metal destinations require a Metal-backed context on the destination device.
+    /// Keep one per Preview renderer, initialized on its worker and reused across frames.
+    /// The shared bitmap/photo context above retains its existing backend and behavior.
+    final class MetalRenderer {
+        private let context: CIContext
+
+        init(device: MTLDevice) {
+            dispatchPrecondition(condition: .notOnQueue(.main))
+            context = CIContext(mtlDevice: device, options: [.cacheIntermediates: false])
+        }
+
+        func render(_ image: CIImage, to texture: MTLTexture, commandBuffer: MTLCommandBuffer,
+                    bounds: CGRect, colorSpace: CGColorSpace) {
+            dispatchPrecondition(condition: .notOnQueue(.main))
+            context.render(image, to: texture, commandBuffer: commandBuffer,
+                           bounds: bounds, colorSpace: colorSpace)
+        }
     }
 
     static func filter(_ name: String, parameters: [String: Any], in extent: CGRect) throws -> CIImage {

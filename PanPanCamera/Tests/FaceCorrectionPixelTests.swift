@@ -39,7 +39,19 @@ final class FaceCorrectionPixelTests: XCTestCase {
             let preview0 = try preview(0)
             let preview100 = try preview(1)
             XCTAssertNil(preview0.image) // Production shows the original layer at zero.
-            XCTAssertEqual(preview100.geometryDebug?.smallFaceWarps, fullGeometry.smallFaceWarps)
+            let previewWarps = try XCTUnwrap(preview100.geometryDebug?.smallFaceWarps)
+            XCTAssertEqual(previewWarps.count, fullGeometry.smallFaceWarps.count)
+            for (actual, expected) in zip(previewWarps, fullGeometry.smallFaceWarps) {
+                XCTAssertEqual(actual.kind, expected.kind)
+                // Preview reconstructs/fits the face box, even for an identity transform.
+                // Floating-point round trips are not bit-identical (about 7e-15 px here).
+                // One billionth of a pixel tolerates arithmetic noise, not geometry changes.
+                XCTAssertEqual(actual.center.x, expected.center.x, accuracy: 1e-9)
+                XCTAssertEqual(actual.center.y, expected.center.y, accuracy: 1e-9)
+                XCTAssertEqual(actual.radius, expected.radius, accuracy: 1e-9)
+                XCTAssertEqual(actual.visibleOffset.dx, expected.visibleOffset.dx, accuracy: 1e-9)
+                XCTAssertEqual(actual.visibleOffset.dy, expected.visibleOffset.dy, accuracy: 1e-9)
+            }
             let processed100 = try XCTUnwrap(preview100.image)
             let original = try pixels(source)
             let zero = try pixels(preview0.image ?? source)
@@ -66,6 +78,10 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 "extent": [256, 384], "orientation": "up", "mirrored": false,
                 "readbackRowsStartAtTop": topLeftRows,
                 "faceAuto": 0.5, "scalePixels": Double(map.scale),
+                "mapExtent": [Double(map.image.extent.minX), Double(map.image.extent.minY),
+                              Double(map.image.extent.width), Double(map.image.extent.height)],
+                "mapReadbackFormat": "RGBAf, extendedLinearSRGB",
+                "neutralMapRGBA": floatPixel(map.image, at: CGPoint(x: 1, y: 1)).map(Double.init),
                 "smallFace0": zeroDiff.json, "smallFace100": fullDiff.json,
                 "legacyConsumer100": difference(zero.bytes, legacyPixels.bytes,
                                                 warps: fullGeometry.warps, topLeftRows: topLeftRows).json,
@@ -132,6 +148,8 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 XCTAssertEqual(corner[1], 0.5, accuracy: 0.001)
                 let feather = floatPixel(map.image, at: CGPoint(x: center.x + 32, y: center.y))
                 let magnitude = hypot(Double(feather[0]) - 0.5, Double(feather[1]) - 0.5)
+                print("FaceCorrection map samples: offset=\(offset) scale=\(map.scale) " +
+                      "extent=\(map.image.extent) centerRGBA=\(rgba) neutralRGBA=\(corner) falloffRGBA=\(feather)")
                 XCTAssertGreaterThan(magnitude, 0.01)
                 XCTAssertLessThan(magnitude, 0.49)
 
@@ -152,17 +170,37 @@ final class FaceCorrectionPixelTests: XCTestCase {
                       "actual=\([Double(actual[0] - before[0]) * Double(extent.width), Double(actual[1] - before[1]) * Double(extent.height)]) " +
                       "legacy=\([Double(legacyPixel[0] - before[0]) * Double(extent.width), Double(legacyPixel[1] - before[1]) * Double(extent.height)])")
             }
+            let productionWarps = FaceCorrectionGeometry.warps(faces: [fixtureFace()],
+                configuration: configuration(1), extent: extent)
+            XCTAssertEqual(productionWarps.count, 2)
+            let productionRamp = try coordinateRamp()
+            let productionOutput = try XCTUnwrap(step.makeOutput(source: productionRamp, warps: productionWarps))
+            for warp in productionWarps {
+                let before = floatPixel(productionRamp, at: warp.center)
+                let after = floatPixel(productionOutput, at: warp.center)
+                let sampledDX = Double(after[0] - before[0]) * Double(extent.width)
+                let sampledDY = Double(after[1] - before[1]) * Double(extent.height)
+                XCTAssertEqual(sampledDX, -Double(warp.visibleOffset.dx), accuracy: 0.25)
+                XCTAssertEqual(sampledDY, -Double(warp.visibleOffset.dy), accuracy: 0.25)
+                print("FaceCorrection production direction: kind=\(warp.kind) " +
+                      "visibleOffset=\(warp.visibleOffset) sampledOffset=\([sampledDX, sampledDY])")
+            }
         }.value
     }
 
     func testProductionMetalRenderTargetContainsLocalizedPixelChanges() async throws {
         try await Task.detached { [self] in
-            guard let device = MTLCreateSystemDefaultDevice(), let queue = device.makeCommandQueue() else {
-                throw XCTSkip("Metal unavailable; render-target pixel verification NOT EXECUTED")
-            }
+            let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(), "Metal is required for Preview pixel verification")
+            let queue = try XCTUnwrap(device.makeCommandQueue())
+            let renderer = CoreImageRendering.MetalRenderer(device: queue.device)
             let buffer = try fixtureBuffer()
             let source = CIImage(cvPixelBuffer: buffer)
             let processor = BeautyImageProcessor()
+            let zeroOutput = try processor.previewImage(for: BeautyPreviewFrame(
+                pixelBuffer: buffer, orientation: .up, mirrored: false,
+                faces: [fixtureFace()], configuration: configuration(0)),
+                displayRotationAngle: 0, targetSize: extent.size)
+            XCTAssertNil(zeroOutput)
             let output = try XCTUnwrap(processor.previewImage(for: BeautyPreviewFrame(
                 pixelBuffer: buffer, orientation: .up, mirrored: false,
                 faces: [fixtureFace()], configuration: configuration(1)),
@@ -175,8 +213,8 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
                 let command = try XCTUnwrap(queue.makeCommandBuffer())
                 // Identical submission primitive, bounds and format to BeautyPreviewRenderer.
-                CoreImageRendering.render(image, to: texture, commandBuffer: command,
-                                          bounds: extent, colorSpace: colorSpace)
+                renderer.render(image, to: texture, commandBuffer: command,
+                                bounds: extent, colorSpace: colorSpace)
                 command.commit()
                 command.waitUntilCompleted()
                 XCTAssertEqual(command.status, .completed, "\(String(describing: command.error))")
@@ -185,16 +223,22 @@ final class FaceCorrectionPixelTests: XCTestCase {
                     texture.getBytes($0.baseAddress!, bytesPerRow: Int(extent.width) * 4,
                         from: MTLRegionMake2D(0, 0, Int(extent.width), Int(extent.height)), mipmapLevel: 0)
                 }
+                XCTAssertTrue(stride(from: 3, to: bytes.count, by: 4).allSatisfy { bytes[$0] == 255 },
+                              "Opaque BGRA output must be written; an empty completed command is not render success")
                 return bytes
             }
             let original = try render(source)
+            let zero = try render(zeroOutput ?? source)
             let full = try render(output)
             let warps = FaceCorrectionGeometry.warps(faces: [fixtureFace()],
                 configuration: configuration(1), extent: extent)
             // Calibrate raw readback rows against known CI Y coordinates, using
             // the same render target; never infer locality from changed pixels.
             let topLeftRows = rowsStartAtTop(try render(coordinateRamp()))
-            let diff = difference(original, full, warps: warps, topLeftRows: topLeftRows)
+            let zeroDiff = difference(original, zero, warps: warps, topLeftRows: topLeftRows)
+            XCTAssertEqual(original, zero, "Small Face 0 must match the same Metal render-path baseline")
+            print("FaceCorrection Metal smallFace0 pixel metrics: \(zeroDiff.json)")
+            let diff = difference(zero, full, warps: warps, topLeftRows: topLeftRows)
             print("FaceCorrection Metal texture pixel metrics: \(diff.json)")
             assertLocalizedChange(diff)
         }.value

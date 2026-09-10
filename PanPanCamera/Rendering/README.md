@@ -105,8 +105,10 @@ operation failure retains priority over racing cancellation.
 All DEBUG output modes and configurations use that same static pipeline/admission slot.
 Each immutable JobImage carries its output, selected components, validated settings and mock skin provider. A/B calls should be
 sequential. There is no global mode switch, per-output queue or cached photo history.
-CoreImageRendering has one shared lazy CIContext with intermediate caching off across
-preview, final and DEBUG processing.
+CoreImageRendering retains one shared lazy bitmap CIContext for final and DEBUG
+processing. Preview reuses its own MetalRenderer context bound to the command queue's
+MTLDevice and initialized on the Preview worker. Both disable intermediate caching
+and retain the default working color space; no context is created per frame or face.
 Combined performs up to two RGBA8 renders, one per component; providers and mask
 helpers may run twice on the respective component inputs. No graph fusion or
 cross-step cache changes the protected texture implementation. All filters/graphs stay in the current call; caller-owned returned images should be

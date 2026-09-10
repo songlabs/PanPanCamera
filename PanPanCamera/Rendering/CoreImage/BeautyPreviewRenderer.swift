@@ -9,6 +9,8 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
     private let processor = BeautyImageProcessor()
     private let queue = DispatchQueue(label: "camera.panpan.beauty-preview", qos: .userInteractive)
     private let commandQueue: MTLCommandQueue
+    // Accessed only on queue; context creation stays off the main thread.
+    private lazy var metalRenderer = CoreImageRendering.MetalRenderer(device: commandQueue.device)
     private let colorSpace = CGColorSpace(name: CGColorSpace.sRGB)!
     private let lock = NSLock()
     private var inFlight = false
@@ -41,10 +43,10 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
                                completion: completion)
                         return
                     }
-                    CoreImageRendering.render(image, to: drawable.texture,
-                                              commandBuffer: commandBuffer,
-                                              bounds: CGRect(origin: .zero, size: targetSize),
-                                              colorSpace: colorSpace)
+                    metalRenderer.render(image, to: drawable.texture,
+                                         commandBuffer: commandBuffer,
+                                         bounds: CGRect(origin: .zero, size: targetSize),
+                                         colorSpace: colorSpace)
                     commandBuffer.present(drawable)
                     commandBuffer.addCompletedHandler { [weak self] buffer in
                         self?.finish(token: token, success: buffer.status == .completed,
