@@ -13,10 +13,10 @@ detection, identity verification or a visually accepted result.
 `FaceCorrectionGeometry` selects the largest valid face, then the face nearest the
 image center on an area tie. It requires a usable face contour; Forehead additionally
 requires both eyebrow regions. Auto batch-sets all face parameters, while Slim, Width,
-Chin, Forehead and Cheekbones each use their own 0...1 value directly. Each control
+Chin, Forehead and Cheekbones multiply their own 0...1 value by Auto. Each control
 produces small inward or vertical movements around contour/eyebrow anchors. At full
 effective strength the largest single movement is capped at 6% of face width or 1.8%
-of face height; the default concrete UI values produce 50% effective strength.
+of face height; the default Auto and concrete UI values produce 25% effective strength.
 
 `FaceCorrectionPreviewStep` encodes those movements as feathered radial fields over a
 neutral RG displacement map and applies one explicit vector-sampling `CIKernel`. R/G

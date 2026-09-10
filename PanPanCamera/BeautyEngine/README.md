@@ -3,8 +3,8 @@
 The first production skin path now lives in `Rendering`: CameraService owns shared
 `BeautyParameters`, Domain maps them to an immutable `BeautyConfiguration`, and the
 same configuration semantics drive the latest-frame preview and native-source final
-photo processors. Skin Auto batch-sets every skin parameter, whose concrete strengths
-are used directly. Smoothing, local brightening and
+photo processors. Skin Auto batch-sets every skin parameter, then multiplies each
+concrete strength for processing. Smoothing, local brightening and
 neutral tone consistency are implemented; processing is entirely on-device.
 
 Current and future boundaries:

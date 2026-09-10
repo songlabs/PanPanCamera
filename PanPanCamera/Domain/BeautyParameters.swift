@@ -104,14 +104,14 @@ struct BeautyConfiguration: Equatable, Sendable {
 
     static let disabled = Self()
 
-    var effectiveSmoothing: Double { smoothingStrength }
-    var effectiveBrightening: Double { brighteningStrength }
-    var effectiveTone: Double { toneStrength }
-    var effectiveFaceSlim: Double { faceSlimStrength }
-    var effectiveFaceWidth: Double { faceWidthStrength }
-    var effectiveChin: Double { chinStrength }
-    var effectiveForehead: Double { foreheadStrength }
-    var effectiveCheekbones: Double { cheekbonesStrength }
+    var effectiveSmoothing: Double { overallStrength * smoothingStrength }
+    var effectiveBrightening: Double { overallStrength * brighteningStrength }
+    var effectiveTone: Double { overallStrength * toneStrength }
+    var effectiveFaceSlim: Double { faceOverallStrength * faceSlimStrength }
+    var effectiveFaceWidth: Double { faceOverallStrength * faceWidthStrength }
+    var effectiveChin: Double { faceOverallStrength * chinStrength }
+    var effectiveForehead: Double { faceOverallStrength * foreheadStrength }
+    var effectiveCheekbones: Double { faceOverallStrength * cheekbonesStrength }
 
     var isPhotoBypassed: Bool {
         !enabled ||
