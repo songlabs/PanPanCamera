@@ -226,6 +226,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 }
                 let green = stride(from: 1, to: bytes.count, by: 4).map { bytes[$0] }
                 let report: [String: Any] = [
+                    "renderAPI": "CIRenderDestination.startTask",
                     "pixelFormat": pixelFormat == .bgra8Unorm_srgb ? "bgra8Unorm_srgb" : "bgra8Unorm",
                     "renderTaskCreated": renderError == nil,
                     "renderTaskError": renderError.map { String(describing: $0) } ?? "none",

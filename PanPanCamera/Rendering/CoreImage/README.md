@@ -45,11 +45,13 @@ filter consumer, and checks locality, map channels, signed sampling displacement
 nonzero extents, bypasses and a Metal target using Preview's device-bound context.
 Both bitmap and Metal comparisons use the same render path for baseline, zero and
 100. Geometry comparisons allow only subpixel floating-point round-trip noise;
-pixel-change/locality thresholds are unchanged. A format capability probe records that
-Core Image cannot write BGRA8Unorm_sRGB on the CI Simulator Metal device while it writes
-opaque pixels and a coordinate ramp to BGRA8Unorm. Metal readback waits for completion
-and requires opaque output, so an empty command cannot count as a rendered frame. A
-four-patch regression also checks BGRA channel order and basic sRGB color transfer.
+pixel-change/locality thresholds are unchanged. On the failed direct `CIContext.render`
+path, a format capability probe recorded empty BGRA8Unorm_sRGB output while BGRA8Unorm
+wrote opaque pixels with a coordinate span of 251. With explicit CIRenderDestination and
+startTask both formats write pixels; production uses the proven BGRA8Unorm storage and
+retains sRGB color management. Metal readback waits for completion and requires opaque
+output, so an empty command cannot count as a rendered frame. A four-patch regression
+also checks BGRA channel order and basic sRGB color transfer.
 It writes PNGs and
 `metrics.json` to the test host's temporary `FaceCorrectionPixels/` directory, printed
 in the test log. Files are overwritten on the next diagnostic run. Images are local
