@@ -4,6 +4,28 @@ import XCTest
 @testable import PanPanCamera
 
 final class BeautyProcessingTests: XCTestCase {
+    private let processingQueue = DispatchQueue(
+        label: "test.panpan.beauty-processing",
+        qos: .userInitiated
+    )
+
+    private final class LockedResult<Value>: @unchecked Sendable {
+        private let lock = NSLock()
+        private var stored: Result<Value, Error>?
+
+        func store(_ result: Result<Value, Error>) {
+            lock.lock()
+            defer { lock.unlock() }
+            stored = result
+        }
+
+        var value: Result<Value, Error>? {
+            lock.lock()
+            defer { lock.unlock() }
+            return stored
+        }
+    }
+
     func testPreviewFrameStoreKeepsOnlyNewestFrameAndConsumesOnce() throws {
         let store = BeautyPreviewFrameStore()
         let first = try pixelBuffer()
@@ -23,13 +45,13 @@ final class BeautyProcessingTests: XCTestCase {
         let source = CIImage(color: CIColor(red: 0.4, green: 0.4, blue: 0.4))
             .cropped(to: CGRect(x: 0, y: 0, width: 32, height: 32))
         let processor = BeautyImageProcessor()
-        let disabled = try DispatchQueue.global().sync {
+        let disabled = try runOffMain {
             try processor.process(source, faces: [], configuration: .disabled, quality: .preview)
         }
         XCTAssertTrue(disabled === source)
         let enabled = BeautyConfiguration(enabled: true, overallStrength: 1,
                                           smoothingStrength: 1)
-        let noFace = try DispatchQueue.global().sync {
+        let noFace = try runOffMain {
             try processor.process(source, faces: [], configuration: enabled, quality: .final)
         }
         XCTAssertTrue(noFace === source)
@@ -42,7 +64,7 @@ final class BeautyProcessingTests: XCTestCase {
                                 confidence: 1, landmarks: [:])
         let configuration = BeautyConfiguration(enabled: true, overallStrength: 1,
             smoothingStrength: 0, brighteningStrength: 1, toneStrength: 0)
-        let output = try DispatchQueue.global().sync {
+        let output = try runOffMain {
             try BeautyImageProcessor().process(source, faces: [face],
                                                configuration: configuration, quality: .final)
         }
@@ -63,7 +85,7 @@ final class BeautyProcessingTests: XCTestCase {
             smoothingStrength: 0, brighteningStrength: 1, toneStrength: 0)
         let frame = BeautyPreviewFrame(pixelBuffer: try XCTUnwrap(buffer), orientation: .right,
             mirrored: true, faces: [face], configuration: configuration)
-        let output = try DispatchQueue.global().sync {
+        let output = try runOffMain {
             try BeautyImageProcessor().previewImage(for: frame, displayRotationAngle: 95,
                                                     targetSize: CGSize(width: 30, height: 60))
         }
@@ -75,6 +97,18 @@ final class BeautyProcessingTests: XCTestCase {
         XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 2, 2,
             kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
         return try XCTUnwrap(buffer)
+    }
+
+    private func runOffMain<Value>(_ operation: @escaping () throws -> Value) throws -> Value {
+        let completed = expectation(description: "Beauty processing completed off-main")
+        let result = LockedResult<Value>()
+        processingQueue.async {
+            defer { completed.fulfill() }
+            XCTAssertFalse(Thread.isMainThread)
+            result.store(Result { try operation() })
+        }
+        wait(for: [completed], timeout: 5)
+        return try XCTUnwrap(result.value, "Beauty processing did not complete").get()
     }
 
     private func pixel(_ image: CIImage, at point: CGPoint, context: CIContext) throws -> Double {
