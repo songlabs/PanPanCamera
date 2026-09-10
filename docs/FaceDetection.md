@@ -29,7 +29,7 @@ third-party SDK, custom model, effect rendering, file storage or network upload.
 
 CameraService's `faceDetection` is the latest `FaceDetectionFrame`, or nil when cleared.
 Each face has a Vision normalized bounding box, confidence and a dictionary of available
-landmark regions. Supported regions are leftEye, rightEye, nose, noseCrest, outerLips,
+landmark regions. Supported regions are leftEye, rightEye, leftEyebrow, rightEyebrow, nose, noseCrest, outerLips,
 innerLips and faceContour. Missing or empty regions are omitted. All landmark points
 are converted from face-relative into image-relative normalized coordinates.
 
@@ -46,7 +46,9 @@ a photo-capture error. If the video output/raw connection is unsupported,
 
 ## Frame acquisition and performance
 
-The existing session adds one optional `AVCaptureVideoDataOutput`. Automatic buffer
+The session adds one optional `AVCaptureVideoDataOutput`. The same callback stores at
+most one native silent-capture frame and at most one Beauty preview frame; it is never
+a view screenshot. Automatic buffer
 dimensions request AVFoundation's preview-sized output instead of full photo resolution.
 The output prefers a supported native bi-planar YUV format, disables analysis stabilization,
 and sets `alwaysDiscardsLateVideoFrames = true`. It does not alter the photo preset,
@@ -66,8 +68,9 @@ the shared serial queue and detector allow only one request at a time.
 
 Admission also remains closed until main consumes the single pending result. A stalled
 main thread cannot accumulate result callbacks from a running generation. Only small
-value results cross to main; sample/pixel buffers are released when the delegate returns.
-This bounds application backlog and retained frames. Actual capture-pool pressure,
+value results cross to main. Silent and Beauty stores each replace one retained pixel
+buffer; the Beauty renderer additionally admits one command buffer and drops superseded
+frames. This bounds application backlog. Actual capture-pool pressure,
 Vision latency, Preview FPS, CPU, memory and thermal behavior still require device profiling;
 the design does not establish a measured FPS or CPU target.
 

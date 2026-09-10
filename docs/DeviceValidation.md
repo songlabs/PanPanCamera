@@ -36,7 +36,7 @@ Every checklist item below is currently **Pending**. Use a real iPhone and recor
 
 ### Camera Permission
 
-- [ ] Pending — first launch and grant: one camera prompt, live preview, no microphone/Photos prompt.
+- [ ] Pending — first launch and grant: one camera prompt, live preview, no microphone prompt; add-only Photos prompt occurs only after capture/save.
 - [ ] Pending — deny: localized explanation and Settings link, shutter disabled.
 - [ ] Pending — Settings return: revoke/restore access and confirm foreground reflects current authorization.
 - [ ] Pending — restricted: where device controls permit testing, show restriction explanation without a misleading grant button.
@@ -64,13 +64,13 @@ Every checklist item below is currently **Pending**. Use a real iPhone and recor
 
 ### Photo
 
-- [ ] Pending — rear capture returns original Data and an in-memory result preview.
+- [ ] Pending — rear capture saves the final full-resolution Data and presents its result preview.
 - [ ] Pending — front capture uses the same mirror policy as front preview.
 - [ ] Pending — portrait, landscape left, landscape right and upside down: check original metadata and displayed orientation independently.
 - [ ] Pending — mirrored text/asymmetrical-object test on front and rear; rear stays unmirrored.
 - [ ] Pending — full photo keeps native sensor edges that the aspect-fill preview crops.
 - [ ] Pending — repeated shutter taps produce one active capture.
-- [ ] Pending — dismissing the result discards the photo and resumes the same camera session; no library write.
+- [ ] Pending — saved photo appears in Photos; dismissing the result releases its in-memory object and resumes the same camera session.
 
 ### Lifecycle
 
@@ -90,10 +90,22 @@ If these conditions cannot be produced, retain Pending rather than treating unit
 
 ### Parameters and privacy
 
-- [ ] Pending — six skin and thirteen face controls retain independent 0–100 draft values across panel changes.
-- [ ] Pending — beauty/filter/makeup notices remain visible; current selections do not alter pixels.
+- [ ] Pending — six skin and thirteen face controls retain independent 0–100 values across panel changes.
+- [ ] Pending — face correction, blemish, dark-circle, filter and makeup notices remain accurate; those controls do not alter pixels.
 - [ ] Pending — video/portrait/album/timer/ratio remain explicitly unavailable; no simulated effects.
-- [ ] Pending — no camera/photo upload or Photos-library save; only the current in-memory capture is retained.
+- [ ] Pending — add-only Photos save works; no camera/photo/face upload, network request or face-data persistence occurs.
+
+### Beauty Preview and Final Photo
+
+- [ ] Pending — overall strength 0 reveals the original preview path; 0 to 100 changes the live face result without reopening the panel.
+- [ ] Pending — smoothing retains texture and protects eyes, lips, brows, hair/background and text from visible blur or halos.
+- [ ] Pending — brightening and tone stay subtle across different skin tones and lighting, without clipping or global color/gamma shifts.
+- [ ] Pending — zero/one/multiple faces, profile, occlusion and rapid movement do not freeze or black out preview.
+- [ ] Pending — front/rear, camera switching, foreground/background and physical rotations preserve aspect fill, orientation and one front mirror.
+- [ ] Pending — PhotoOutput and silent-frame captures use the shutter-time parameter snapshot and match preview direction.
+- [ ] Pending — PhotoOutput retains its native maximum dimensions; silent capture retains its native VideoDataOutput dimensions without upscale.
+- [ ] Pending — force/observe a preview processing failure and confirm the underlying original preview continues; final failure must not save damaged data.
+- [ ] Pending — profile FPS, preview latency, shutter latency, CPU/GPU, memory, thermal behavior and repeated Beauty captures on real devices.
 
 ## Vision face detection — all device checks Pending
 
@@ -103,7 +115,7 @@ Green outlines are face boxes; yellow points are available landmarks. Inspect
 and `isFaceDetectionAvailable` for output support. Do not log/export face coordinates or images.
 
 - [ ] Front and rear: zero, one and multiple faces; all faces returned without primary-face selection.
-- [ ] Boxes and eye/nose/noseCrest/lip/contour points align at center and each cropped preview edge.
+- [ ] Boxes and eye/eyebrow/nose/noseCrest/lip/contour points align at center and each cropped preview edge.
 - [ ] Front mirror: move an identifiable feature to each side and confirm exactly one reflection.
 - [ ] Portrait plus physical landscape left/right and upside down on both cameras. UI remains portrait;
       this check exercises physical camera rotation, including horizon tilt and face-up/down transitions.

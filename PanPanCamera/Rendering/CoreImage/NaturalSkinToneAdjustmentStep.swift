@@ -2,7 +2,7 @@ import CoreImage
 import Foundation
 
 /// Bounded low-frequency luminance consistency, with no texture reconstruction,
-/// chroma target, exposure bias or geometry operation. Apple pixel validation pending.
+/// chroma target, exposure bias or geometry operation. Device validation pending.
 struct NaturalSkinToneAdjustmentStep: ImageProcessingStep {
     let configuration: SkinRetouchConfiguration
     private let landmarkDetector: (any FaceLandmarkDetecting<ProcessingImage>)?

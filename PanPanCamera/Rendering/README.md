@@ -1,11 +1,26 @@
-# Local photo processing pipeline
+# Local Beauty processing pipelines
 
-The camera still previews through AVCaptureVideoPreviewLayer and captures original
-encoded data through AVCapturePhotoOutput. Its existing VisionFaceDetector preview
-route, CameraFaceFrameProcessor, camera permissions, UI and photo path are unchanged.
-That route is not evidence of successful real-face detection or device acceptance.
+The original AVCaptureVideoPreviewLayer remains active as the zero-strength and failure
+fallback. When implemented Beauty effects are active, CameraFaceFrameProcessor places
+only its newest native frame in BeautyPreviewFrameStore. BeautyPreviewRenderer consumes
+at most one frame/Metal command buffer at a time, downscales only the display target to
+a 1280-pixel long edge, and presents Core Image output over the original layer.
 
-## Current DEBUG route
+The shutter snapshots one immutable BeautyConfiguration. AVCapturePhotoOutput data is
+processed at its original dimensions before encoding; the silent fallback processes the
+native VideoDataOutput pixel buffer and never uses a preview/view screenshot or upscale.
+Photo and silent paths bypass their former work when Beauty is disabled/zero where their
+source format permits. Failures do not replace the original preview, while final failures
+produce the existing capture error instead of saving damaged data.
+
+BeautyImageProcessor defines the shared effect order and parameter mapping: texture-
+preserving smoothing, bounded local brightening, then neutral tone consistency. Preview
+uses the same definition on a smaller aspect-filled image with lighter internal settings;
+final uses native pixels. Both reuse VisionFaceDetector's result contract and facial
+landmarks for feature protection. There is no upload, third-party SDK, skin segmentation,
+face warp, blemish or dark-circle algorithm. Apple/device acceptance remains pending.
+
+## Independent DEBUG route
 
     DebugPhotoProcessing.process(CapturedPhoto or Data, output, configuration, components, skinMaskProvider)
       -> one static ImageProcessingPipeline<JobImage>
@@ -75,7 +90,8 @@ operation failure retains priority over racing cancellation.
 All DEBUG output modes and configurations use that same static pipeline/admission slot.
 Each immutable JobImage carries its output, selected components, validated settings and mock skin provider. A/B calls should be
 sequential. There is no global mode switch, per-output queue or cached photo history.
-CoreImageRendering still has one shared lazy CIContext with intermediate caching off.
+CoreImageRendering has one shared lazy CIContext with intermediate caching off across
+preview, final and DEBUG processing.
 Combined performs up to two RGBA8 renders, one per component; providers and mask
 helpers may run twice on the respective component inputs. No graph fusion or
 cross-step cache changes the protected texture implementation. All filters/graphs stay in the current call; caller-owned returned images should be
@@ -90,12 +106,11 @@ original mode returns the common decoded preview directly. Mask alpha is opaque.
 Processed-photo alpha is retained, with conservative bypass of transparent/translucent
 neighborhoods. Existing RGBA8 output and working/output color-space policy remain.
 
-MockFaceDetector, MockFaceLandmarkDetector, MockSkinMaskProvider, DebugPhotoProcessing and the brightness/face-mask probes are wholly
-inside DEBUG guards. Reusable retouch, mask and rendering types have no product/camera
-call sites. Scope checks compile Release redeclaration probes, inspect build conditions,
-reject product call sites and guard the one-context/no-new-queue rule. No formal UI,
-save hook, upload, network, model, third-party SDK, custom Metal renderer or MPS spike
-was added.
+MockFaceDetector, MockFaceLandmarkDetector, MockSkinMaskProvider, DebugPhotoProcessing and
+the older brightness/face-mask probes remain wholly inside DEBUG guards. Reusable retouch
+and mask types now have the explicit BeautyImageProcessor product call site. Scope checks
+retain Release isolation and one-context rules. Metal is limited to Core Image texture
+presentation; no custom shader, MPS, model, upload, network or third-party SDK was added.
 
 See [CoreImage/README.md](CoreImage/README.md) for the complete formulas, fixed policy,
 filter/kernel parameters, adaptive scale tradeoff, DEBUG examples and pixel tests.
@@ -128,19 +143,18 @@ only for compatibility/testing. No additional legacy kernel is introduced.
 ## Verification boundaries
 
 - python scripts/check_project.py: project membership, dependency scope and localization.
-- python -m unittest discover -s scripts/tests -v: 40 passing script/static tests,
-  including 13 processing scope/Release-isolation checks and the new mock exclusion probe.
-- scripts/check_swift_syntax.ps1: 83 Swift sources parse; four existing pure Swift Domain
+- python -m unittest discover -s scripts/tests -v: 44 passing script/static tests,
+  including Beauty capture, bypass, back-pressure and Release-isolation checks.
+- scripts/check_swift_syntax.ps1: 87 Swift sources parse; four pure Swift Domain
   files and three camera control helpers typecheck on the installed host toolchain.
   An additional parser invocation with DEBUG also passed. This is not Apple typecheck.
 - Previous host Foundation XCTest/typecheck attempts lacked msvcrt.lib, oldnames.lib,
   msvcprt.lib and errno.h. This task does not retry or repair those known paths.
-- Existing Xcode Debug test target now has 23 source files, with 186 test methods by
-  static count. This addition prepares 29 XCTest methods: 19 Tone, seven composition,
-  two configuration/scale and one staged DEBUG output case; not executed here. Float
-  formula tests explicitly request RGBAf intermediates, separate from public RGBA8 tests.
-- git diff --check passed. All modifications stay in Rendering, Tests, project
-  membership, README and Python processing scope checks.
+- Existing Xcode Debug test target now has 24 source files, with 203 test methods by
+  static count. New configuration, snapshot, frame-store, coordinate and synthetic-image
+  methods are not executed on Apple here. Float formula tests explicitly request RGBAf
+  intermediates, separate from public RGBA8 tests.
+- git diff --check passed. Apple build, XCTest, Simulator, camera and GPU execution remain pending.
 
 Natural Skin Processing Core Components 已完成代码层基础闭环。
 这只代表基础组件代码完成，不代表视觉质量验收完成。

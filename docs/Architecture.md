@@ -3,33 +3,33 @@
 ```text
 PanPanCameraApp (@StateObject CameraService, one app lifetime)
   └─ CameraView
-      ├─ CameraPreview → AVCaptureVideoPreviewLayer
-      ├─ CameraService (@MainActor, permission + published camera state)
+      ├─ CameraPreview → AVCaptureVideoPreviewLayer fallback + Core Image/Metal Beauty surface
+      ├─ CameraService (@MainActor, permission + camera state + BeautyParameters)
       │   └─ CameraSession (one serial queue, one AVCaptureSession)
       │       ├─ AVCaptureDeviceInput (one front OR rear camera)
-      │       ├─ AVCapturePhotoOutput
-      │       ├─ PhotoCaptureProcessor → CapturedPhoto
+      │       ├─ AVCapturePhotoOutput → FinalBeautyProcessor → CapturedPhoto
       │       └─ AVCaptureVideoDataOutput → CameraFaceFrameProcessor
+      │           ├─ latest native SilentFrame
+      │           ├─ latest-only BeautyPreviewFrameStore → BeautyPreviewRenderer
       │           └─ VisionFaceDetector → FaceDetectionDelivery → latest FaceDetectionFrame
-      ├─ BeautyState → BeautyParameters (pure Swift value type)
       └─ CameraToolState (panel/category/preset selection, fixed timer/ratio state)
 ```
 
 ## Camera ownership and threading
 
-The app owns CameraService through `@StateObject`; recreating CameraView or its preview does not create a new session. The service lazily owns one CameraSession. Only the preview adapter can obtain its session reference, for connection to a preview layer; views do not start, stop, or configure the graph. The service has no beauty state or renderer.
+The app owns CameraService through `@StateObject`; recreating CameraView or its preview does not create a new session. The service lazily owns one CameraSession. Only the preview adapter can obtain its session reference and latest-only Beauty frame store; views do not start, stop, or configure the graph. CameraService owns the shared user parameters, while CameraSession and Rendering own immutable snapshots and pixel work.
 
 CameraService is the current application/state boundary inside the Camera directory. Camera exposes state, events, semantic failures and capture data; it does not reference Presentation, L10n or SwiftUI UI types. `Domain/CameraFailure` has only the existing capture/switch failure cases. Presentation maps them to unchanged localization keys. Domain remains independent of Apple UI and camera frameworks.
 
-CameraSession serializes configuration, input replacement and rollback, start/stop, capture submission, photo-result downsampling, and notification recovery on `camera.panpan.session`. Blocking AVFoundation calls never run in SwiftUI actions. Events are dispatched in queue order to the main actor. `@unchecked Sendable` on this owner documents queue isolation, not permission for unsynchronized access to its mutable fields.
+CameraSession serializes configuration, input replacement and rollback, start/stop, capture submission, result publication, and notification recovery on `camera.panpan.session`. Vision remains on `camera.panpan.faces`; Beauty preview rendering uses `camera.panpan.beauty-preview`; high-resolution processing and JPEG encoding use `camera.panpan.silent-encoding`. Blocking AVFoundation calls never run in SwiftUI actions. Events are dispatched in queue order to the main actor.
 
 Vision runs synchronously on the separate serial `camera.panpan.faces` queue. Video buffers remain unrotated/unmirrored; the capture rotation coordinator supplies Vision's EXIF quarter turn. A lock-protected per-generation mailbox throttles admission, rejects obsolete results and bounds main-queue notifications to one. CameraService publishes only the latest result. See [FaceDetection.md](FaceDetection.md) for the coordinate contract, lifecycle and validation limits.
 
-The main-thread UIView owns preview-layer geometry, preview mirroring, and a rotation coordinator. Photo output has its own rotation coordinator on the session side. Both use the current camera device; neither maps interface-orientation numbers to sensor angles by hand. The preview uses aspect fill. Photos preserve the native sensor frame, so some edges outside the full-screen preview can appear in the result. Front preview and front photos are mirrored consistently; rear photos are unmirrored. UI orientation is portrait in 0.1; captured image orientation follows physical camera rotation. These policies need the device checks in `DeviceValidation.md`.
+The main-thread UIView owns preview-layer geometry, preview mirroring, and a rotation coordinator. The original preview layer remains underneath as both the zero-strength path and render-failure fallback. A bounded 1280-pixel-long-edge Metal surface presents Core Image output only while an implemented Beauty effect is active and a face is available. It uses the same aspect-fill crop and explicit orientation/front-mirror policy. One retained camera frame and one in-flight command buffer bound preview backlog. Photo output has its own rotation coordinator on the session side. Photos preserve the native sensor frame, so some edges outside the full-screen preview can appear in the result. These policies need the device checks in `DeviceValidation.md`.
 
 ## Permission and lifecycle
 
-Only camera permission is requested. Denied and restricted states have separate explanations; denied access offers the system Settings link. A return to the foreground rereads permission. A request-in-flight guard avoids duplicate prompts; after awaiting the system, the service rechecks whether the app still wants the camera active.
+Camera permission and add-only Photo Library permission are requested by their existing flows; Beauty adds no permission. Denied and restricted camera states have separate explanations; denied access offers the system Settings link. A return to the foreground rereads permission.
 
 `scenePhase` and result visibility drive activation. Inactive/background scenes and the result cover stop the session. Returning to the camera restarts the existing session. Session interruptions show an explanation and interruption-ended notifications resume only when the app still wants the camera. Media-services reset attempts to restart the existing session; other runtime errors expose a retry action. A runtime error clears an in-flight capture and ignores a later result for that obsolete capture ID.
 
@@ -49,13 +49,13 @@ These tests exercise production coordination, not hardware. Real notification de
 
 Each shutter press creates AVCapturePhotoSettings, rechecks the live output's supported flash modes/device flash availability, applies capture rotation/mirroring, and calls `capturePhoto(with:delegate:)`. There is at most one active capture. Delegates remain retained by capture ID through final completion, even when a runtime error has invalidated a capture; an obsolete result cannot replace a newer one. Tool-sheet buttons are disabled during capture/switching to prevent competing result and panel presentations.
 
-The delegate returns original photo data. On the session queue, ImageIO creates a maximum-2048-pixel display image with EXIF transformation applied. CapturedPhoto contains original Data plus an immutable UIImage for presentation; its unchecked sendability is limited to that immutable handoff. There is no preview screenshot capture, main-thread photo decoding, photo upload, file persistence, or library write. Closing the result clears the sheet item and releases the capture when SwiftUI finishes dismissal.
+The delegate returns original photo data. The shutter command snapshots the current `BeautyConfiguration`; the final worker performs Vision and native-resolution Core Image processing before ImageIO encoding. With Beauty bypassed or no detected face, PhotoOutput data remains byte-for-byte unchanged. The silent fallback continues to take the latest native VideoDataOutput pixel buffer and never uses a view screenshot or upscale. ImageIO then creates a maximum-2048-pixel display image, and the existing add-only Photos flow saves the final Data before presenting CapturedPhoto. There is no main-thread photo decoding, photo upload, face persistence, or network processing.
 
-## UI-only editing boundary
+## Beauty processing boundary
 
-Skin and face values start at 50, clamp to 0–100, reject non-finite inputs, and are independent per tool and category. Selection and panel close/reopen preserve values within the current CameraView lifetime. App relaunch resets them. Auto is just another independent draft value in 0.1. Filter and makeup selections are also drafts; Vision detection does not apply effects.
+Skin and face values start at 50, clamp to 0–100, reject non-finite inputs, and are independent per tool and category. Skin Auto is the overall strength. `BeautyConfiguration` maps overall, smoothing, brightening and tone to normalized immutable values shared by preview and final processing. Zero overall or no implemented effect is an exact bypass. Smoothing uses the existing texture reconstruction plus landmark/edge protection, brightening is a bounded local face-mask lift, and tone uses the existing neutral luminance-consistency pass.
 
-The BeautyEngine and Rendering directories contain documentation only. FaceTracking now has a minimal detection-frame contract; an effect/rendering contract remains future work. Camera control, effect parameters, and rendering ownership stay separate.
+There is still no reliable blemish, dark-circle or face-warp implementation; those controls remain parameter-only and the panel says so. Filter and makeup selections also remain drafts. There is no stable cross-frame face tracker or semantic skin segmentation; preview reuses the bounded latest Vision observation, and final capture runs the same detector contract on its own source image.
 
 ## Detection module and next-stage plan
 
@@ -77,15 +77,15 @@ FaceTracking/                 detection and landmarks implemented
 FaceTracker                   future work, not implemented
 ```
 
-Presentation owns Views and localization. Application coordinates camera activity and processing state. Camera owns acquisition and capture-graph control. FaceTracking consumes unrotated buffers with explicit orientation and produces face/landmark results. BeautyEngine will interpret parameter snapshots and tracking inputs. Rendering will own image/GPU rendering, including a future BeautyRenderer and MetalPipeline. Domain holds UI-independent value contracts. Do not introduce Camera → Presentation, FaceTracking → SwiftUI or BeautyEngine → SwiftUI dependencies.
+Presentation owns Views and localization. Application coordinates camera activity and processing state. Camera owns acquisition and capture-graph control. FaceTracking consumes unrotated buffers with explicit orientation and produces face/landmark results. Domain maps parameter snapshots. Rendering owns the shared Core Image effect definition, final encoder, and minimal Metal presentation bridge.
 
-The UI's independent 0–100 values can later map to normalized 0.0–1.0 engine inputs; UI selection and the default value of 50 do not define an algorithm's neutral value. Detection and landmarks precede future stable face tracking, a BeautyEngine input model and Metal rendering.
+The implemented skin values map from 0–100 to normalized 0–1 engine inputs. UI selection itself never changes a value, and capture holds a value snapshot. Stable face tracking remains future work.
 
-The scope guard in `scripts/check_project.py` permits Vision only in FaceTracking and video data acquisition only in Camera. Metal, CoreML, CoreImage, photo-library access, network clients, movie recording and external dependencies remain rejected.
+The scope guard permits Vision only in FaceTracking, video data acquisition only in Camera, Core Image only in Rendering, and Metal only in the Core Image preview presentation bridge. Core ML, network clients, movie recording and external dependencies remain rejected.
 
 ## Localization boundary
 
-`L10n` defines 92 stable UI keys. Presentation uses `Text(L10n...)` or localized labels derived from model enums. `AppLanguage` supplies System Default plus the five compiled languages; `AppStorage` persists the stable raw value and the App root injects either its Locale or `autoupdatingCurrent` into SwiftUI. Domain types do not depend on SwiftUI or localized strings. `Localizable.xcstrings` and `InfoPlist.xcstrings` each supply Japanese, Simplified Chinese, Traditional Chinese, English, and Korean. Japanese is the development/source language. Catalog entries are manually managed; automatic Swift string extraction is disabled to avoid replacing stable keys with implementation strings. Numerical slider text uses locale-aware number formatting. New UI copy must add an L10n case and all five translations.
+`L10n` defines 94 stable UI keys. Presentation uses `Text(L10n...)` or localized labels derived from model enums. `AppLanguage` supplies System Default plus the five compiled languages; `AppStorage` persists the stable raw value and the App root injects either its Locale or `autoupdatingCurrent` into SwiftUI. Domain types do not depend on SwiftUI or localized strings. `Localizable.xcstrings` and `InfoPlist.xcstrings` each supply Japanese, Simplified Chinese, Traditional Chinese, English, and Korean. Japanese is the development/source language. Catalog entries are manually managed; automatic Swift string extraction is disabled to avoid replacing stable keys with implementation strings. Numerical slider text uses locale-aware number formatting. New UI copy must add an L10n case and all five translations.
 
 ## Apple API references
 

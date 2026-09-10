@@ -65,12 +65,16 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
     let orientation: FaceImageOrientation
     private let detector: VisionFaceDetector
     private let frameStore: SilentFrameStore
+    private let previewFrameStore: BeautyPreviewFrameStore
+    private let beautyConfiguration: BeautyConfigurationStore
     private let position: CameraPosition
     private let device: AVCaptureDevice
     private let onResult: (FaceDetectionDelivery) -> Void
+    private var latestFaces: [DetectedFace] = []
 
     init(device: AVCaptureDevice, orientation: FaceImageOrientation, detector: VisionFaceDetector,
-         frameStore: SilentFrameStore,
+         frameStore: SilentFrameStore, previewFrameStore: BeautyPreviewFrameStore,
+         beautyConfiguration: BeautyConfigurationStore,
          onResult: @escaping (FaceDetectionDelivery) -> Void) {
         self.device = device
         self.deviceID = device.uniqueID
@@ -78,6 +82,8 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
         self.orientation = orientation
         self.detector = detector
         self.frameStore = frameStore
+        self.previewFrameStore = previewFrameStore
+        self.beautyConfiguration = beautyConfiguration
         self.onResult = onResult
     }
 
@@ -104,6 +110,7 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
                                                 timestamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
                                                 orientation: orientation, position: position,
                                                 mirrored: position == .front, metadata: metadata))
+                publishPreview(buffer)
             }
             guard delivery.begin(at: start) else { return }
             let size = buffer.map {
@@ -114,17 +121,31 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
             if let buffer {
                 do {
                     faces = try detector.detect(buffer, orientation: orientation)
+                    latestFaces = faces
                     outcome = .detected
                 } catch {
                     // A failed frame clears old faces; later frames may retry. No face data is logged.
+                    latestFaces = []
                     outcome = .visionFailed
                 }
             }
+            if let buffer { publishPreview(buffer) }
             let frame = FaceDetectionFrame(faces: faces, orientation: orientation, deviceID: deviceID,
                                            pixelSize: size,
                                            timestamp: CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)),
                                            outcome: outcome)
             if delivery.complete(frame, at: ProcessInfo.processInfo.systemUptime) { onResult(delivery) }
         }
+    }
+
+    private func publishPreview(_ buffer: CVPixelBuffer) {
+        let configuration = beautyConfiguration.snapshot()
+        guard !configuration.isBypassed else {
+            previewFrameStore.clear()
+            return
+        }
+        previewFrameStore.replace(BeautyPreviewFrame(pixelBuffer: buffer, orientation: orientation,
+            mirrored: position == .front, faces: latestFaces,
+            configuration: configuration))
     }
 }

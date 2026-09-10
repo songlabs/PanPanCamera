@@ -2,18 +2,16 @@ import CoreImage
 import Foundation
 import AVFoundation
 import ImageIO
+import Metal
 
 final class SilentFrameEncoder: @unchecked Sendable {
-    private let context = CIContext(options: [.cacheIntermediates: false])
-
     func encode(_ frame: SilentFrame) -> Data? {
         dispatchPrecondition(condition: .notOnQueue(.main))
         let orientation = SilentFrameOrientation.exif(captureOrientation: frame.orientation,
                                                       mirrored: frame.mirrored)
         let image = CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(orientation)
         let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let cgImage = context.createCGImage(image, from: image.extent, format: .RGBA8,
-                                                  colorSpace: colorSpace) else { return nil }
+        guard let cgImage = CoreImageRendering.createCGImage(image, colorSpace: colorSpace) else { return nil }
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else {
             return nil
@@ -35,6 +33,19 @@ enum CoreImageRendering {
     // Preserve it: TonePolicy uses linear sRGB luminance, while render() retains
     // the input CGImage's output color space. Do not disable color management.
     private static let context = CIContext(options: [.cacheIntermediates: false])
+
+    static func createCGImage(_ image: CIImage, colorSpace: CGColorSpace?) -> CGImage? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        context.createCGImage(image, from: image.extent, format: .RGBA8,
+                              colorSpace: colorSpace, deferred: false)
+    }
+
+    static func render(_ image: CIImage, to texture: MTLTexture, commandBuffer: MTLCommandBuffer,
+                       bounds: CGRect, colorSpace: CGColorSpace) {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        context.render(image, to: texture, commandBuffer: commandBuffer,
+                       bounds: bounds, colorSpace: colorSpace)
+    }
 
     static func filter(_ name: String, parameters: [String: Any], in extent: CGRect) throws -> CIImage {
         dispatchPrecondition(condition: .notOnQueue(.main))

@@ -3,7 +3,6 @@ import SwiftUI
 @MainActor
 struct CameraView: View {
     @ObservedObject var camera: CameraService
-    @StateObject private var beauty = BeautyState()
     @StateObject private var tools = CameraToolState()
     @Environment(\.scenePhase) private var scenePhase
     private let screenshot = ScreenshotConfiguration(arguments: ProcessInfo.processInfo.arguments)
@@ -86,7 +85,10 @@ struct CameraView: View {
 
     private var livePreview: some View {
         CameraPreview(session: camera.previewSession, device: camera.previewDevice,
-                      faceDetection: camera.faceDetection)
+                      faceDetection: camera.faceDetection,
+                      beautyFrames: camera.beautyPreviewFrames,
+                      beautyConfiguration: camera.beautyParameters.processingConfiguration,
+                      isActive: camera.state.status == .running)
             .ignoresSafeArea()
             .accessibilityLabel(Text(L10n.livePreview))
     }
@@ -184,7 +186,8 @@ struct CameraView: View {
     @ViewBuilder
     private func panelView(_ panel: CameraPanel) -> some View {
         switch panel {
-        case .beauty: BeautyPanel(beauty: beauty, category: $tools.beautyCategory)
+        case .beauty: BeautyPanel(parameters: $camera.beautyParameters,
+                                  category: $tools.beautyCategory)
         case .filters: FilterPanel(selection: $tools.filterPreset)
         case .makeup: MakeupPanel(selection: $tools.makeupTool)
         case .settings: SettingsView()

@@ -74,9 +74,19 @@ struct DebugFaceMaskStep {}
     def test_new_processing_sources_remain_local_and_without_model_or_camera_apis(self):
         for path in set((*CORE, *DEVELOPMENT, *(APP / 'Rendering').rglob('*.swift'))):
             code = '\n'.join(line.split('//')[0] for line in path.read_text(encoding='utf-8').splitlines())
-            self.assertIsNone(re.search(r'\b(?:URLSession|URLRequest|Network|Vision|CoreML|Metal|AVCapture\w+|VN\w+)\b', code), str(path))
+            self.assertIsNone(re.search(r'\b(?:URLSession|URLRequest|Network|Vision|CoreML|AVCapture\w+|VN\w+)\b', code), str(path))
 
-    def test_experimental_skin_step_has_no_camera_or_product_call_sites(self):
+    def test_metal_is_only_the_core_image_preview_presentation_target(self):
+        users = [path for path in APP.rglob('*.swift')
+                 if re.search(r'^import Metal$', path.read_text(encoding='utf-8'), re.M)]
+        self.assertEqual(set(users), {
+            APP / 'Presentation/Camera/CameraPreview.swift',
+            APP / 'Rendering/CoreImage/BeautyPreviewRenderer.swift',
+            APP / 'Rendering/CoreImage/CoreImageRendering.swift',
+        })
+        self.assertFalse(list(APP.rglob('*.metal')), 'No custom shader pipeline is needed for Core Image presentation')
+
+    def test_skin_processing_types_do_not_leak_outside_rendering(self):
         for path in APP.rglob('*.swift'):
             if 'Tests' in path.parts or 'Rendering' in path.parts:
                 continue
@@ -86,7 +96,36 @@ struct DebugFaceMaskStep {}
                                 r'NaturalSkinToneAdjustmentStep|NaturalSkinRetouchSteps|SkinToneScale|'
                                 r'FeatureProtectionMaskGenerator|ProtectionMaskCombiner|'
                                 r'SkinMaskProviding|SkinMaskResult|EffectiveSkinMaskComposer|'
-                                r'SkinRetouchConfiguration|SkinRetouchIntensity)\b', str(path))
+                                 r'SkinRetouchConfiguration|SkinRetouchIntensity)\b', str(path))
+
+    def test_formal_capture_processes_both_native_source_paths_without_preview_screenshot_or_upscale(self):
+        session = (APP / 'Camera/Session/CameraSession.swift').read_text(encoding='utf-8')
+        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
+        code = '\n'.join(line.split('//')[0] for line in (session + final).splitlines())
+        final_code = '\n'.join(line.split('//')[0] for line in final.splitlines())
+        self.assertIn('processPhotoData($0, configuration: beauty)', session)
+        self.assertIn('processSilentFrame(frame, configuration: beauty)', session)
+        self.assertNotRegex(code, r'\b(?:drawHierarchy|snapshotView|UIGraphicsImageRenderer|layer\.render)\b')
+        self.assertNotRegex(final_code, r'\b(?:resized|resize|upscale|maximumDimension|maxPhotoDimensions)\b')
+
+    def test_capture_snapshot_and_preview_backpressure_are_explicit(self):
+        service = (APP / 'Camera/CameraService.swift').read_text(encoding='utf-8')
+        frame_store = (APP / 'Rendering/BeautyPreviewFrameStore.swift').read_text(encoding='utf-8')
+        renderer = (APP / 'Rendering/CoreImage/BeautyPreviewRenderer.swift').read_text(encoding='utf-8')
+        self.assertIn('let beauty = beautyParameters.processingConfiguration', service)
+        self.assertIn('captureSession.capture(flash: state.flash, beauty: beauty)', service)
+        self.assertIn('private var latest: BeautyPreviewFrame?', frame_store)
+        self.assertNotRegex(frame_store, r'\[(?:BeautyPreviewFrame|CVPixelBuffer)\]')
+        self.assertIn('private var inFlight = false', renderer)
+        self.assertNotRegex(renderer, r'queue\.asyncAfter|Task\s*[({.]')
+
+    def test_beauty_zero_and_disabled_bypass_before_final_photo_decode(self):
+        config = (APP / 'Domain/BeautyParameters.swift').read_text(encoding='utf-8')
+        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
+        self.assertIn('!enabled || overallStrength == 0', config)
+        bypass = final.index('guard !configuration.isBypassed else { return data }')
+        decode = final.index('CGImageSourceCreateWithData')
+        self.assertLess(bypass, decode)
 
     def test_pipeline_does_not_depend_on_a_mask_algorithm(self):
         code = (APP / 'Rendering/ImageProcessingPipeline.swift').read_text(encoding='utf-8')

@@ -4,6 +4,24 @@ import XCTest
 @testable import PanPanCamera
 
 final class FaceDetectionTests: XCTestCase {
+    func testImagePointInvertsCapturePointForEveryQuarterTurn() {
+        let point = CGPoint(x: 0.23, y: 0.71)
+        for orientation in FaceImageOrientation.allCases {
+            let capture = FaceCoordinates.captureDevicePoint(point, orientation: orientation)
+            XCTAssertEqual(FaceCoordinates.imagePoint(capture, orientation: orientation).x,
+                           point.x, accuracy: 0.000_001)
+            XCTAssertEqual(FaceCoordinates.imagePoint(capture, orientation: orientation).y,
+                           point.y, accuracy: 0.000_001)
+        }
+    }
+
+    func testReorientationAppliesFrontMirrorExactlyOnce() {
+        let point = CGPoint(x: 0.2, y: 0.7)
+        let unmirrored = FaceCoordinates.reorient(point, from: .right, to: .up, mirrored: false)
+        let mirrored = FaceCoordinates.reorient(point, from: .right, to: .up, mirrored: true)
+        XCTAssertEqual(mirrored.x, 1 - unmirrored.x, accuracy: 0.000_001)
+        XCTAssertEqual(mirrored.y, unmirrored.y, accuracy: 0.000_001)
+    }
     private func assertPoint(_ actual: CGPoint, _ expected: CGPoint, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertEqual(actual.x, expected.x, accuracy: 0.000001, file: file, line: line)
         XCTAssertEqual(actual.y, expected.y, accuracy: 0.000001, file: file, line: line)

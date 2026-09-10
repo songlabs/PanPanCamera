@@ -8,7 +8,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 
 - iPhone、iOS 17.0+；首版 UI 固定竖屏，照片方向跟随设备物理旋转。
 - Xcode 15+ / Swift 5.9+ 工具链，以 Swift 5 语言模式编译。
-- SwiftUI、AVFoundation、Vision、Core Image、Foundation、Combine、UIKit 和 ImageIO，全部为 Apple 原生框架。
+- SwiftUI、AVFoundation、Vision、Core Image、Metal、Foundation、Combine、UIKit 和 ImageIO，全部为 Apple 原生框架。
 - 直接打开 `PanPanCamera.xcodeproj`，选择共享的 `PanPanCamera` scheme。
 - 没有 CocoaPods、Carthage、Swift Package 依赖、工程生成器安装步骤或服务器。
 - 真机开发时，在 Signing & Capabilities 选择自己的 Team。仓库不包含个人 Team、证书、描述文件或 Secrets。当前工程实际 bundle identifier 为 `com.songlabs.PanPanCamera`；发布配置与 Apple App ID 必须匹配这个值。
@@ -21,15 +21,15 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 | 功能 | 当前实现 |
 | --- | --- |
 | 启动入口 | 直接进入 CameraView，没有首页、内容流或额外引导页 |
-| 实时预览 | AVCaptureSession + AVCaptureVideoPreviewLayer，全屏 aspect fill |
+| 实时预览 | AVCaptureVideoPreviewLayer 保留为原始/降级层；Beauty 生效时由最新 VideoDataOutput frame 经 Core Image + Metal 覆盖显示，保持全屏 aspect fill |
 | 人脸检测 | 本地 Vision 视频帧限频检测，输出全部人脸框及可选基础 landmarks；Apple Build 和真机验收待当前提交验证 |
 | 相机权限 | 请求、授权、拒绝、系统限制说明；拒绝后可打开系统设置 |
 | 前后切换 | 实际替换 AVCaptureDeviceInput；检查硬件、切换期间禁用竞争操作、失败回退 |
 | 前后台 | 复用一个会话；非活跃或结果预览时停止，返回时恢复；处理中断与运行错误 |
 | Flash | 按硬件/输出支持循环 Off / Auto / On，通过照片设置实际使用闪光灯；无硬件支持时禁用 |
-| 拍照 | AVCapturePhotoOutput 正式拍照；原始 Data + 后台生成方向正确的预览图，结果仅保存在内存 |
+| 拍照 | 支持 shutter suppression 时使用 AVCapturePhotoOutput 原始高质量 Data，否则使用原生最新 VideoDataOutput frame；Beauty 后保存相册并显示结果 |
 | 主界面 | 半透明圆角顶部栏、白色/半透明底栏、柔粉色中央快门、照片模式 |
-| 美肌 | 自动、磨皮、美白、肤色、祛痘、黑眼圈；各有独立 0–100 参数，默认 50 |
+| 美肌 | 总强度、磨皮、提亮、肤色一致性已接入实时预览与最终照片；祛痘、黑眼圈仍为参数 UI；各值独立 0–100，默认 50 |
 | 美型 | 在美肌面板切换至顔補正/美型，包含自动、瘦脸、脸宽、下巴、额头、颧骨、大眼、眼距、眼高、鼻宽、鼻长、嘴型、嘴宽 |
 | 滤镜 | Original / Natural / Clear / Warm / Cool 本地化预设选择骨架 |
 | 美妆 | Lip / Blush / Eye / Brow 本地化类别选择骨架 |
@@ -40,9 +40,9 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 | DEBUG 照片处理 | Mock FaceRegion / FacialLandmarks / Skin Semantic Mask → 每脸柔边覆盖与皮肤权重配对 → 五官和细节保护 → EffectiveSkinMaskComposer → 原两尺度纹理重建及单次 Blend；支持六种 Mask、原图、处理图、Difference 与 0 / 0.25 / 0.5 A/B，未接入正式照片流程 |
 | GitHub Actions | iOS CI、手动 Simulator Screenshot、TestFlight 交付基础设施；TestFlight 尚未实际执行 |
 
-美肌／美型的 **19 个参数仅改变界面状态，不改变相机预览或照片**。Auto 不执行自动算法。滤镜／美妆也不渲染效果，各面板提供五语言说明。关闭面板再打开保留本次运行参数，重启 App 后恢复默认值。
+美肌的总强度、磨皮、提亮和肤色一致性使用同一个不可变 `BeautyConfiguration` 语义接入 Preview 与 Final；快门时会保存配置快照。祛痘、黑眼圈与全部美型参数仍不改变像素，界面提供五语言准确说明。滤镜／美妆也不渲染效果。关闭面板再打开保留本次运行参数，重启 App 后恢复默认值。
 
-照片不写入文件或系统 Photos Library。结果界面说明照片仅供本次预览；返回相机后丢弃。仅申请相机权限，不申请麦克风或照片图库权限。前置预览与拍摄结果采用一致镜像策略，后置不镜像。全屏预览会裁掉部分传感器画面边缘，照片保留原生完整比例；比例说明入口会提示这一点。
+照片通过现有 add-only Photos 权限流程保存到系统相册，结果界面同时持有本次预览对象；返回相机后释放内存对象。不申请麦克风权限。前置预览与拍摄结果采用一致镜像策略，后置不镜像。全屏预览会裁掉部分传感器画面边缘，照片保留原生完整比例；比例说明入口会提示这一点。
 
 ## 工程结构
 
@@ -58,14 +58,14 @@ PanPanCamera/
 ├── FaceTracking/             Vision 检测、最新帧模型、坐标转换和有界结果交付；尚无跨帧追踪
 ├── Presentation/
 │   ├── Camera/               Preview 桥接、主界面、错误/结果界面
-│   ├── Beauty/               美肌与美型参数面板、独立 BeautyState
+│   ├── Beauty/               绑定 CameraService 共享参数的美肌与美型面板
 │   ├── Filter/               滤镜选择骨架
 │   ├── Makeup/               美妆选择骨架
 │   ├── Settings/             隐私、版本、未实现入口说明
 │   └── Shared/               PanPan 视觉组件和本地化键映射
 ├── Domain/                   不依赖 SwiftUI/AVFoundation 的参数与状态
 ├── BeautyEngine/             Skin / FaceWarp / Makeup / Filters，仅说明
-├── Rendering/                后台串行照片 Pipeline、Core Image 柔边 Mask / 实验性调整；Metal 仅说明
+├── Rendering/                Preview/Final 共用 Beauty 定义、Core Image Mask/处理、Metal 预览呈现与 DEBUG Pipeline
 ├── Resources/                Info.plist、颜色资源、两个 String Catalog
 └── Tests/                    参数、模式/能力状态、本地化的 XCTest
 docs/                         架构与 Apple/真机验收清单
@@ -74,7 +74,7 @@ scripts/                      无第三方依赖的静态检查
 
 更详细的线程、生命周期、方向、照片数据和未来模块边界见 [Architecture.md](docs/Architecture.md)。
 
-依赖原则如下；FaceTracking 当前实现检测与 landmarks，Rendering 已有独立开发处理链路，BeautyEngine 正式处理仍为后续计划。柔边 Mask 参数、DEBUG 检查入口、测试及平台证据边界见 [Rendering/README.md](PanPanCamera/Rendering/README.md)：
+依赖原则如下；FaceTracking 实现检测与 landmarks，Rendering 已接入正式 Preview/Final 美肌处理链路，BeautyEngine 保留给未来几何/美妆能力。柔边 Mask 参数、DEBUG 检查入口、测试及平台证据边界见 [Rendering/README.md](PanPanCamera/Rendering/README.md)：
 
 ```text
 Presentation（本地化、View）
@@ -90,13 +90,13 @@ Rendering（独立开发链路）
 
 相机行为测试使用最小权限／Session 命令注入，以及生产路径实际调用的 `CameraInputReplacement`、`PhotoCaptureRegistry`、`CameraSessionLifecycle`。输入事务、delegate 生命周期和恢复决策仍由原有串行 Session 队列调用；不模拟完整 AVFoundation 硬件。
 
-人脸检测的 buffer／Vision／Preview 坐标契约、限频与生命周期说明见 [FaceDetection.md](docs/FaceDetection.md)。Debug scheme 添加启动参数 `-PanPanFaceDebugOverlay` 可绘制人脸框和 landmark 点；Release 不包含绘制代码。检测不修改 Preview 或照片像素，不保存或上传人脸数据。
+人脸检测的 buffer／Vision／Preview 坐标契约、限频与生命周期说明见 [FaceDetection.md](docs/FaceDetection.md)。Debug scheme 添加启动参数 `-PanPanFaceDebugOverlay` 可绘制人脸框和 landmark 点；Release 不包含绘制代码。Beauty 只在本地消费瞬时检测结果，不保存或上传人脸数据。
 
 ## 五语言
 
 正式资源包含 **日语 `ja`、简体中文 `zh-Hans`、繁体中文 `zh-Hant`、英语 `en`、韩语 `ko`**，Japanese 为项目 development region 与 String Catalog source language。设置页可选择上述语言或跟随系统；选择通过 `AppStorage` 持久化，并由 App Root 的 Locale environment 立即应用到 SwiftUI 界面。
 
-- `Localizable.xcstrings`：92 个 UI／无障碍／说明键，五语言均有非空完整翻译。
+- `Localizable.xcstrings`：94 个 UI／无障碍／说明键，五语言均有非空完整翻译。
 - `InfoPlist.xcstrings`：相机权限说明与 App 显示名称，五语言齐全。
 - PanPan 在所有语言中保持不翻译；数值使用本地化数字格式。
 - View 使用集中定义的 `L10n` 键。新增文字需同步添加五语言；catalog 为手动稳定键，关闭自动 Swift 字符串提取。
@@ -113,8 +113,8 @@ Rendering（独立开发链路）
 | 纯 Swift host typecheck | 4 个 Domain 文件和 3 个相机控制辅助类型，Windows Swift 5 语言模式类型检查，无硬件执行 |
 | git diff --check | 已实际执行通过 |
 | Xcode Build / Apple SDK typecheck | 由 iOS CI 的 Debug XCTest / Release Simulator Build 验证；以对应 commit 的 run 为准 |
-| XCTest | 当前 21 个测试源文件静态统计 157 个方法；本次 Skin Semantic Mask 新增 25 个方法，已新增但尚未执行。Apple XCTest 暂缓，等待后续统一阶段；Release 的 5 个截图隔离方法保留 |
-| Delivery / scope tests | 39 个 Python 测试已通过，包含 12 个处理范围／Release 隔离检查，以及版本、PNG、Simulator、CI gate、Profile 和上传失败传播 |
+| XCTest | 当前 24 个测试源文件静态统计 203 个方法；Beauty 配置、capture snapshot、frame store、坐标与 synthetic image 测试已新增但未在 Apple 平台执行 |
+| Delivery / scope tests | 44 个 Python 测试已通过，包含 Beauty 两条原生 capture 路径、bypass、back-pressure、单一 CIContext、无 screenshot/upscale/网络/第三方依赖等范围检查 |
 | Simulator UI | 手动 Simulator Screenshot 生成 10 张实际 UI 截图，需下载查看；不能证明真实相机 |
 | Real Device Camera | 尚未执行；预览、拍照、闪光灯、方向、镜像与生命周期均待真机验收 |
 | TestFlight | signing / Archive / Export / Upload 尚未实际验证 |
@@ -165,7 +165,7 @@ xcodebuild -project PanPanCamera.xcodeproj -scheme PanPanCamera \
   -resultBundlePath .verification/PanPanCameraTests.xcresult CODE_SIGNING_ALLOWED=NO test
 ```
 
-现有 XCTest 覆盖参数、相机控制、人脸坐标和独立照片处理。本次 Tone／Orchestration 新增 29 个测试方法（19 Tone、7 组合、2 配置／尺度、1 DEBUG 分阶段），当前共 23 个测试源文件、186 个方法，均为静态计数；本次新增 Apple 测试尚未执行。40 个 Python 测试（含 13 个处理范围／Release 隔离检查）、project checks、83 个 Swift 文件 DEBUG 开启／关闭语法解析及现有 4 个 Domain／3 个 camera control helper host typecheck 已通过；这不是 Apple 编译证明。先前 Windows Foundation／host XCTest 已确认缺少 `errno.h`、`msvcrt.lib`、`oldnames.lib`、`msvcprt.lib`，本任务未重试或修复该环境。Apple 边界见 [DeviceValidation.md](docs/DeviceValidation.md) 及 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。
+现有 XCTest 覆盖参数、相机控制、人脸坐标、独立照片处理及新的 Beauty 连接逻辑，当前共 24 个测试源文件、203 个方法，均为静态计数；本次新增 Apple 测试尚未执行。44 个 Python 测试、project checks、87 个 Swift 文件语法解析及现有 4 个 Domain／3 个 camera control helper host typecheck 已通过；这不是 Apple 编译证明。先前 Windows Foundation／host XCTest 已确认缺少 `errno.h`、`msvcrt.lib`、`oldnames.lib`、`msvcprt.lib`，本任务未重试或修复该环境。Apple 边界见 [DeviceValidation.md](docs/DeviceValidation.md) 及 [Core Image README](PanPanCamera/Rendering/CoreImage/README.md)。
 
 本阶段按「组件实现 → 当前环境静态检查 → commit → push → 确认 Actions 已触发 → 结束」交付。不会等待／轮询本次 CI 结果，也不会自动启动统一 Apple 测试；`queued` 或 `in_progress` 不代表 CI passed。以下 Mac 与 Actions 验证说明保留给后续统一阶段使用。
 

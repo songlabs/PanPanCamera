@@ -9,7 +9,8 @@ enum FaceTool: String, CaseIterable, Identifiable, Sendable {
     var id: Self { self }
 }
 
-/// UI draft values only. No renderer consumes these values in version 0.1.
+/// User-facing values. `auto` is the overall strength used by the processing
+/// configuration; selecting a tool never changes its stored value.
 struct BeautyParameters: Equatable, Sendable {
     static let range: ClosedRange<Double> = 0...100
     static let defaultValue: Double = 50
@@ -37,5 +38,53 @@ struct BeautyParameters: Equatable, Sendable {
 
     private static func clamp(_ value: Double) -> Double {
         min(range.upperBound, max(range.lowerBound, value))
+    }
+
+    var processingConfiguration: BeautyConfiguration {
+        BeautyConfiguration(
+            enabled: true,
+            overallStrength: value(for: SkinTool.auto) / Self.range.upperBound,
+            smoothingStrength: value(for: SkinTool.smooth) / Self.range.upperBound,
+            brighteningStrength: value(for: SkinTool.brighten) / Self.range.upperBound,
+            toneStrength: value(for: SkinTool.tone) / Self.range.upperBound
+        )
+    }
+}
+
+/// Immutable renderer input. Preview and final capture consume the same value
+/// semantics, and shutter capture keeps a value snapshot rather than UI state.
+/// Blemish, dark-circle and face-geometry controls are deliberately absent until
+/// reliable local processors for those controls exist.
+struct BeautyConfiguration: Equatable, Sendable {
+    let enabled: Bool
+    let overallStrength: Double
+    let smoothingStrength: Double
+    let brighteningStrength: Double
+    let toneStrength: Double
+
+    init(enabled: Bool = false, overallStrength: Double = 0,
+         smoothingStrength: Double = 0, brighteningStrength: Double = 0,
+         toneStrength: Double = 0) {
+        self.enabled = enabled
+        self.overallStrength = Self.unit(overallStrength)
+        self.smoothingStrength = Self.unit(smoothingStrength)
+        self.brighteningStrength = Self.unit(brighteningStrength)
+        self.toneStrength = Self.unit(toneStrength)
+    }
+
+    static let disabled = Self()
+
+    var effectiveSmoothing: Double { overallStrength * smoothingStrength }
+    var effectiveBrightening: Double { overallStrength * brighteningStrength }
+    var effectiveTone: Double { overallStrength * toneStrength }
+
+    var isBypassed: Bool {
+        !enabled || overallStrength == 0 ||
+            (effectiveSmoothing == 0 && effectiveBrightening == 0 && effectiveTone == 0)
+    }
+
+    private static func unit(_ value: Double) -> Double {
+        guard value.isFinite else { return 0 }
+        return min(1, max(0, value))
     }
 }

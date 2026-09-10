@@ -1,8 +1,9 @@
 import ImageIO
 import Vision
 
-/// Confined to the camera's serial video queue. Reuse one request across frames/generations;
-/// image handlers are frame-specific and released before returning the buffer to AVFoundation.
+/// Each instance is confined to one serial processing queue and reuses one request.
+/// Camera preview and final-photo workers use separate instances so Vision requests
+/// never race; both paths share this detector and result contract.
 final class VisionFaceDetector {
     private let request = VNDetectFaceLandmarksRequest()
 
@@ -13,10 +14,17 @@ final class VisionFaceDetector {
         return Self.faces(from: request.results ?? [])
     }
 
+    func detect(_ image: CGImage, orientation: CGImagePropertyOrientation) throws -> [DetectedFace] {
+        let handler = VNImageRequestHandler(cgImage: image, orientation: orientation, options: [:])
+        try handler.perform([request])
+        return Self.faces(from: request.results ?? [])
+    }
+
     static func faces(from observations: [VNFaceObservation]) -> [DetectedFace] {
         observations.map { face in
             let regions: [(DetectedFace.Landmark, VNFaceLandmarkRegion2D?)] = [
                 (.leftEye, face.landmarks?.leftEye), (.rightEye, face.landmarks?.rightEye),
+                (.leftEyebrow, face.landmarks?.leftEyebrow), (.rightEyebrow, face.landmarks?.rightEyebrow),
                 (.nose, face.landmarks?.nose), (.noseCrest, face.landmarks?.noseCrest),
                 (.outerLips, face.landmarks?.outerLips), (.innerLips, face.landmarks?.innerLips),
                 (.faceContour, face.landmarks?.faceContour)

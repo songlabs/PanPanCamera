@@ -1,7 +1,8 @@
 import AVFoundation
 import Combine
 
-/// Main-actor UI boundary. It knows nothing about beauty panels or their parameters.
+/// Main-actor UI boundary. Camera controls and the shared Beauty parameter state
+/// live here; pixel processing remains off-main in CameraSession/Rendering.
 @MainActor
 final class CameraService: ObservableObject {
     @Published private(set) var state = CameraState()
@@ -10,6 +11,9 @@ final class CameraService: ObservableObject {
     @Published private(set) var isFaceDetectionAvailable = false
     @Published var capturedPhoto: CapturedPhoto?
     @Published var failure: CameraFailure?
+    @Published var beautyParameters = BeautyParameters() {
+        didSet { captureSession.setBeautyConfiguration(beautyParameters.processingConfiguration) }
+    }
 
     private var isActive = false
     private var permissionRequestInFlight = false
@@ -29,7 +33,11 @@ final class CameraService: ObservableObject {
     }
 
     // Used only by the UIViewRepresentable preview adapter.
-    var previewSession: AVCaptureSession { captureSession.session }
+    var previewSession: AVCaptureSession {
+        captureSession.setBeautyConfiguration(beautyParameters.processingConfiguration)
+        return captureSession.session
+    }
+    var beautyPreviewFrames: BeautyPreviewFrameStore { captureSession.beautyPreviewFrames }
 
     func setActive(_ active: Bool) async {
         isActive = active
@@ -68,7 +76,10 @@ final class CameraService: ObservableObject {
         guard state.canCapture else { return }
         state.isCapturing = true
         failure = nil
-        captureSession.capture(flash: state.flash)
+        // Snapshot the value at the shutter boundary. Later slider changes cannot
+        // affect this capture's asynchronous final processing.
+        let beauty = beautyParameters.processingConfiguration
+        captureSession.capture(flash: state.flash, beauty: beauty)
     }
 
     func selectMode(_ mode: CameraMode) { state.selectMode(mode) }

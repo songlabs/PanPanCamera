@@ -31,7 +31,7 @@ struct CameraIconButton: View {
 }
 
 struct UnimplementedNotice: View {
-    var message: L10n = .previewOnly
+    let message: L10n
 
     var body: some View {
         Label { Text(message) } icon: { Image(systemName: "info.circle") }

@@ -1,7 +1,7 @@
 import CoreImage
 import Foundation
 
-/// Experimental frequency-aware retouch; currently called only from DEBUG tools.
+/// Frequency-aware retouch shared by product Beauty processing and DEBUG diagnostics.
 /// No tone lift, skin-color classifier, defect removal or geometry modification.
 struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
     let configuration: SkinRetouchConfiguration

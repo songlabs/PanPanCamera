@@ -2,7 +2,7 @@ import SwiftUI
 
 @MainActor
 struct BeautyPanel: View {
-    @ObservedObject var beauty: BeautyState
+    @Binding var parameters: BeautyParameters
     @Binding var category: BeautyCategory
 
     var body: some View {
@@ -12,11 +12,12 @@ struct BeautyPanel: View {
                     ForEach(BeautyCategory.allCases) { category in Text(category.label).tag(category) }
                 } label: { Text(L10n.beautyCategory) }
                 .pickerStyle(.segmented)
-                UnimplementedNotice()
                 if category == .skin {
-                    SkinBeautyPanel(parameters: $beauty.parameters)
+                    SkinBeautyPanel(parameters: $parameters)
+                    UnimplementedNotice(message: .beautySkinUnavailableDetail)
                 } else {
-                    FaceReshapePanel(parameters: $beauty.parameters)
+                    UnimplementedNotice(message: .beautyFaceUnavailableDetail)
+                    FaceReshapePanel(parameters: $parameters)
                 }
             }
         }

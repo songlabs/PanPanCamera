@@ -27,6 +27,25 @@ enum FaceCoordinates {
         }
     }
 
+    /// Unrotated capture-device top-left -> Vision-style bottom-left coordinates
+    /// for another oriented image. This is the inverse of captureDevicePoint.
+    static func imagePoint(_ point: CGPoint, orientation: FaceImageOrientation) -> CGPoint {
+        switch orientation {
+        case .up: return CGPoint(x: point.x, y: 1 - point.y)
+        case .right: return CGPoint(x: 1 - point.y, y: 1 - point.x)
+        case .down: return CGPoint(x: 1 - point.x, y: point.y)
+        case .left: return CGPoint(x: point.y, y: point.x)
+        }
+    }
+
+    static func reorient(_ point: CGPoint, from source: FaceImageOrientation,
+                         to destination: FaceImageOrientation, mirrored: Bool) -> CGPoint {
+        var result = imagePoint(captureDevicePoint(point, orientation: source),
+                                orientation: destination)
+        if mirrored { result.x = 1 - result.x }
+        return result
+    }
+
     static func imageLandmarks(_ points: [CGPoint]?, boundingBox: CGRect) -> [CGPoint]? {
         guard let points, !points.isEmpty else { return nil }
         return points.map {

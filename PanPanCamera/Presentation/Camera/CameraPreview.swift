@@ -1,10 +1,15 @@
 import AVFoundation
+import Metal
+import QuartzCore
 import SwiftUI
 
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let device: AVCaptureDevice?
     let faceDetection: FaceDetectionFrame?
+    let beautyFrames: BeautyPreviewFrameStore
+    let beautyConfiguration: BeautyConfiguration
+    let isActive: Bool
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
@@ -16,6 +21,8 @@ struct CameraPreview: UIViewRepresentable {
     func updateUIView(_ uiView: PreviewView, context: Context) {
         uiView.updateDevice(device)
         uiView.updateFaces(faceDetection)
+        uiView.updateBeauty(frames: beautyFrames, configuration: beautyConfiguration,
+                            isActive: isActive)
     }
 
     static func dismantleUIView(_ uiView: PreviewView, coordinator: ()) {
@@ -29,13 +36,35 @@ final class PreviewView: UIView {
     private var deviceID: String?
     private var rotation: AVCaptureDevice.RotationCoordinator?
     private var observation: NSKeyValueObservation?
+    private let beautySurface = BeautyPreviewSurfaceView()
+    private var beautyRenderer: BeautyPreviewRenderer?
+    private var beautyFrames: BeautyPreviewFrameStore?
+    private var beautyConfiguration = BeautyConfiguration.disabled
+    private var beautyIsActive = false
+    private var beautyRotationAngle: CGFloat = 0
+    private var displayLink: CADisplayLink?
     #if DEBUG
     private var faceOverlay: FaceDebugOverlay?
     #endif
 
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        addSubview(beautySurface)
+        if let device = MTLCreateSystemDefaultDevice() {
+            beautySurface.configure(device: device)
+            beautyRenderer = BeautyPreviewRenderer(device: device)
+        }
+        displayLink = CADisplayLink(target: self, selector: #selector(renderBeautyFrame))
+        displayLink?.add(to: .main, forMode: .common)
+        displayLink?.isPaused = true
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
     func updateDevice(_ device: AVCaptureDevice?) {
         guard let device else { return }
         if deviceID != device.uniqueID {
+            hideBeautyFrame()
             deviceID = device.uniqueID
             observation = nil
             rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
@@ -50,6 +79,8 @@ final class PreviewView: UIView {
 
     override func layoutSubviews() {
         super.layoutSubviews()
+        beautySurface.frame = bounds
+        if beautySurface.updateDrawableSize() { hideBeautyFrame() }
         updateConnection()
     }
 
@@ -57,6 +88,10 @@ final class PreviewView: UIView {
         guard let rotation, let connection = previewLayer.connection else { return }
         let angle = rotation.videoRotationAngleForHorizonLevelPreview
         if connection.isVideoRotationAngleSupported(angle) { connection.videoRotationAngle = angle }
+        if angle.isFinite, abs(angle - beautyRotationAngle) > 0.01 {
+            beautyRotationAngle = angle
+            hideBeautyFrame()
+        }
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = rotation.device?.position == .front
@@ -74,7 +109,39 @@ final class PreviewView: UIView {
         #endif
     }
 
+    func updateBeauty(frames: BeautyPreviewFrameStore, configuration: BeautyConfiguration,
+                      isActive: Bool) {
+        beautyFrames = frames
+        let changed = configuration != beautyConfiguration || isActive != beautyIsActive
+        beautyConfiguration = configuration
+        beautyIsActive = isActive
+        displayLink?.isPaused = !isActive || configuration.isBypassed || beautyRenderer == nil
+        if changed { hideBeautyFrame() }
+    }
+
+    @objc private func renderBeautyFrame() {
+        guard beautyIsActive, !beautyConfiguration.isBypassed,
+              let beautyFrames, let beautyRenderer,
+              beautySurface.metalLayer.drawableSize.width >= 1,
+              beautySurface.metalLayer.drawableSize.height >= 1 else { return }
+        beautyRenderer.requestFrame(from: beautyFrames, layer: beautySurface.metalLayer,
+            rotationAngle: beautyRotationAngle,
+            targetSize: beautySurface.metalLayer.drawableSize) { [weak self] success in
+                guard let self, self.beautyIsActive, !self.beautyConfiguration.isBypassed else { return }
+                self.beautySurface.isHidden = !success
+            }
+    }
+
+    private func hideBeautyFrame() {
+        beautyRenderer?.invalidate()
+        beautySurface.isHidden = true
+    }
+
     func detach() {
+        displayLink?.invalidate()
+        displayLink = nil
+        hideBeautyFrame()
+        beautyFrames = nil
         observation = nil
         rotation = nil
         deviceID = nil
@@ -82,5 +149,37 @@ final class PreviewView: UIView {
         faceOverlay?.update(nil, deviceID: nil)
         #endif
         previewLayer.session = nil
+    }
+}
+
+private final class BeautyPreviewSurfaceView: UIView {
+    override class var layerClass: AnyClass { CAMetalLayer.self }
+    var metalLayer: CAMetalLayer { layer as! CAMetalLayer }
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isUserInteractionEnabled = false
+        isHidden = true
+        metalLayer.isOpaque = true
+        metalLayer.framebufferOnly = false
+        metalLayer.pixelFormat = .bgra8Unorm_srgb
+        metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
+        metalLayer.contentsGravity = .resizeAspectFill
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func configure(device: MTLDevice) { metalLayer.device = device }
+
+    func updateDrawableSize() -> Bool {
+        let scale = window?.screen.scale ?? UIScreen.main.scale
+        let native = CGSize(width: bounds.width * scale, height: bounds.height * scale)
+        let longest = max(native.width, native.height)
+        let previewScale = longest > 1280 ? 1280 / longest : 1
+        let size = CGSize(width: max(1, floor(native.width * previewScale)),
+                          height: max(1, floor(native.height * previewScale)))
+        guard size != metalLayer.drawableSize else { return false }
+        metalLayer.drawableSize = size
+        return true
     }
 }

@@ -8,6 +8,34 @@ final class BeautyParametersTests: XCTestCase {
         for tool in FaceTool.allCases { XCTAssertEqual(values.value(for: tool), 50, tool.rawValue) }
         XCTAssertEqual(values.selectedSkin, .auto)
         XCTAssertEqual(values.selectedFace, .auto)
+        XCTAssertEqual(values.processingConfiguration, BeautyConfiguration(
+            enabled: true, overallStrength: 0.5, smoothingStrength: 0.5,
+            brighteningStrength: 0.5, toneStrength: 0.5))
+    }
+
+    func testConfigurationClampsEveryNormalizedInputAndRejectsNonfiniteValues() {
+        let values = BeautyConfiguration(enabled: true, overallStrength: 2,
+            smoothingStrength: -1, brighteningStrength: .infinity, toneStrength: .nan)
+        XCTAssertEqual(values.overallStrength, 1)
+        XCTAssertEqual(values.smoothingStrength, 0)
+        XCTAssertEqual(values.brighteningStrength, 0)
+        XCTAssertEqual(values.toneStrength, 0)
+    }
+
+    func testDisabledAndZeroOverallConfigurationsBypass() {
+        XCTAssertTrue(BeautyConfiguration.disabled.isBypassed)
+        XCTAssertTrue(BeautyConfiguration(enabled: true, overallStrength: 0,
+            smoothingStrength: 1, brighteningStrength: 1, toneStrength: 1).isBypassed)
+        XCTAssertFalse(BeautyConfiguration(enabled: true, overallStrength: 1,
+            smoothingStrength: 1).isBypassed)
+    }
+
+    func testOverallStrengthScalesEveryImplementedEffectWithSharedSemantics() {
+        let values = BeautyConfiguration(enabled: true, overallStrength: 0.8,
+            smoothingStrength: 0.5, brighteningStrength: 0.25, toneStrength: 1)
+        XCTAssertEqual(values.effectiveSmoothing, 0.4, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveBrightening, 0.2, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveTone, 0.8, accuracy: 0.000_001)
     }
 
     func testBothParameterGroupsClampToSliderRange() {

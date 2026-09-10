@@ -1,9 +1,12 @@
-# Natural Skin Tone & Illumination / Natural Skin Retouch v1
+# Natural Skin Tone & Illumination / Natural Skin Retouch
 
-Experimental local Core Image implementation, reached through DebugPhotoProcessing
-and MockFaceDetector / MockFaceLandmarkDetector / MockSkinMaskProvider only. The official capture/save path and product UI do not invoke
-it. Texture and tone use separate explainable low-frequency approximations, not a copy of a closed-source app,
-semantic skin detection, identity verification or visually accepted beauty feature.
+The reusable texture, protection and tone components are now called by
+BeautyImageProcessor for the production preview and final-photo paths as well as by the
+independent DebugPhotoProcessing diagnostics. Preview consumes cached live Vision face
+geometry at a bounded display resolution; final capture runs the same Vision detector
+contract on the original PhotoOutput data or native silent pixel buffer. Texture and
+tone remain separate explainable low-frequency approximations, not semantic skin
+detection, identity verification or a visually accepted result.
 
 ## Architecture retained
 
@@ -12,9 +15,11 @@ with busy before decode, and executes loading/detection/steps on its serial back
 queue. ProcessingImage remains an immutable, eagerly rendered CGImage in display
 orientation; FaceRegion is normalized with a bottom-left origin.
 
-CoreImageRendering still owns one lazily initialized shared CIContext with
-cacheIntermediates: false. Working color space is unchanged; output remains RGBA8 in the
-source CGImage color space. Only bounded filter/mask helpers were added to this renderer.
+CoreImageRendering owns one lazily initialized shared CIContext with
+cacheIntermediates: false for preview, final and DEBUG work. Working color space is
+unchanged; final output remains RGBA8 in the source color space, while the preview
+presentation texture uses sRGB. Metal is only the Core Image presentation target; there
+is no custom shader pipeline.
 All CIImages are job-local. No per-face context, new queue, Task, photo cache or history
 is introduced. Image-processing errors propagate through the unchanged pipeline;
 optional landmark detection failure falls back to the existing face/edge path.
@@ -395,8 +400,8 @@ One small pointwise CIColorKernel implements signed subtraction/reconstruction a
 delta bound. This avoids treating absolute differences or clamping blend modes as signed
 detail, and keeps alpha explicit. It uses Apple's legacy CIColorKernel(source:) API
 (deprecated since iOS 12, still available). Kernel compilation/execution requires Apple
-validation. There is no custom Metal/MPS renderer or shader framework; no MPS spike was
-needed or implemented.
+validation. There is no custom Metal shader or MPS filter framework; Metal only presents
+the Core Image preview texture, and no MPS spike was needed or implemented.
 
 The 0.02 bound is an engineering guard in the existing working space, not a fixed 8-bit
 increment, exposure-stop value or proven perceptual safety threshold. Default intensity
@@ -611,9 +616,9 @@ high-frequency detail, fallback, original error propagation, stage order and mod
 Float formula tests explicitly request RGBAf intermediates; public ProcessingImage
 tests separately cover RGBA8 output. None of these Apple tests was executed here.
 
-Windows checks: 40 Python tests passed (13 processing scope/Release isolation checks);
-project checks passed for 60 app and 23 XCTest sources; 83 Swift sources parsed both
-with and without DEBUG. Four existing pure Swift Domain files and three camera control
+Windows checks: 44 Python tests passed, including Beauty capture/back-pressure scope checks;
+project checks passed for 63 app and 24 XCTest sources; 87 Swift sources parsed.
+Four pure Swift Domain files and three camera control
 helpers passed host typechecking. Release redeclaration probes passed including the
 new mock. No Apple framework typecheck occurred. Previous host Foundation attempts
 were blocked by missing msvcrt.lib, oldnames.lib, msvcprt.lib and errno.h; those known

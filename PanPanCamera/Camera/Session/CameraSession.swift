@@ -13,9 +13,11 @@ enum CameraSessionEvent {
 /// Commands consumed by CameraService. Hardware work remains inside CameraSession.
 protocol CameraSessionControlling: AnyObject {
     var session: AVCaptureSession { get }
+    var beautyPreviewFrames: BeautyPreviewFrameStore { get }
     func setRunning(_ shouldRun: Bool)
+    func setBeautyConfiguration(_ configuration: BeautyConfiguration)
     func switchCamera()
-    func capture(flash: FlashMode)
+    func capture(flash: FlashMode, beauty: BeautyConfiguration)
 }
 
 /// Owns all capture graph mutations on queue. The preview layer is the only external
@@ -29,7 +31,9 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     private let encodingQueue = DispatchQueue(label: "camera.panpan.silent-encoding", qos: .userInitiated)
     private let faceDetector = VisionFaceDetector()
     private let frameStore = SilentFrameStore()
-    private let frameEncoder = SilentFrameEncoder()
+    let beautyPreviewFrames = BeautyPreviewFrameStore()
+    private let beautyConfiguration = BeautyConfigurationStore()
+    private let finalBeautyProcessor = FinalBeautyProcessor()
     private var faceProcessor: CameraFaceFrameProcessor?
     private var faceRotationObservation: NSKeyValueObservation?
     private var videoOutputReady = false
@@ -64,6 +68,10 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
                 onEvent(.status(.idle))
             }
         }
+    }
+
+    func setBeautyConfiguration(_ configuration: BeautyConfiguration) {
+        beautyConfiguration.replace(configuration)
     }
 
     func switchCamera() {
@@ -105,14 +113,14 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         }
     }
 
-    func capture(flash: FlashMode) {
+    func capture(flash: FlashMode, beauty: BeautyConfiguration) {
         queue.async { [self] in
             guard configured, session.isRunning, !session.isInterrupted, captures.activeID == nil else {
                 onEvent(.captureFinished(nil))
                 return
             }
             if captureStrategy() == .silentVideoFrame {
-                captureSilentFrame()
+                captureSilentFrame(beauty: beauty)
                 return
             }
             guard let connection = output.connection(with: .video), connection.isActive else {
@@ -142,10 +150,17 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             let captureID = settings.uniqueID
             let processor = PhotoCaptureProcessor { [weak self] data in
                 guard let self else { return }
-                self.queue.async {
-                    guard self.captures.finish(id: captureID) else { return }
-                    let photo = data.flatMap(CapturedPhoto.init(data:))
-                    self.onEvent(.captureFinished(photo))
+                self.encodingQueue.async {
+                    let processed = autoreleasepool {
+                        data.flatMap {
+                            self.finalBeautyProcessor.processPhotoData($0, configuration: beauty)
+                        }
+                    }
+                    self.queue.async {
+                        guard self.captures.finish(id: captureID) else { return }
+                        let photo = processed.flatMap(CapturedPhoto.init(data:))
+                        self.onEvent(.captureFinished(photo))
+                    }
                 }
             }
             captures.register(processor, id: captureID)
@@ -160,7 +175,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         return .silentVideoFrame
     }
 
-    private func captureSilentFrame() {
+    private func captureSilentFrame(beauty: BeautyConfiguration) {
         dispatchPrecondition(condition: .onQueue(queue))
         guard let frame = frameStore.take() else { onEvent(.captureFinished(nil)); return }
         // A sentinel occupies the existing one-capture registry without retaining an AV delegate.
@@ -169,7 +184,9 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         captures.register(token, id: captureID)
         encodingQueue.async { [weak self] in
             guard let self else { return }
-            let data = self.frameEncoder.encode(frame)
+            let data = autoreleasepool {
+                self.finalBeautyProcessor.processSilentFrame(frame, configuration: beauty)
+            }
             self.queue.async {
                 guard self.captures.finish(id: captureID) else { return }
                 self.onEvent(.captureFinished(data.flatMap(CapturedPhoto.init(data:))))
@@ -349,7 +366,9 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         stopFaceDetection()
         // Replacing the immutable delegate also rejects queued buffers from the old input.
         let processor = CameraFaceFrameProcessor(device: device, orientation: orientation,
-                                                 detector: faceDetector, frameStore: frameStore) { [weak self] delivery in
+                                                 detector: faceDetector, frameStore: frameStore,
+                                                 previewFrameStore: beautyPreviewFrames,
+                                                 beautyConfiguration: beautyConfiguration) { [weak self] delivery in
             self?.onEvent(.faceDetection(delivery))
         }
         faceProcessor = processor
@@ -358,6 +377,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
 
     private func stopFaceDetection() {
         frameStore.clear()
+        beautyPreviewFrames.clear()
         faceProcessor?.delivery.invalidate()
         faceProcessor = nil
         videoOutput.setSampleBufferDelegate(nil, queue: nil)

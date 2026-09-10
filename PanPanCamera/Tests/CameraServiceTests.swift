@@ -7,11 +7,18 @@ final class CameraServiceTests: XCTestCase {
     private final class SessionCommands: CameraSessionControlling {
         var onEvent: ((CameraSessionEvent) -> Void)?
         var runningRequests: [Bool] = []
-        var captures: [FlashMode] = []
+        var captures: [(flash: FlashMode, beauty: BeautyConfiguration)] = []
+        var beautyConfigurations: [BeautyConfiguration] = []
         var session: AVCaptureSession { fatalError("These tests must not create a preview session") }
+        let beautyPreviewFrames = BeautyPreviewFrameStore()
         func setRunning(_ shouldRun: Bool) { runningRequests.append(shouldRun) }
+        func setBeautyConfiguration(_ configuration: BeautyConfiguration) {
+            beautyConfigurations.append(configuration)
+        }
         func switchCamera() {}
-        func capture(flash: FlashMode) { captures.append(flash) }
+        func capture(flash: FlashMode, beauty: BeautyConfiguration) {
+            captures.append((flash, beauty))
+        }
     }
 
     private func service(permission: CameraPermissionProvider, commands: SessionCommands) -> CameraService {
@@ -101,13 +108,28 @@ final class CameraServiceTests: XCTestCase {
         await deliver(.status(.running), to: commands)
         camera.capture()
         XCTAssertTrue(camera.state.isCapturing)
-        XCTAssertEqual(commands.captures, [.off])
+        XCTAssertEqual(commands.captures.map { $0.flash }, [.off])
         await deliver(.captureFinished(nil), to: commands)
         XCTAssertEqual(camera.failure, .captureFailed)
         XCTAssertFalse(camera.state.isCapturing)
         XCTAssertTrue(camera.state.canCapture)
         camera.capture()
         XCTAssertNil(camera.failure)
+    }
+
+    func testCaptureSnapshotsBeautyConfigurationBeforeLaterSliderChanges() async {
+        let commands = SessionCommands()
+        let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
+        await camera.setActive(true)
+        await deliver(.status(.running), to: commands)
+        camera.beautyParameters.setValue(86, for: SkinTool.auto)
+        camera.beautyParameters.setValue(72, for: .smooth)
+        camera.capture()
+        let captured = commands.captures.last?.beauty
+        camera.beautyParameters.setValue(10, for: SkinTool.auto)
+        XCTAssertEqual(captured?.overallStrength, 0.86)
+        XCTAssertEqual(captured?.smoothingStrength, 0.72)
+        XCTAssertEqual(commands.captures.last?.beauty, captured)
     }
 
     func testSwitchFailurePublishesSemanticFailureAndClearsBusyState() async {

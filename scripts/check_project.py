@@ -96,8 +96,8 @@ def check_catalogs():
 def check_sources():
     sources = [p for p in (ROOT / 'PanPanCamera').rglob('*.swift') if 'Tests' not in p.parts]
     hardcoded = re.compile(r'\b(?:Text|Button|Label|Toggle|Picker|Slider|ProgressView|Section)\s*\(\s*"|\.(?:navigationTitle|accessibilityLabel|accessibilityHint|accessibilityValue|alert)\s*\(\s*"')
-    forbidden_import = re.compile(r'^(?:@preconcurrency )?import\s+(?:Metal|CoreML|PhotosUI)\b', re.M)
-    allowed_imports = {'Foundation', 'SwiftUI', 'AVFoundation', 'Combine', 'UIKit', 'ImageIO', 'Vision', 'CoreImage', 'Photos'}
+    forbidden_import = re.compile(r'^(?:@preconcurrency )?import\s+(?:CoreML|PhotosUI)\b', re.M)
+    allowed_imports = {'Foundation', 'SwiftUI', 'AVFoundation', 'Combine', 'UIKit', 'ImageIO', 'Vision', 'CoreImage', 'Photos', 'Metal', 'QuartzCore'}
     for path in sources:
         text = path.read_text(encoding='utf-8')
         require(not hardcoded.search(text), f'UI literal outside localization adapter: {path.name}')
@@ -110,6 +110,8 @@ def check_sources():
                     f'Camera/FaceTracking must not depend on UI/localization types: {path.name}')
         require('Vision' not in imports or module == 'FaceTracking', f'Vision must stay in FaceTracking: {path.name}')
         require('CoreImage' not in imports or module == 'Rendering', f'Core Image must stay in Rendering: {path.name}')
+        require('Metal' not in imports or path.name in {'CoreImageRendering.swift', 'BeautyPreviewRenderer.swift', 'CameraPreview.swift'},
+                f'Metal must stay in the Beauty preview presentation bridge: {path.name}')
         require('AVCaptureVideoDataOutput' not in text or module == 'Camera', f'Video acquisition must stay in Camera: {path.name}')
         require(not re.search(r'\b(?:URLSession|WKWebView|AVCaptureMovieFileOutput)\b', text), f'Unexpected network/recording path: {path.name}')
     domain = '\n'.join(p.read_text(encoding='utf-8') for p in (ROOT / 'PanPanCamera/Domain').glob('*.swift'))

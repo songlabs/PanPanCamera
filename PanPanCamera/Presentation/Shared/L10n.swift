@@ -45,12 +45,14 @@ enum L10n: String, CaseIterable {
     case memoryOnly = "capture.memoryOnly"
     case albumDetail = "album.detail"
     case comingSoon = "feature.unavailable"
-    case previewOnly = "feature.previewOnly"
     case skin = "beauty.skin"
     case face = "beauty.face"
     case beautyCategory = "beauty.category"
     case intensity = "beauty.intensity"
     case auto = "beauty.auto"
+    case beautyOverall = "beauty.overall"
+    case beautySkinUnavailableDetail = "beauty.skin.unavailableDetail"
+    case beautyFaceUnavailableDetail = "beauty.face.unavailableDetail"
     case smooth = "skin.smooth"
     case brighten = "skin.brighten"
     case tone = "skin.tone"
@@ -164,7 +166,7 @@ extension BeautyCategory {
 extension SkinTool {
     var label: L10n {
         switch self {
-        case .auto: return .auto
+        case .auto: return .beautyOverall
         case .smooth: return .smooth
         case .brighten: return .brighten
         case .tone: return .tone

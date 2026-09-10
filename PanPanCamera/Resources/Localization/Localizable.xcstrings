@@ -281,37 +281,107 @@
         }
       }
     },
+    "beauty.face.unavailableDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顔補正は現在パラメータ調整のみです。プレビューと写真にはまだ適用されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "面部调整目前仅保存参数，尚未应用到预览和照片。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "臉部調整目前僅儲存參數，尚未套用到預覽和照片。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Face correction currently stores parameters only and is not yet applied to the preview or photo."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "얼굴 보정은 현재 매개변수만 저장하며 미리보기와 사진에는 아직 적용되지 않습니다."
+          }
+        }
+      }
+    },
     "beauty.intensity": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "調整値：0〜100。効果は未実装です。"
+            "value": "調整値：0〜100"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "调整范围为 0 至 100，效果尚未实现。"
+            "value": "调整范围为 0 至 100"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "調整範圍為 0 至 100，效果尚未實作。"
+            "value": "調整範圍為 0 至 100"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Adjustment from 0 to 100. Effects are not implemented yet."
+            "value": "Adjustment from 0 to 100"
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "0부터 100까지 조절할 수 있어요. 효과는 아직 적용되지 않아요."
+            "value": "0부터 100까지 조절"
+          }
+        }
+      }
+    },
+    "beauty.overall": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "全体の強さ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "总强度"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "總強度"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Overall"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 강도"
           }
         }
       }
@@ -347,6 +417,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "피부"
+          }
+        }
+      }
+    },
+    "beauty.skin.unavailableDetail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "シミ・ニキビとクマ補正はまだ適用されません。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "祛痘祛斑和黑眼圈调整尚未应用。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "祛痘祛斑和黑眼圈調整尚未套用。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blemish and dark-circle adjustments are not yet applied."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "잡티와 다크서클 보정은 아직 적용되지 않습니다."
           }
         }
       }
@@ -1856,41 +1961,6 @@
         }
       }
     },
-    "feature.previewOnly": {
-      "extractionState": "manual",
-      "localizations": {
-        "ja": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "パラメータ調整のみ対応しています。美肌・顔補正の効果は、プレビューにも撮影した写真にも適用されません。"
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "当前仅支持参数调整，美肌和美型效果不会应用于预览或拍摄的照片。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "目前僅支援參數調整，美肌與美型效果不會套用至預覽或拍攝的照片。"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Parameter controls only. Skin and face effects are not applied to the preview or captured photos."
-          }
-        },
-        "ko": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "지금은 설정값만 조절할 수 있어요. 피부 및 얼굴 보정 효과는 미리보기와 촬영한 사진에 적용되지 않아요."
-          }
-        }
-      }
-    },
     "feature.unavailable": {
       "extractionState": "manual",
       "localizations": {
@@ -3017,31 +3087,31 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "写真の撮影と結果プレビューに対応しています。美肌・顔補正はパラメータ調整のみ、メイクとフィルターは選択画面のみです。ビデオ、ポートレート、アルバム、比率変更、タイマーは未対応です。"
+            "value": "写真撮影、結果プレビュー、美肌のリアルタイム表示と写真への適用に対応しています。顔補正、メイク、フィルターは調整・選択画面のみです。ビデオ、ポートレート、アルバム、比率変更、タイマーは未対応です。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "支持拍照和结果预览。美肌与美型仅提供参数调整，美妆与滤镜仅提供选择界面。暂不支持视频、人像、相册、画幅更改或定时拍摄。"
+            "value": "支持拍照、结果预览，以及美肌实时预览和照片处理。美型、美妆与滤镜仅提供调整或选择界面。暂不支持视频、人像、相册、画幅更改或定时拍摄。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "支援拍照與結果預覽。美肌與美型僅提供參數調整，美妝與濾鏡僅提供選擇介面。尚未支援影片、人像、相簿、比例變更或計時拍攝。"
+            "value": "支援拍照、結果預覽，以及美肌即時預覽和相片處理。美型、美妝與濾鏡僅提供調整或選擇介面。尚未支援影片、人像、相簿、比例變更或計時拍攝。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Photo capture and result preview are implemented. Skin and reshape provide parameter controls; makeup and filters provide selection screens. Video, portrait, album, ratio changes, and timer capture are unavailable."
+            "value": "Photo capture, result preview, and live/final skin processing are implemented. Reshape, makeup, and filters provide controls only. Video, portrait, album, ratio changes, and timer capture are unavailable."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사진 촬영과 결과 미리보기를 지원해요. 피부 및 얼굴 보정은 설정값 조절만, 메이크업과 필터는 선택 화면만 제공해요. 동영상, 인물 모드, 앨범, 비율 변경, 타이머 촬영은 아직 지원하지 않아요."
+            "value": "사진 촬영, 결과 미리보기, 피부 보정의 실시간 미리보기와 사진 적용을 지원해요. 얼굴 보정, 메이크업, 필터는 조절 또는 선택 화면만 제공해요. 동영상, 인물 모드, 앨범, 비율 변경, 타이머 촬영은 아직 지원하지 않아요."
           }
         }
       }
