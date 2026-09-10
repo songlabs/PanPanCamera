@@ -90,7 +90,7 @@ Rendering（独立开发链路）
 
 相机行为测试使用最小权限／Session 命令注入，以及生产路径实际调用的 `CameraInputReplacement`、`PhotoCaptureRegistry`、`CameraSessionLifecycle`。输入事务、delegate 生命周期和恢复决策仍由原有串行 Session 队列调用；不模拟完整 AVFoundation 硬件。
 
-人脸检测的 buffer／Vision／Preview 坐标契约、限频与生命周期说明见 [FaceDetection.md](docs/FaceDetection.md)。Debug scheme 添加启动参数 `-PanPanFaceDebugOverlay` 可绘制人脸框和 landmark 点；Release 不包含绘制代码。Beauty 只在本地消费瞬时检测结果，不保存或上传人脸数据。
+人脸检测的 buffer／Vision／Preview 坐标契约、限频与生命周期说明见 [FaceDetection.md](docs/FaceDetection.md)。当前诊断 TestFlight 由内部 `FaceGeometryDebugMode.isEnabled` 开启 Face Geometry Overlay：它显示生产 Beauty renderer 最终使用的人脸框、contour、小顔 center／radius／vector 和简洁参数信息，不另跑 Vision；正式 App Store Release 前可将单一内部 flag 关闭。Beauty 只在本地消费瞬时检测结果，不保存或上传人脸数据。
 
 ## 五语言
 

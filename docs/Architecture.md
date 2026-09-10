@@ -4,6 +4,7 @@
 PanPanCameraApp (@StateObject CameraService, one app lifetime)
   └─ CameraView
       ├─ CameraPreview → AVCaptureVideoPreviewLayer fallback + Core Image/Metal Beauty surface
+      │   └─ production renderer geometry snapshot → temporary Face Geometry Debug Overlay
       ├─ CameraService (@MainActor, permission + camera state + BeautyParameters)
       │   └─ CameraSession (one serial queue, one AVCaptureSession)
       │       ├─ AVCaptureDeviceInput (one front OR rear camera)
@@ -26,6 +27,8 @@ CameraSession serializes configuration, input replacement and rollback, start/st
 Vision runs synchronously on the separate serial `camera.panpan.faces` queue. Video buffers remain unrotated/unmirrored; the capture rotation coordinator supplies Vision's EXIF quarter turn. A lock-protected per-generation mailbox throttles admission, rejects obsolete results and bounds main-queue notifications to one. CameraService publishes only the latest result. See [FaceDetection.md](FaceDetection.md) for the coordinate contract, lifecycle and validation limits.
 
 The main-thread UIView owns preview-layer geometry, preview mirroring, and a rotation coordinator. The original preview layer remains underneath as both the zero-strength path and render-failure fallback. A bounded 1280-pixel-long-edge Metal surface presents Core Image output only while an implemented Beauty effect is active and a face is available. It uses the same aspect-fill crop and explicit orientation/front-mirror policy. Preview-only Face Correction consumes already transformed landmarks, selects the largest/nearest-center face, and applies one cached feathered displacement map. One retained camera frame, one cached map and one in-flight command buffer bound preview backlog. Photo output has its own rotation coordinator on the session side; Face Correction does not enter that branch. Photos preserve the native sensor frame, so some edges outside the full-screen preview can appear in the result. These policies need the device checks in `DeviceValidation.md`.
+
+During the current TestFlight diagnosis, `FaceGeometryDebugMode.isEnabled` keeps one overlay visible without a Settings control. It receives the fitted face box, accepted contour and exact small-face warps from the production renderer operation; it neither runs Vision nor calls the older preview-layer projection helper. Setting that single internal flag to `false` disables the diagnostic frame handoff and drawing for a future App Store release.
 
 ## Permission and lifecycle
 

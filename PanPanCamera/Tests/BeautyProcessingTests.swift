@@ -174,6 +174,78 @@ final class BeautyProcessingTests: XCTestCase {
         }
     }
 
+    func testGeometryDiagnosticsShareExactProductionSlimWarpsAtZeroAndHundred() throws {
+        let extent = CGRect(x: 0, y: 0, width: 200, height: 300)
+        var parameters = BeautyParameters()
+        parameters.setValue(50, for: FaceTool.auto)
+        for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones] {
+            parameters.setValue(0, for: tool)
+        }
+
+        let zero = FaceCorrectionGeometry.result(faces: [completeFace()],
+            configuration: parameters.processingConfiguration, extent: extent)
+        XCTAssertTrue(zero.warps.isEmpty)
+        XCTAssertEqual(zero.smallFaceWarps.count, 2)
+        XCTAssertTrue(zero.smallFaceWarps.allSatisfy { $0.visibleOffset == .zero })
+        XCTAssertEqual(try warp(.slimLeft, in: zero.smallFaceWarps).radius, 26.4,
+                       accuracy: 0.000_001)
+
+        parameters.setValue(100, for: FaceTool.slim)
+        let full = FaceCorrectionGeometry.result(faces: [completeFace()],
+            configuration: parameters.processingConfiguration, extent: extent)
+        XCTAssertEqual(full.smallFaceWarps, full.warps)
+        XCTAssertEqual(try warp(.slimLeft, in: full.smallFaceWarps).visibleOffset.dx, 3.6,
+                       accuracy: 0.000_001)
+        XCTAssertEqual(try warp(.slimRight, in: full.smallFaceWarps).visibleOffset.dx, -3.6,
+                       accuracy: 0.000_001)
+    }
+
+    func testPreviewGeometryUsesPortraitAspectFillAndSingleFrontMirror() throws {
+        let buffer = try pixelBuffer(width: 400, height: 300)
+        let face = completeFace(box: CGRect(x: 0.25, y: 0.20, width: 0.30, height: 0.60))
+
+        func snapshot(mirrored: Bool) throws -> FaceGeometryDebugSnapshot {
+            let frame = BeautyPreviewFrame(pixelBuffer: buffer, orientation: .right,
+                mirrored: mirrored, faces: [face], configuration: .disabled)
+            return try XCTUnwrap(runOffMain {
+                try BeautyImageProcessor().previewResult(
+                    for: frame, displayRotationAngle: 90,
+                    targetSize: CGSize(width: 300, height: 600)
+                ).geometryDebug
+            })
+        }
+
+        let back = try snapshot(mirrored: false)
+        let front = try snapshot(mirrored: true)
+        let backBox = try XCTUnwrap(back.faceBox)
+        let frontBox = try XCTUnwrap(front.faceBox)
+        XCTAssertEqual(backBox.minX, 37.5, accuracy: 0.000_001)
+        XCTAssertEqual(backBox.minY, 120, accuracy: 0.000_001)
+        XCTAssertEqual(backBox.width, 135, accuracy: 0.000_001)
+        XCTAssertEqual(backBox.height, 360, accuracy: 0.000_001)
+        XCTAssertEqual(frontBox.minX, 127.5, accuracy: 0.000_001)
+        XCTAssertEqual(frontBox.minY, 120, accuracy: 0.000_001)
+        XCTAssertEqual(frontBox.width, 135, accuracy: 0.000_001)
+        XCTAssertEqual(frontBox.height, 360, accuracy: 0.000_001)
+        XCTAssertEqual(back.contour[0].x, 48.3, accuracy: 0.000_001)
+        XCTAssertEqual(back.contour[0].y, 328.8, accuracy: 0.000_001)
+        XCTAssertEqual(front.contour[0].x, 251.7, accuracy: 0.000_001)
+        XCTAssertEqual(front.contour[0].y, 328.8, accuracy: 0.000_001)
+
+        let backLeft = try warp(.slimLeft, in: back.smallFaceWarps)
+        let frontRight = try warp(.slimRight, in: front.smallFaceWarps)
+        XCTAssertEqual(backLeft.radius, 29.7, accuracy: 0.000_001)
+        XCTAssertEqual(frontRight.radius, backLeft.radius, accuracy: 0.000_001)
+        XCTAssertEqual(frontRight.center.x, 300 - backLeft.center.x, accuracy: 0.000_001)
+        XCTAssertEqual(frontRight.center.y, backLeft.center.y, accuracy: 0.000_001)
+        XCTAssertEqual(back.captureOrientation, .right)
+        XCTAssertEqual(back.displayOrientation, .right)
+        XCTAssertTrue(back.faceDetected)
+        XCTAssertTrue(front.faceDetected)
+        XCTAssertFalse(back.mirrored)
+        XCTAssertTrue(front.mirrored)
+    }
+
     func testFaceOnlyConfigurationDoesNotDecodeOrRewritePhotoData() throws {
         let original = Data([0x50, 0x41, 0x4E, 0x50, 0x41, 0x4E])
         let output = try runOffMain {
@@ -243,9 +315,9 @@ final class BeautyProcessingTests: XCTestCase {
         try XCTUnwrap(warps.first { $0.kind == kind })
     }
 
-    private func pixelBuffer() throws -> CVPixelBuffer {
+    private func pixelBuffer(width: Int = 2, height: Int = 2) throws -> CVPixelBuffer {
         var buffer: CVPixelBuffer?
-        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, 2, 2,
+        XCTAssertEqual(CVPixelBufferCreate(kCFAllocatorDefault, width, height,
             kCVPixelFormatType_32BGRA, nil, &buffer), kCVReturnSuccess)
         return try XCTUnwrap(buffer)
     }

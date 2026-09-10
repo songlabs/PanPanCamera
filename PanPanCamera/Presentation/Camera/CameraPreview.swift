@@ -6,7 +6,6 @@ import SwiftUI
 struct CameraPreview: UIViewRepresentable {
     let session: AVCaptureSession
     let device: AVCaptureDevice?
-    let faceDetection: FaceDetectionFrame?
     let beautyFrames: BeautyPreviewFrameStore
     let beautyConfiguration: BeautyConfiguration
     let isActive: Bool
@@ -20,7 +19,6 @@ struct CameraPreview: UIViewRepresentable {
 
     func updateUIView(_ uiView: PreviewView, context: Context) {
         uiView.updateDevice(device)
-        uiView.updateFaces(faceDetection)
         uiView.updateBeauty(frames: beautyFrames, configuration: beautyConfiguration,
                             isActive: isActive)
     }
@@ -43,9 +41,7 @@ final class PreviewView: UIView {
     private var beautyIsActive = false
     private var beautyRotationAngle: CGFloat = 0
     private var displayLink: CADisplayLink?
-    #if DEBUG
-    private var faceOverlay: FaceDebugOverlay?
-    #endif
+    private var faceOverlay: FaceGeometryDebugOverlay?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -53,6 +49,9 @@ final class PreviewView: UIView {
         if let device = MTLCreateSystemDefaultDevice() {
             beautySurface.configure(device: device)
             beautyRenderer = BeautyPreviewRenderer(device: device)
+        }
+        if FaceGeometryDebugOverlay.isEnabled {
+            faceOverlay = FaceGeometryDebugOverlay(previewLayer: previewLayer)
         }
         displayLink = CADisplayLink(target: self, selector: #selector(renderBeautyFrame))
         displayLink?.add(to: .main, forMode: .common)
@@ -65,6 +64,7 @@ final class PreviewView: UIView {
         guard let device else { return }
         if deviceID != device.uniqueID {
             hideBeautyFrame()
+            faceOverlay?.update(nil)
             deviceID = device.uniqueID
             observation = nil
             rotation = AVCaptureDevice.RotationCoordinator(device: device, previewLayer: previewLayer)
@@ -80,7 +80,11 @@ final class PreviewView: UIView {
     override func layoutSubviews() {
         super.layoutSubviews()
         beautySurface.frame = bounds
-        if beautySurface.updateDrawableSize() { hideBeautyFrame() }
+        if beautySurface.updateDrawableSize() {
+            hideBeautyFrame()
+            faceOverlay?.update(nil)
+        }
+        faceOverlay?.redraw()
         updateConnection()
     }
 
@@ -91,22 +95,13 @@ final class PreviewView: UIView {
         if angle.isFinite, abs(angle - beautyRotationAngle) > 0.01 {
             beautyRotationAngle = angle
             hideBeautyFrame()
+            faceOverlay?.update(nil)
         }
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
             connection.isVideoMirrored = rotation.device?.position == .front
         }
-        #if DEBUG
-        faceOverlay?.redraw(deviceID: deviceID)
-        #endif
-    }
-
-    func updateFaces(_ frame: FaceDetectionFrame?) {
-        #if DEBUG
-        guard FaceDebugOverlay.isEnabled else { return }
-        if faceOverlay == nil { faceOverlay = FaceDebugOverlay(previewLayer: previewLayer) }
-        faceOverlay?.update(frame, deviceID: deviceID)
-        #endif
+        faceOverlay?.redraw()
     }
 
     func updateBeauty(frames: BeautyPreviewFrameStore, configuration: BeautyConfiguration,
@@ -115,20 +110,23 @@ final class PreviewView: UIView {
         let changed = configuration != beautyConfiguration || isActive != beautyIsActive
         beautyConfiguration = configuration
         beautyIsActive = isActive
-        displayLink?.isPaused = !isActive || configuration.isBypassed || beautyRenderer == nil
+        displayLink?.isPaused = !isActive ||
+            (configuration.isBypassed && !FaceGeometryDebugOverlay.isEnabled) || beautyRenderer == nil
         if changed { hideBeautyFrame() }
     }
 
     @objc private func renderBeautyFrame() {
-        guard beautyIsActive, !beautyConfiguration.isBypassed,
+        guard beautyIsActive,
+              (!beautyConfiguration.isBypassed || FaceGeometryDebugOverlay.isEnabled),
               let beautyFrames, let beautyRenderer,
               beautySurface.metalLayer.drawableSize.width >= 1,
               beautySurface.metalLayer.drawableSize.height >= 1 else { return }
         beautyRenderer.requestFrame(from: beautyFrames, layer: beautySurface.metalLayer,
             rotationAngle: beautyRotationAngle,
-            targetSize: beautySurface.metalLayer.drawableSize) { [weak self] success in
-                guard let self, self.beautyIsActive, !self.beautyConfiguration.isBypassed else { return }
-                self.beautySurface.isHidden = !success
+            targetSize: beautySurface.metalLayer.drawableSize) { [weak self] success, geometry in
+                guard let self, self.beautyIsActive else { return }
+                self.faceOverlay?.update(geometry)
+                self.beautySurface.isHidden = !success || self.beautyConfiguration.isBypassed
             }
     }
 
@@ -145,9 +143,7 @@ final class PreviewView: UIView {
         observation = nil
         rotation = nil
         deviceID = nil
-        #if DEBUG
-        faceOverlay?.update(nil, deviceID: nil)
-        #endif
+        faceOverlay?.update(nil)
         previewLayer.session = nil
     }
 }

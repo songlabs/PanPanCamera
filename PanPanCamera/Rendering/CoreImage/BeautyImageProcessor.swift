@@ -3,6 +3,29 @@ import Foundation
 
 enum BeautyProcessingQuality: Equatable, Sendable { case preview, final }
 
+/// Renderer-space diagnostics produced after the production orientation, mirror and
+/// aspect-fill transforms. Coordinates use the Metal drawable's bottom-left pixel space.
+struct FaceGeometryDebugSnapshot: Equatable, Sendable {
+    let extent: CGRect
+    let faceDetected: Bool
+    let faceBox: CGRect?
+    let contour: [CGPoint]
+    let smallFaceWarps: [FaceCorrectionWarp]
+    let smallFaceUI: Double
+    let normalizedSmallFace: Double
+    let auto: Double
+    let effectiveSmallFace: Double
+    let captureOrientation: FaceImageOrientation
+    let displayOrientation: FaceImageOrientation
+    let displayRotationAngle: CGFloat
+    let mirrored: Bool
+}
+
+struct BeautyPreviewProcessingResult {
+    let image: CIImage?
+    let geometryDebug: FaceGeometryDebugSnapshot?
+}
+
 /// Shared skin-effect definition plus Preview-only face geometry. Preview supplies
 /// a smaller aspect-filled image while final capture supplies native photo pixels;
 /// Face Correction deliberately stops at the Preview boundary.
@@ -12,12 +35,19 @@ struct BeautyImageProcessor: Sendable {
 
     func previewImage(for frame: BeautyPreviewFrame, displayRotationAngle: CGFloat,
                       targetSize: CGSize) throws -> CIImage? {
+        try previewResult(for: frame, displayRotationAngle: displayRotationAngle,
+                          targetSize: targetSize).image
+    }
+
+    func previewResult(for frame: BeautyPreviewFrame, displayRotationAngle: CGFloat,
+                       targetSize: CGSize) throws -> BeautyPreviewProcessingResult {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        guard !frame.configuration.isBypassed, !frame.faces.isEmpty,
-              targetSize.width >= 1, targetSize.height >= 1 else { return nil }
+        guard targetSize.width >= 1, targetSize.height >= 1 else {
+            return BeautyPreviewProcessingResult(image: nil, geometryDebug: nil)
+        }
 
         guard let displayOrientation = FaceImageOrientation(captureAngle: displayRotationAngle) else {
-            return nil
+            return BeautyPreviewProcessingResult(image: nil, geometryDebug: nil)
         }
         let exif = SilentFrameOrientation.exif(captureOrientation: displayOrientation, mirrored: false)
         var image = CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(exif)
@@ -59,17 +89,38 @@ struct BeautyImageProcessor: Sendable {
         image = image.transformed(by: transform).cropped(to: target)
         let fittedFaces = Self.fittedFaces(orientedFaces, sourceExtent: sourceExtent,
                                            targetExtent: target, transform: transform)
-        guard !fittedFaces.isEmpty else { return nil }
+        let geometry = FaceCorrectionGeometry.result(faces: fittedFaces,
+            configuration: frame.configuration, extent: target)
+        let debug = FaceGeometryDebugSnapshot(
+            extent: target,
+            faceDetected: !fittedFaces.isEmpty,
+            faceBox: geometry.faceBox,
+            contour: geometry.contour,
+            smallFaceWarps: geometry.smallFaceWarps,
+            smallFaceUI: frame.configuration.faceSlimStrength * 100,
+            normalizedSmallFace: frame.configuration.faceSlimStrength,
+            auto: frame.configuration.faceOverallStrength,
+            effectiveSmallFace: frame.configuration.effectiveFaceSlim,
+            captureOrientation: frame.orientation,
+            displayOrientation: displayOrientation,
+            displayRotationAngle: displayRotationAngle,
+            mirrored: frame.mirrored
+        )
+        guard !frame.configuration.isBypassed, !fittedFaces.isEmpty else {
+            return BeautyPreviewProcessingResult(image: nil, geometryDebug: debug)
+        }
         let skinResult = try process(image, faces: fittedFaces, configuration: frame.configuration,
                                      quality: .preview)
-        if let faceResult = try faceCorrection.makeOutput(
-            source: skinResult, faces: fittedFaces, configuration: frame.configuration
-        ) {
-            return faceResult
+        if let faceResult = try faceCorrection.makeOutput(source: skinResult,
+                                                          warps: geometry.warps) {
+            return BeautyPreviewProcessingResult(image: faceResult, geometryDebug: debug)
         }
         // If only Face Correction is active but usable landmarks are unavailable,
         // keep the original AVCaptureVideoPreviewLayer visible instead of rendering raw pixels again.
-        return frame.configuration.isPhotoBypassed ? nil : skinResult
+        return BeautyPreviewProcessingResult(
+            image: frame.configuration.isPhotoBypassed ? nil : skinResult,
+            geometryDebug: debug
+        )
     }
 
     func process(_ source: CIImage, faces: [DetectedFace], configuration: BeautyConfiguration,

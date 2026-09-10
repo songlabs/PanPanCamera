@@ -18,21 +18,37 @@ struct FaceCorrectionWarp: Equatable, Sendable {
     let visibleOffset: CGVector
 }
 
+/// The exact fitted Preview geometry used to build the production displacement map.
+/// Zero-strength small-face zones remain available for diagnostics, while only
+/// `warps` are admitted to Core Image rendering.
+struct FaceCorrectionGeometryResult: Equatable, Sendable {
+    let faceBox: CGRect?
+    let contour: [CGPoint]
+    let smallFaceWarps: [FaceCorrectionWarp]
+    let warps: [FaceCorrectionWarp]
+
+    static let empty = Self(faceBox: nil, contour: [], smallFaceWarps: [], warps: [])
+}
+
 /// Converts the main face's Vision landmarks into conservative, feathered local
 /// movements. It is pure geometry so zero/invalid/incomplete inputs are testable
 /// without running Core Image. Coordinates are image pixels with a bottom-left origin.
 enum FaceCorrectionGeometry {
     static func warps(faces: [DetectedFace], configuration: BeautyConfiguration,
                       extent: CGRect) -> [FaceCorrectionWarp] {
-        guard !configuration.isFaceCorrectionBypassed,
-              isValid(extent), let face = primaryFace(in: faces) else {
-            return []
-        }
-        let contour = validLandmarks(.faceContour, in: face)
-        guard contour.count >= 5 else { return [] }
+        result(faces: faces, configuration: configuration, extent: extent).warps
+    }
 
+    static func result(faces: [DetectedFace], configuration: BeautyConfiguration,
+                       extent: CGRect) -> FaceCorrectionGeometryResult {
+        guard isValid(extent), let face = primaryFace(in: faces) else { return .empty }
+        let contour = validLandmarks(.faceContour, in: face)
         let box = pixelRect(face.boundingBox, in: extent)
-        guard box.width >= 8, box.height >= 8 else { return [] }
+        let pixelContour = contour.map { pixelPoint($0, in: extent) }
+        guard contour.count >= 5, box.width >= 8, box.height >= 8 else {
+            return FaceCorrectionGeometryResult(faceBox: box, contour: pixelContour,
+                                                smallFaceWarps: [], warps: [])
+        }
 
         let leftLower = closest(contour, to: CGPoint(x: 0.12, y: 0.30), in: face.boundingBox)
         let rightLower = closest(contour, to: CGPoint(x: 0.88, y: 0.30), in: face.boundingBox)
@@ -44,69 +60,80 @@ enum FaceCorrectionGeometry {
 
         var result: [FaceCorrectionWarp] = []
         let slim = CGFloat(configuration.effectiveFaceSlim)
-        if slim > 0 {
-            // Face Auto defaults to 0.5, so Slim = 100 previously moved each jaw
-            // edge only 1.4% of face width. That is sub-visible after Preview scaling.
-            // Keep the same local radius, but allow a clear 3% per-side movement at
-            // the default Auto value (6% only when both controls are at maximum).
-            let movement = box.width * 0.060 * slim
-            appendSidePair(to: &result, left: leftLower, right: rightLower, extent: extent,
-                           inset: box.width * 0.018, radius: box.width * 0.22,
-                           movement: movement, leftKind: .slimLeft, rightKind: .slimRight)
+        // Face Auto defaults to 0.5, so Slim = 100 previously moved each jaw
+        // edge only 1.4% of face width. That is sub-visible after Preview scaling.
+        // Keep the same local radius, but allow a clear 3% per-side movement at
+        // the default Auto value (6% only when both controls are at maximum).
+        let appliedSlim = configuration.isFaceCorrectionBypassed ? 0 : slim
+        let candidateSmallFaceWarps = sidePair(left: leftLower, right: rightLower, extent: extent,
+            inset: box.width * 0.018, radius: box.width * 0.22,
+            movement: box.width * 0.060 * appliedSlim,
+            leftKind: .slimLeft, rightKind: .slimRight, permitsZeroMovement: true)
+        let activeSmallFaceWarps = candidateSmallFaceWarps.filter {
+            !configuration.isFaceCorrectionBypassed && slim > 0 && visibleMagnitude($0) >= 0.05
+        }
+        result.append(contentsOf: activeSmallFaceWarps)
+        let smallFaceWarps = candidateSmallFaceWarps.map { warp in
+            activeSmallFaceWarps.contains(warp) ? warp : FaceCorrectionWarp(
+                kind: warp.kind, center: warp.center, radius: warp.radius, visibleOffset: .zero
+            )
         }
 
-        let width = CGFloat(configuration.effectiveFaceWidth)
-        if width > 0 {
-            let movement = box.width * 0.022 * width
-            appendSidePair(to: &result, left: leftWidth, right: rightWidth, extent: extent,
-                           inset: box.width * 0.015, radius: box.width * 0.18,
-                           movement: movement, leftKind: .widthLeft, rightKind: .widthRight)
-        }
+        if !configuration.isFaceCorrectionBypassed {
+            let width = CGFloat(configuration.effectiveFaceWidth)
+            if width > 0 {
+                let movement = box.width * 0.022 * width
+                appendSidePair(to: &result, left: leftWidth, right: rightWidth, extent: extent,
+                               inset: box.width * 0.015, radius: box.width * 0.18,
+                               movement: movement, leftKind: .widthLeft, rightKind: .widthRight)
+            }
 
-        let chinStrength = CGFloat(configuration.effectiveChin)
-        if chinStrength > 0 {
-            let sideMovement = box.width * 0.010 * chinStrength
-            appendSidePair(to: &result, left: leftLower, right: rightLower, extent: extent,
-                           inset: box.width * 0.025, radius: box.width * 0.17,
-                           movement: sideMovement, leftKind: .chinLeft, rightKind: .chinRight)
-            append(&result, kind: .chinCenter, point: chin, extent: extent,
-                   centerOffset: .zero, radius: box.width * 0.20,
-                   visibleOffset: CGVector(dx: 0, dy: box.height * 0.018 * chinStrength))
-        }
+            let chinStrength = CGFloat(configuration.effectiveChin)
+            if chinStrength > 0 {
+                let sideMovement = box.width * 0.010 * chinStrength
+                appendSidePair(to: &result, left: leftLower, right: rightLower, extent: extent,
+                               inset: box.width * 0.025, radius: box.width * 0.17,
+                               movement: sideMovement, leftKind: .chinLeft, rightKind: .chinRight)
+                append(&result, kind: .chinCenter, point: chin, extent: extent,
+                       centerOffset: .zero, radius: box.width * 0.20,
+                       visibleOffset: CGVector(dx: 0, dy: box.height * 0.018 * chinStrength))
+            }
 
-        let forehead = CGFloat(configuration.effectiveForehead)
-        if forehead > 0,
-           let leftBrow = average(validLandmarks(.leftEyebrow, in: face)),
-           let rightBrow = average(validLandmarks(.rightEyebrow, in: face)) {
-            let browTop = max(leftBrow.y, rightBrow.y)
-            let gap = face.boundingBox.maxY - browTop
-            if gap >= face.boundingBox.height * 0.10,
-               gap <= face.boundingBox.height * 0.50 {
-                let y = browTop + gap * 0.62
-                let movement = box.height * 0.012 * forehead
-                let radius = box.width * 0.19
-                let horizontal = box.width * 0.15
-                let centerX = (leftBrow.x + rightBrow.x) / 2
-                append(&result, kind: .foreheadLeft,
-                       point: CGPoint(x: centerX, y: y), extent: extent,
-                       centerOffset: CGVector(dx: -horizontal, dy: 0), radius: radius,
-                       visibleOffset: CGVector(dx: 0, dy: -movement))
-                append(&result, kind: .foreheadRight,
-                       point: CGPoint(x: centerX, y: y), extent: extent,
-                       centerOffset: CGVector(dx: horizontal, dy: 0), radius: radius,
-                       visibleOffset: CGVector(dx: 0, dy: -movement))
+            let forehead = CGFloat(configuration.effectiveForehead)
+            if forehead > 0,
+               let leftBrow = average(validLandmarks(.leftEyebrow, in: face)),
+               let rightBrow = average(validLandmarks(.rightEyebrow, in: face)) {
+                let browTop = max(leftBrow.y, rightBrow.y)
+                let gap = face.boundingBox.maxY - browTop
+                if gap >= face.boundingBox.height * 0.10,
+                   gap <= face.boundingBox.height * 0.50 {
+                    let y = browTop + gap * 0.62
+                    let movement = box.height * 0.012 * forehead
+                    let radius = box.width * 0.19
+                    let horizontal = box.width * 0.15
+                    let centerX = (leftBrow.x + rightBrow.x) / 2
+                    append(&result, kind: .foreheadLeft,
+                           point: CGPoint(x: centerX, y: y), extent: extent,
+                           centerOffset: CGVector(dx: -horizontal, dy: 0), radius: radius,
+                           visibleOffset: CGVector(dx: 0, dy: -movement))
+                    append(&result, kind: .foreheadRight,
+                           point: CGPoint(x: centerX, y: y), extent: extent,
+                           centerOffset: CGVector(dx: horizontal, dy: 0), radius: radius,
+                           visibleOffset: CGVector(dx: 0, dy: -movement))
+                }
+            }
+
+            let cheekbones = CGFloat(configuration.effectiveCheekbones)
+            if cheekbones > 0 {
+                let movement = box.width * 0.015 * cheekbones
+                appendSidePair(to: &result, left: leftCheekbone, right: rightCheekbone,
+                               extent: extent, inset: box.width * 0.020,
+                               radius: box.width * 0.16, movement: movement,
+                               leftKind: .cheekbonesLeft, rightKind: .cheekbonesRight)
             }
         }
-
-        let cheekbones = CGFloat(configuration.effectiveCheekbones)
-        if cheekbones > 0 {
-            let movement = box.width * 0.015 * cheekbones
-            appendSidePair(to: &result, left: leftCheekbone, right: rightCheekbone,
-                           extent: extent, inset: box.width * 0.020,
-                           radius: box.width * 0.16, movement: movement,
-                           leftKind: .cheekbonesLeft, rightKind: .cheekbonesRight)
-        }
-        return result
+        return FaceCorrectionGeometryResult(faceBox: box, contour: pixelContour,
+                                            smallFaceWarps: smallFaceWarps, warps: result)
     }
 
     static func primaryFace(in faces: [DetectedFace]) -> DetectedFace? {
@@ -127,25 +154,50 @@ enum FaceCorrectionGeometry {
                                        inset: CGFloat, radius: CGFloat, movement: CGFloat,
                                        leftKind: FaceCorrectionWarp.Kind,
                                        rightKind: FaceCorrectionWarp.Kind) {
-        append(&result, kind: leftKind, point: left, extent: extent,
-               centerOffset: CGVector(dx: inset, dy: 0), radius: radius,
-               visibleOffset: CGVector(dx: movement, dy: 0))
-        append(&result, kind: rightKind, point: right, extent: extent,
-               centerOffset: CGVector(dx: -inset, dy: 0), radius: radius,
-               visibleOffset: CGVector(dx: -movement, dy: 0))
+        result.append(contentsOf: sidePair(left: left, right: right, extent: extent,
+            inset: inset, radius: radius, movement: movement,
+            leftKind: leftKind, rightKind: rightKind, permitsZeroMovement: false))
+    }
+
+    private static func sidePair(left: CGPoint, right: CGPoint, extent: CGRect,
+                                 inset: CGFloat, radius: CGFloat, movement: CGFloat,
+                                 leftKind: FaceCorrectionWarp.Kind,
+                                 rightKind: FaceCorrectionWarp.Kind,
+                                 permitsZeroMovement: Bool) -> [FaceCorrectionWarp] {
+        [
+            makeWarp(kind: leftKind, point: left, extent: extent,
+                     centerOffset: CGVector(dx: inset, dy: 0), radius: radius,
+                     visibleOffset: CGVector(dx: movement, dy: 0),
+                     permitsZeroMovement: permitsZeroMovement),
+            makeWarp(kind: rightKind, point: right, extent: extent,
+                     centerOffset: CGVector(dx: -inset, dy: 0), radius: radius,
+                     visibleOffset: CGVector(dx: -movement, dy: 0),
+                     permitsZeroMovement: permitsZeroMovement)
+        ].compactMap { $0 }
     }
 
     private static func append(_ result: inout [FaceCorrectionWarp],
                                kind: FaceCorrectionWarp.Kind, point: CGPoint, extent: CGRect,
                                centerOffset: CGVector, radius: CGFloat,
                                visibleOffset: CGVector) {
+        guard let warp = makeWarp(kind: kind, point: point, extent: extent,
+                                  centerOffset: centerOffset, radius: radius,
+                                  visibleOffset: visibleOffset,
+                                  permitsZeroMovement: false) else { return }
+        result.append(warp)
+    }
+
+    private static func makeWarp(kind: FaceCorrectionWarp.Kind, point: CGPoint, extent: CGRect,
+                                 centerOffset: CGVector, radius: CGFloat,
+                                 visibleOffset: CGVector,
+                                 permitsZeroMovement: Bool) -> FaceCorrectionWarp? {
         let center = pixelPoint(point, in: extent)
         let adjusted = CGPoint(x: center.x + centerOffset.dx, y: center.y + centerOffset.dy)
         guard isFinite(adjusted.x), isFinite(adjusted.y), isFinite(radius), radius >= 1,
               isFinite(visibleOffset.dx), isFinite(visibleOffset.dy),
-              hypot(visibleOffset.dx, visibleOffset.dy) >= 0.05 else { return }
-        result.append(FaceCorrectionWarp(kind: kind, center: adjusted, radius: radius,
-                                         visibleOffset: visibleOffset))
+              permitsZeroMovement || hypot(visibleOffset.dx, visibleOffset.dy) >= 0.05 else { return nil }
+        return FaceCorrectionWarp(kind: kind, center: adjusted, radius: radius,
+                                  visibleOffset: visibleOffset)
     }
 
     private static func validLandmarks(_ name: FacialLandmarkRegion,
@@ -202,6 +254,10 @@ enum FaceCorrectionGeometry {
     }
 
     private static func isFinite(_ value: CGFloat) -> Bool { value.isFinite }
+
+    private static func visibleMagnitude(_ warp: FaceCorrectionWarp) -> CGFloat {
+        hypot(warp.visibleOffset.dx, warp.visibleOffset.dy)
+    }
 }
 
 private extension CGRect {
@@ -222,6 +278,11 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
         dispatchPrecondition(condition: .notOnQueue(.main))
         let warps = FaceCorrectionGeometry.warps(faces: faces, configuration: configuration,
                                                   extent: source.extent)
+        return try makeOutput(source: source, warps: warps)
+    }
+
+    func makeOutput(source: CIImage, warps: [FaceCorrectionWarp]) throws -> CIImage? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
         guard !warps.isEmpty else {
             clearCache()
             return nil

@@ -85,7 +85,6 @@ struct CameraView: View {
 
     private var livePreview: some View {
         CameraPreview(session: camera.previewSession, device: camera.previewDevice,
-                      faceDetection: camera.faceDetection,
                       beautyFrames: camera.beautyPreviewFrames,
                       beautyConfiguration: camera.beautyParameters.processingConfiguration,
                       isActive: camera.state.status == .running)

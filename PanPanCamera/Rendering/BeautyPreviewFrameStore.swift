@@ -1,6 +1,12 @@
 import AVFoundation
 import Foundation
 
+/// Temporary internal TestFlight diagnostic gate. Set this single value to false
+/// before the production App Store release; there is intentionally no Settings UI.
+enum FaceGeometryDebugMode {
+    static let isEnabled = true
+}
+
 /// One immutable camera-frame handoff. The pixel buffer remains sensor-native;
 /// orientation and mirroring are applied only by the preview renderer.
 struct BeautyPreviewFrame: @unchecked Sendable {

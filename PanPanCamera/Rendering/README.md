@@ -24,6 +24,17 @@ Face geometry is intentionally absent from final-photo processing. Both branches
 entirely local. There is no upload, third-party SDK, skin segmentation, eye/nose/mouth
 warp, blemish or dark-circle algorithm. Apple/device acceptance remains pending.
 
+The temporary Face Geometry Debug Overlay consumes `FaceGeometryDebugSnapshot` from that
+same Preview render operation. The snapshot is created only after the native buffer,
+Vision faces and CIImage have passed through the production quarter-turn, residual
+rotation, one front mirror and centered aspect-fill crop. `FaceCorrectionGeometryResult`
+provides both the active warps sent to `CIDisplacementDistortion` and the zero-strength
+small-face center/radius zones; zero zones expose a zero vector and are not admitted to
+the displacement map. The UIKit layer only converts final Metal drawable pixels from
+bottom-left to Preview points from top-left. It does not run Vision, use safe-area sizes,
+or estimate geometry separately. Fixed shape/text layers are reused and unchanged
+snapshots do not rebuild their paths.
+
 ## Independent DEBUG route
 
     DebugPhotoProcessing.process(CapturedPhoto or Data, output, configuration, components, skinMaskProvider)
@@ -154,7 +165,7 @@ only for compatibility/testing. No additional legacy kernel is introduced.
   An additional parser invocation with DEBUG also passed. This is not Apple typecheck.
 - Previous host Foundation XCTest/typecheck attempts lacked msvcrt.lib, oldnames.lib,
   msvcprt.lib and errno.h. This task does not retry or repair those known paths.
-- Existing Xcode Debug test target now has 24 source files, with 210 test methods by
+- Existing Xcode Debug test target now has 24 source files, with 214 test methods by
   static count. New configuration, snapshot, frame-store, coordinate and synthetic-image
   methods are not executed on Apple here. Float formula tests explicitly request RGBAf
   intermediates, separate from public RGBA8 tests.

@@ -140,7 +140,7 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
 
     private func publishPreview(_ buffer: CVPixelBuffer) {
         let configuration = beautyConfiguration.snapshot()
-        guard !configuration.isBypassed else {
+        guard !configuration.isBypassed || FaceGeometryDebugMode.isEnabled else {
             previewFrameStore.clear()
             return
         }

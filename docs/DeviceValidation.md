@@ -117,10 +117,13 @@ If these conditions cannot be produced, retain Pending rather than treating unit
 
 ## Vision face detection — all device checks Pending
 
-Use a physical iPhone with a Debug build and `-PanPanFaceDebugOverlay` launch argument.
-Green outlines are face boxes; yellow points are available landmarks. Inspect
-`CameraService.faceDetection` for face count, frame outcome, orientation, dimensions and timestamp,
-and `isFaceDetectionAvailable` for output support. Do not log/export face coordinates or images.
+Use the current TestFlight or Debug build; `FaceGeometryDebugMode.isEnabled` makes the
+diagnostic visible without a launch argument. Green is the production-fitted primary
+face box, yellow is the accepted face contour, cyan circles are the exact small-face
+radii, pink crosses are the centers and orange arrows are the applied visible offsets.
+The text block shows detection, strength, fitted width, displacement, orientation and
+mirror state. These values come from the same renderer-space geometry result sent to the
+production displacement step; do not log/export face coordinates or images.
 
 - [ ] Front and rear: zero, one and multiple faces; all faces returned without primary-face selection.
 - [ ] Boxes and eye/eyebrow/nose/noseCrest/lip/contour points align at center and each cropped preview edge.
@@ -138,7 +141,8 @@ and `isFaceDetectionAvailable` for output support. Do not log/export face coordi
       five minutes; repeat with multiple faces. Record device, OS, SHA, duration and measurements.
 - [ ] With Instruments, confirm one Vision request at a time, cooldown between requests, no increasing
       frame/result queue, and memory reaches a plateau over repeated background/switch cycles.
-- [ ] Confirm Release ignores `-PanPanFaceDebugOverlay` and normal Camera controls/layout are unchanged.
+- [ ] After this investigation, set `FaceGeometryDebugMode.isEnabled = false` and confirm the
+      production App Store candidate has no diagnostic overlay or debug-only frame handoff.
 
 **尚未完成 Apple 平台 / 真机验收。** Simulator and pure-logic tests cannot satisfy these checks.
 The implementation and known validation limits are described in [FaceDetection.md](FaceDetection.md).

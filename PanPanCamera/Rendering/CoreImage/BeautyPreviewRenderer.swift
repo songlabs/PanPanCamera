@@ -21,17 +21,24 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
 
     func requestFrame(from store: BeautyPreviewFrameStore, layer: CAMetalLayer,
                       rotationAngle: CGFloat, targetSize: CGSize,
-                      completion: @escaping (Bool) -> Void) {
+                      completion: @escaping (Bool, FaceGeometryDebugSnapshot?) -> Void) {
         guard let token = begin() else { return }
         guard let frame = store.take() else { cancelReservation(); return }
         queue.async { [self] in
             autoreleasepool {
                 do {
-                    guard let image = try processor.previewImage(for: frame,
-                        displayRotationAngle: rotationAngle, targetSize: targetSize),
-                          let drawable = layer.nextDrawable(),
+                    let result = try processor.previewResult(for: frame,
+                        displayRotationAngle: rotationAngle, targetSize: targetSize)
+                    let geometryDebug = result.geometryDebug
+                    guard let image = result.image else {
+                        finish(token: token, success: false, geometryDebug: geometryDebug,
+                               completion: completion)
+                        return
+                    }
+                    guard let drawable = layer.nextDrawable(),
                           let commandBuffer = commandQueue.makeCommandBuffer() else {
-                        finish(token: token, success: false, completion: completion)
+                        finish(token: token, success: false, geometryDebug: geometryDebug,
+                               completion: completion)
                         return
                     }
                     CoreImageRendering.render(image, to: drawable.texture,
@@ -41,11 +48,13 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
                     commandBuffer.present(drawable)
                     commandBuffer.addCompletedHandler { [weak self] buffer in
                         self?.finish(token: token, success: buffer.status == .completed,
+                                     geometryDebug: geometryDebug,
                                      completion: completion)
                     }
                     commandBuffer.commit()
                 } catch {
-                    finish(token: token, success: false, completion: completion)
+                    finish(token: token, success: false, geometryDebug: nil,
+                           completion: completion)
                 }
             }
         }
@@ -71,12 +80,14 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
         lock.unlock()
     }
 
-    private func finish(token: Int, success: Bool, completion: @escaping (Bool) -> Void) {
+    private func finish(token: Int, success: Bool,
+                        geometryDebug: FaceGeometryDebugSnapshot?,
+                        completion: @escaping (Bool, FaceGeometryDebugSnapshot?) -> Void) {
         lock.lock()
         inFlight = false
         let current = token == generation
         lock.unlock()
         guard current else { return }
-        DispatchQueue.main.async { completion(success) }
+        DispatchQueue.main.async { completion(success, geometryDebug) }
     }
 }

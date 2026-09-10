@@ -93,11 +93,18 @@ the design does not establish a measured FPS or CPU target.
    | down | `(1-x, y)` |
    | left | `(y, x)` |
 
-4. Preview draws with `layerPointConverted(fromCaptureDevicePoint:)`. The actual preview
-   connection/layer owns rotation, mirror, geometry and aspect-fill cropping. This avoids
-   estimating the SwiftUI viewport from the screen size or mirroring Vision points twice.
-   All four box corners are transformed, retaining outlines under horizon tilt. Offscreen
-   points remain valid face data and are clipped only when drawing the overlay.
+4. The raw detection contract can be projected through
+   `layerPointConverted(fromCaptureDevicePoint:)`, whose preview connection/layer owns
+   rotation, mirror, geometry and aspect-fill cropping. Production Beauty does not mix
+   that projection with its Metal surface: it applies the display quarter-turn and any
+   residual horizon rotation to both CIImage and faces, mirrors both once for the front
+   camera, then applies the same centered aspect-fill affine transform and target crop.
+   `FaceCorrectionGeometry` therefore receives normalized faces already fitted to the
+   final Metal drawable.
+5. The active Face Geometry Debug Overlay consumes the renderer's final pixel-space
+   `FaceGeometryDebugSnapshot`. Its only display conversion scales drawable pixels to
+   the Preview layer bounds and flips bottom-left Core Image Y to top-left UIKit Y. Safe
+   area, screen size, `layerPointConverted` and a second mirror do not enter that step.
 
 The capture and preview coordinator angles may differ because preview includes view
 orientation. Conversion returns to unrotated camera space before applying the actual
@@ -124,10 +131,16 @@ admitted. Detection resumes only while authorized, wanted, running and uninterru
 The main actor additionally clears/rejects results during inactivity, switching and
 non-running status. Output setup failure preserves the original camera path.
 
-For development, add `-PanPanFaceDebugOverlay` to a Debug scheme's launch arguments.
-Green boxes and yellow points use the real preview layer conversion. The overlay has no
-controls or settings page. All overlay code and argument handling are inside `#if DEBUG`;
-Release keeps live detection data but ships no debug face drawing. No face data is logged.
+For the current device/TestFlight investigation, `FaceGeometryDebugMode.isEnabled` is
+`true`, so no launch argument or hidden Settings page is required. Green is the fitted
+primary face box, yellow is the contour accepted by `FaceCorrectionGeometry`, cyan is
+the exact small-face radius, pink marks its centers, and orange arrows show the applied
+visible offsets. The text block reports UI/normalized/Auto/effective strength, fitted
+face width, signed offsets, capture/display orientation, preview angle, mirroring and
+accepted contour count. The overlay reuses fixed Core Animation layers, skips unchanged
+snapshots and emits no per-frame coordinate logs. Set the single internal flag to `false`
+before the future production App Store release to stop both diagnostic frame handoff and
+drawing. No face data is stored, exported or sent to a network.
 
 ## Verification boundary
 
