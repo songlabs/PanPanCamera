@@ -98,8 +98,10 @@ final class BeautyProcessingTests: XCTestCase {
             for (tool, kind, key) in controls {
                 var parameters = BeautyParameters()
                 parameters.setValue(0, for: SkinTool.auto)
-                for other in FaceTool.allCases { parameters.setValue(0, for: other) }
                 parameters.setValue(auto * 100, for: FaceTool.auto)
+                for other in FaceTool.allCases where other != .auto {
+                    parameters.setValue(0, for: other)
+                }
                 parameters.setValue(100, for: tool)
                 let full = try warp(kind, in: FaceCorrectionGeometry.warps(faces: [completeFace()],
                     configuration: parameters.processingConfiguration,
@@ -243,7 +245,7 @@ final class BeautyProcessingTests: XCTestCase {
             magnitudes.append(abs(left.visibleOffset.dx))
         }
 
-        for (actual, expected) in zip(magnitudes, [0, 1.8, 3.6, 5.4, 7.2]) {
+        for (actual, expected) in zip(magnitudes, [0, 3.6, 7.2, 10.8, 14.4]) {
             XCTAssertEqual(actual, expected, accuracy: 0.000_001)
         }
         for pair in zip(magnitudes, magnitudes.dropFirst()) {
@@ -271,9 +273,9 @@ final class BeautyProcessingTests: XCTestCase {
         let full = FaceCorrectionGeometry.result(faces: [completeFace()],
             configuration: parameters.processingConfiguration, extent: extent)
         XCTAssertEqual(full.smallFaceWarps, full.warps)
-        XCTAssertEqual(try warp(.slimLeft, in: full.smallFaceWarps).visibleOffset.dx, 7.2,
+        XCTAssertEqual(try warp(.slimLeft, in: full.smallFaceWarps).visibleOffset.dx, 14.4,
                        accuracy: 0.000_001)
-        XCTAssertEqual(try warp(.slimRight, in: full.smallFaceWarps).visibleOffset.dx, -7.2,
+        XCTAssertEqual(try warp(.slimRight, in: full.smallFaceWarps).visibleOffset.dx, -14.4,
                        accuracy: 0.000_001)
     }
 
