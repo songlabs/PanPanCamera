@@ -203,8 +203,13 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 descriptor.storageMode = .shared
                 let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
                 let command = try XCTUnwrap(queue.makeCommandBuffer())
-                renderer.render(ramp, to: texture, commandBuffer: command,
-                                bounds: extent, colorSpace: colorSpace)
+                var renderError: Error?
+                do {
+                    try renderer.render(ramp, to: texture, commandBuffer: command,
+                                        bounds: extent, colorSpace: colorSpace)
+                } catch {
+                    renderError = error
+                }
                 command.commit()
                 command.waitUntilCompleted()
 
@@ -222,6 +227,8 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 let green = stride(from: 1, to: bytes.count, by: 4).map { bytes[$0] }
                 let report: [String: Any] = [
                     "pixelFormat": pixelFormat == .bgra8Unorm_srgb ? "bgra8Unorm_srgb" : "bgra8Unorm",
+                    "renderTaskCreated": renderError == nil,
+                    "renderTaskError": renderError.map { String(describing: $0) } ?? "none",
                     "commandBufferStatus": command.status.rawValue,
                     "commandBufferError": command.error.map { String(describing: $0) } ?? "none",
                     "alphaWritten": alpha.allSatisfy { $0 == 255 },
@@ -233,6 +240,56 @@ final class FaceCorrectionPixelTests: XCTestCase {
                       String(decoding: try JSONSerialization.data(withJSONObject: report,
                           options: [.sortedKeys]), as: UTF8.self))
             }
+        }.value
+    }
+
+    func testProductionMetalColorChannelAndTransferRemainSane() async throws {
+        try await Task.detached { [self] in
+            let device = try XCTUnwrap(MTLCreateSystemDefaultDevice(),
+                                       "Metal is required for Preview color verification")
+            let queue = try XCTUnwrap(device.makeCommandQueue())
+            let renderer = CoreImageRendering.MetalRenderer(device: queue.device)
+            // RGBA source patches: black, white, 50% gray, and a red-dominant color.
+            let sourceBytes: [UInt8] = [
+                0, 0, 0, 255, 255, 255, 255, 255,
+                128, 128, 128, 255, 204, 77, 26, 255
+            ]
+            let size = CGSize(width: 4, height: 1)
+            let image = CIImage(bitmapData: Data(sourceBytes), bytesPerRow: 16, size: size,
+                                format: .RGBA8, colorSpace: colorSpace)
+            let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
+                width: 4, height: 1, mipmapped: false)
+            descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
+            descriptor.storageMode = .shared
+            let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
+            let command = try XCTUnwrap(queue.makeCommandBuffer())
+            try renderer.render(image, to: texture, commandBuffer: command,
+                                bounds: CGRect(origin: .zero, size: size), colorSpace: colorSpace)
+            command.commit()
+            command.waitUntilCompleted()
+            XCTAssertEqual(command.status, .completed, "\(String(describing: command.error))")
+
+            var output = [UInt8](repeating: 0, count: 16)
+            output.withUnsafeMutableBytes {
+                texture.getBytes($0.baseAddress!, bytesPerRow: 16,
+                    from: MTLRegionMake2D(0, 0, 4, 1), mipmapLevel: 0)
+            }
+            let pixels = stride(from: 0, to: output.count, by: 4).map {
+                Array(output[$0..<($0 + 4)]) // Metal BGRA byte order.
+            }
+            XCTAssertTrue(pixels.allSatisfy { $0[3] == 255 })
+            XCTAssertLessThanOrEqual(pixels[0][0...2].max() ?? 255, 2)
+            XCTAssertGreaterThanOrEqual(pixels[1][0...2].min() ?? 0, 253)
+            XCTAssertLessThanOrEqual(Int(pixels[2][0...2].max() ?? 255) -
+                                       Int(pixels[2][0...2].min() ?? 0), 2)
+            XCTAssertGreaterThanOrEqual(pixels[2][0], 112)
+            XCTAssertLessThanOrEqual(pixels[2][0], 144)
+            XCTAssertGreaterThan(pixels[3][2], pixels[3][1], "Red must remain red in BGRA storage")
+            XCTAssertGreaterThan(pixels[3][1], pixels[3][0])
+            for (actual, expected) in zip(pixels[3], [UInt8(26), 77, 204, 255]) {
+                XCTAssertLessThanOrEqual(abs(Int(actual) - Int(expected)), 8)
+            }
+            print("Metal BGRA8Unorm color regression pixels (BGRA): \(pixels)")
         }.value
     }
 
@@ -254,15 +311,15 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 faces: [fixtureFace()], configuration: configuration(1)),
                 displayRotationAngle: 0, targetSize: extent.size))
             func render(_ image: CIImage) throws -> [UInt8] {
-                let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm_srgb,
+                let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm,
                     width: Int(extent.width), height: Int(extent.height), mipmapped: false)
                 descriptor.usage = [.shaderRead, .shaderWrite, .renderTarget]
                 descriptor.storageMode = .shared
                 let texture = try XCTUnwrap(device.makeTexture(descriptor: descriptor))
                 let command = try XCTUnwrap(queue.makeCommandBuffer())
                 // Identical submission primitive, bounds and format to BeautyPreviewRenderer.
-                renderer.render(image, to: texture, commandBuffer: command,
-                                bounds: extent, colorSpace: colorSpace)
+                try renderer.render(image, to: texture, commandBuffer: command,
+                                    bounds: extent, colorSpace: colorSpace)
                 command.commit()
                 command.waitUntilCompleted()
                 XCTAssertEqual(command.status, .completed, "\(String(describing: command.error))")

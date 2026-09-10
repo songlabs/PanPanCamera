@@ -43,10 +43,12 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
                                completion: completion)
                         return
                     }
-                    metalRenderer.render(image, to: drawable.texture,
-                                         commandBuffer: commandBuffer,
-                                         bounds: CGRect(origin: .zero, size: targetSize),
-                                         colorSpace: colorSpace)
+                    // startTask must succeed before this drawable can be presented. A completed
+                    // empty command buffer alone does not prove that Core Image wrote the frame.
+                    try metalRenderer.render(image, to: drawable.texture,
+                                             commandBuffer: commandBuffer,
+                                             bounds: CGRect(origin: .zero, size: targetSize),
+                                             colorSpace: colorSpace)
                     commandBuffer.present(drawable)
                     commandBuffer.addCompletedHandler { [weak self] buffer in
                         self?.finish(token: token, success: buffer.status == .completed,

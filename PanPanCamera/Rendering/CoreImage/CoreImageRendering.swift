@@ -52,10 +52,12 @@ enum CoreImageRendering {
         }
 
         func render(_ image: CIImage, to texture: MTLTexture, commandBuffer: MTLCommandBuffer,
-                    bounds: CGRect, colorSpace: CGColorSpace) {
+                    bounds: CGRect, colorSpace: CGColorSpace) throws {
             dispatchPrecondition(condition: .notOnQueue(.main))
-            context.render(image, to: texture, commandBuffer: commandBuffer,
-                           bounds: bounds, colorSpace: colorSpace)
+            let destination = CIRenderDestination(width: texture.width, height: texture.height,
+                pixelFormat: texture.pixelFormat, commandBuffer: commandBuffer) { texture }
+            destination.colorSpace = colorSpace
+            _ = try context.startTask(toRender: image, from: bounds, to: destination, at: .zero)
         }
     }
 

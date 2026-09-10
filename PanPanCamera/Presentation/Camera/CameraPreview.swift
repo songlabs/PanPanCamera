@@ -158,7 +158,7 @@ private final class BeautyPreviewSurfaceView: UIView {
         isHidden = true
         metalLayer.isOpaque = true
         metalLayer.framebufferOnly = false
-        metalLayer.pixelFormat = .bgra8Unorm_srgb
+        metalLayer.pixelFormat = .bgra8Unorm
         metalLayer.colorspace = CGColorSpace(name: CGColorSpace.sRGB)
         metalLayer.contentsGravity = .resizeAspectFill
     }
