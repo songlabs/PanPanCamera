@@ -72,9 +72,8 @@ enum FaceCorrectionGeometry {
         let appliedSlim = configuration.isFaceCorrectionBypassed ? 0 : slim
         let candidateSmallFaceWarps = slimControls(face: primaryFace(in: slimFaces ?? [face]),
                                                    strength: appliedSlim, extent: extent)
-        let activeSmallFaceWarps = candidateSmallFaceWarps.filter {
-            !configuration.isFaceCorrectionBypassed && slim > 0
-        }
+        let activeSmallFaceWarps = !configuration.isFaceCorrectionBypassed && slim > 0
+            ? candidateSmallFaceWarps : []
         result.append(contentsOf: activeSmallFaceWarps)
         let smallFaceWarps = candidateSmallFaceWarps.map { warp in
             activeSmallFaceWarps.contains(warp) ? warp : FaceCorrectionWarp(
