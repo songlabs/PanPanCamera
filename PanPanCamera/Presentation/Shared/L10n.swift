@@ -93,13 +93,22 @@ enum L10n: String, CaseIterable {
     case clear = "filter.clear"
     case warm = "filter.warm"
     case cool = "filter.cool"
-    case filterDetail = "filter.detail"
+    case filterOriginalDetail = "filter.original.detail"
+    case filterNaturalDetail = "filter.natural.detail"
+    case filterClearDetail = "filter.clear.detail"
+    case filterWarmDetail = "filter.warm.detail"
+    case filterCoolDetail = "filter.cool.detail"
+    case filterStrengthRange = "filter.strengthRange"
     case makeup = "makeup.title"
     case lip = "makeup.lip"
     case blush = "makeup.blush"
     case eyeMakeup = "makeup.eye"
     case brow = "makeup.brow"
-    case makeupDetail = "makeup.detail"
+    case makeupLipDetail = "makeup.lip.detail"
+    case makeupBlushDetail = "makeup.blush.detail"
+    case makeupEyeDetail = "makeup.eye.detail"
+    case makeupBrowDetail = "makeup.brow.detail"
+    case makeupStrengthRange = "makeup.strengthRange"
     case language = "settings.language"
     case languageSystem = "language.system"
     case languageJapanese = "language.japanese"
@@ -247,6 +256,16 @@ extension FaceTool {
 }
 
 extension FilterPreset {
+    var detail: L10n {
+        switch self {
+        case .original: return .filterOriginalDetail
+        case .natural: return .filterNaturalDetail
+        case .clear: return .filterClearDetail
+        case .warm: return .filterWarmDetail
+        case .cool: return .filterCoolDetail
+        }
+    }
+
     var label: L10n {
         switch self {
         case .original: return .original
@@ -259,6 +278,15 @@ extension FilterPreset {
 }
 
 extension MakeupTool {
+    var detail: L10n {
+        switch self {
+        case .lip: return .makeupLipDetail
+        case .blush: return .makeupBlushDetail
+        case .eye: return .makeupEyeDetail
+        case .brow: return .makeupBrowDetail
+        }
+    }
+
     var label: L10n {
         switch self { case .lip: return .lip; case .blush: return .blush; case .eye: return .eyeMakeup; case .brow: return .brow }
     }

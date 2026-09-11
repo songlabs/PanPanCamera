@@ -73,6 +73,7 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
     private var latestFaces: [DetectedFace] = []
     private var latestFaceTime: TimeInterval = -.infinity
     private var slimSmoother = PreviewSlimLandmarkSmoother()
+    private var makeupSmoother = PreviewSlimLandmarkSmoother(includesAllFeatures: true)
 
     init(device: AVCaptureDevice, orientation: FaceImageOrientation, detector: VisionFaceDetector,
          frameStore: SilentFrameStore, previewFrameStore: BeautyPreviewFrameStore,
@@ -135,7 +136,10 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
                 latestFaces = []
             }
             // Reset immediately even if the renderer misses the empty detection frame.
-            if latestFaces.isEmpty { slimSmoother.reset() }
+            if latestFaces.isEmpty {
+                slimSmoother.reset()
+                makeupSmoother.reset()
+            }
             if let buffer { publishPreview(buffer, at: ProcessInfo.processInfo.systemUptime) }
             let frame = FaceDetectionFrame(faces: faces, orientation: orientation, deviceID: deviceID,
                                            pixelSize: size,
@@ -152,8 +156,15 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
             return
         }
         let slimFaces = slimSmoother.update(faces: latestFaces, observationTime: latestFaceTime, time: time)
+        let makeupFaces: [DetectedFace]
+        if configuration.makeup.isBypassed {
+            makeupSmoother.reset()
+            makeupFaces = []
+        } else {
+            makeupFaces = makeupSmoother.update(faces: latestFaces, observationTime: latestFaceTime, time: time)
+        }
         previewFrameStore.replace(BeautyPreviewFrame(pixelBuffer: buffer, orientation: orientation,
             mirrored: position == .front, faces: latestFaces,
-            configuration: configuration, slimFaces: slimFaces))
+            configuration: configuration, slimFaces: slimFaces, makeupFaces: makeupFaces))
     }
 }

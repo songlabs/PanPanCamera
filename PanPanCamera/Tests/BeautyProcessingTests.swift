@@ -97,6 +97,7 @@ final class BeautyProcessingTests: XCTestCase {
         for auto in [0.5, 1.0] {
             for (tool, kind, key) in controls {
                 var parameters = BeautyParameters()
+                for makeup in MakeupTool.allCases { parameters.setValue(0, for: makeup) }
                 parameters.setValue(0, for: SkinTool.auto)
                 parameters.setValue(auto * 100, for: FaceTool.auto)
                 for other in FaceTool.allCases where other != .auto {
@@ -477,6 +478,86 @@ final class BeautyProcessingTests: XCTestCase {
             XCTAssertEqual(actual.center.x, desired.center.x, accuracy: 1e-9)
             XCTAssertEqual(actual.center.y, desired.center.y, accuracy: 1e-9)
         }
+    }
+
+    func testMakeupSmootherDampsFeatureJitterIndependentlyAndContinuesBetweenDetections() throws {
+        let base = makeupTrackingFace()
+        var features = base.landmarks
+        let lipShift: CGFloat = 1.0 / 600
+        features[.outerLips] = features[.outerLips]?.map { CGPoint(x: $0.x + lipShift, y: $0.y) }
+        features[.innerLips] = features[.innerLips]?.map { CGPoint(x: $0.x + lipShift, y: $0.y) }
+        let jitter = DetectedFace(boundingBox: base.boundingBox, confidence: 1, landmarks: features)
+        var smoother = PreviewSlimLandmarkSmoother(includesAllFeatures: true)
+        XCTAssertEqual(smoother.update(faces: [base], observationTime: 1, time: 1), [base])
+        let first = try XCTUnwrap(smoother.update(faces: [jitter], observationTime: 1.03, time: 1.03).first)
+        let originalLip = try XCTUnwrap(base.landmarks[.outerLips]?.first)
+        let firstLip = try XCTUnwrap(first.landmarks[.outerLips]?.first)
+        XCTAssertGreaterThan(firstLip.x - originalLip.x, 0)
+        XCTAssertLessThan(firstLip.x - originalLip.x, lipShift * 0.6)
+        XCTAssertEqual(first.boundingBox, base.boundingBox)
+        for feature: FacialLandmarkRegion in [.faceContour, .leftEye, .rightEye, .leftEyebrow, .rightEyebrow] {
+            XCTAssertEqual(first.landmarks[feature], base.landmarks[feature],
+                "Lip motion must not move another feature's landmarks")
+        }
+        let next = try XCTUnwrap(smoother.update(faces: [jitter], observationTime: 1.03, time: 1.06).first)
+        let nextLip = try XCTUnwrap(next.landmarks[.outerLips]?.first)
+        XCTAssertGreaterThan(nextLip.x, firstLip.x)
+        XCTAssertLessThan(nextLip.x, originalLip.x + lipShift)
+        XCTAssertEqual(Set(next.landmarks.keys), Set(base.landmarks.keys))
+    }
+
+    func testMakeupSmootherResetsFeatureTopologyLossAndStaleHistory() throws {
+        let base = makeupTrackingFace()
+        let moved = shiftedFace(base, dx: 0.01)
+        var smoother = PreviewSlimLandmarkSmoother(includesAllFeatures: true)
+        _ = smoother.update(faces: [base], observationTime: 1, time: 1)
+        _ = smoother.update(faces: [moved], observationTime: 1.03, time: 1.03)
+        var features = moved.landmarks
+        features[.outerLips] = Array(try XCTUnwrap(features[.outerLips]).dropLast())
+        let changed = DetectedFace(boundingBox: moved.boundingBox, confidence: 1, landmarks: features)
+        XCTAssertEqual(smoother.update(faces: [changed], observationTime: 1.06, time: 1.06), [changed],
+            "A topology change must not pair old landmarks with different new points")
+        features.removeValue(forKey: .innerLips)
+        let missing = DetectedFace(boundingBox: moved.boundingBox, confidence: 1, landmarks: features)
+        XCTAssertEqual(smoother.update(faces: [missing], observationTime: 1.09, time: 1.09), [missing])
+        XCTAssertEqual(smoother.update(faces: [moved], observationTime: 1.12, time: 1.12), [moved],
+            "A returning feature must not acquire stale geometry")
+        XCTAssertTrue(smoother.update(faces: [moved], observationTime: 1.12, time: 1.70).isEmpty)
+        XCTAssertEqual(smoother.update(faces: [base], observationTime: 1.73, time: 1.73), [base])
+        XCTAssertTrue(smoother.update(faces: [], observationTime: 1.76, time: 1.76).isEmpty)
+        XCTAssertEqual(smoother.update(faces: [moved], observationTime: 1.79, time: 1.79), [moved])
+    }
+
+    func testDefaultSlimSmootherStillIgnoresMakeupFeatureMotionAndTopology() throws {
+        let base = makeupTrackingFace()
+        let moved = shiftedFace(base, dx: 1.0 / 600)
+        var changedFeatures = moved.landmarks
+        changedFeatures[.outerLips] = [CGPoint(x: 0.9, y: 0.9)]
+        changedFeatures.removeValue(forKey: .innerLips)
+        let changed = DetectedFace(boundingBox: moved.boundingBox, confidence: 1, landmarks: changedFeatures)
+        var ordinary = PreviewSlimLandmarkSmoother()
+        var changedMakeup = PreviewSlimLandmarkSmoother()
+        _ = ordinary.update(faces: [base], observationTime: 1, time: 1)
+        _ = changedMakeup.update(faces: [base], observationTime: 1, time: 1)
+        let expected = try XCTUnwrap(ordinary.update(faces: [moved], observationTime: 1.03, time: 1.03).first)
+        let actual = try XCTUnwrap(changedMakeup.update(faces: [changed], observationTime: 1.03, time: 1.03).first)
+        XCTAssertEqual(actual, expected,
+            "The existing contour smoother must ignore new makeup tracking features")
+        XCTAssertEqual(Set(actual.landmarks.keys), Set([FacialLandmarkRegion.faceContour]))
+        XCTAssertGreaterThan(actual.boundingBox.minX, base.boundingBox.minX)
+        XCTAssertLessThan(actual.boundingBox.minX, moved.boundingBox.minX,
+            "Makeup topology must not reset the existing Slim history")
+    }
+
+    private func makeupTrackingFace() -> DetectedFace {
+        let base = completeFace()
+        var features = base.landmarks
+        features[.leftEye] = [CGPoint(x: 0.34, y: 0.61), CGPoint(x: 0.37, y: 0.63), CGPoint(x: 0.4, y: 0.61)]
+        features[.rightEye] = [CGPoint(x: 0.6, y: 0.61), CGPoint(x: 0.63, y: 0.63), CGPoint(x: 0.66, y: 0.61)]
+        features[.outerLips] = [CGPoint(x: 0.42, y: 0.34), CGPoint(x: 0.5, y: 0.37),
+                                CGPoint(x: 0.58, y: 0.34), CGPoint(x: 0.5, y: 0.31)]
+        features[.innerLips] = [CGPoint(x: 0.45, y: 0.34), CGPoint(x: 0.5, y: 0.35), CGPoint(x: 0.55, y: 0.34)]
+        return DetectedFace(boundingBox: base.boundingBox, confidence: base.confidence, landmarks: features)
     }
 
     private func shiftedFace(_ face: DetectedFace, dx: CGFloat) -> DetectedFace {

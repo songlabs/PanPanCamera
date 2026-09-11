@@ -18,6 +18,8 @@ struct BeautyPreviewFrame: @unchecked Sendable {
     // Only Slim consumes this Preview-only contour history. nil preserves the
     // stateless geometry path for callers without live detection timing.
     var slimFaces: [DetectedFace]? = nil
+    // Independently smoothed feature history from the SAME Vision observations.
+    var makeupFaces: [DetectedFace]? = nil
 }
 
 /// Owned by one CameraFaceFrameProcessor generation, on its serial video queue.
@@ -25,9 +27,16 @@ struct BeautyPreviewFrame: @unchecked Sendable {
 /// identity is supplied by Vision: smooth only an unambiguous single face and reset
 /// on loss, low confidence, topology/association changes or stale observations.
 struct PreviewSlimLandmarkSmoother {
+    // Reuse the established temporal/association policy for makeup, leaving the
+    // default Slim contour-only behavior and its tuning unchanged.
+    let includesAllFeatures: Bool
     private var previous: DetectedFace?
     private var previousRaw: DetectedFace?
     private var previousTime: TimeInterval?
+
+    init(includesAllFeatures: Bool = false) {
+        self.includesAllFeatures = includesAllFeatures
+    }
 
     mutating func update(faces: [DetectedFace], observationTime: TimeInterval,
                          time: TimeInterval) -> [DetectedFace] {
@@ -38,7 +47,7 @@ struct PreviewSlimLandmarkSmoother {
             return faces // Never blend histories across a primary-face selection.
         }
         guard face.confidence.isFinite, face.confidence >= 0.5,
-              let points = face.landmarks[.faceContour], points.count >= 5,
+              let points = trackingPoints(face), points.count >= 5,
               points.allSatisfy({ $0.x.isFinite && $0.y.isFinite }),
               face.boundingBox.width > 0, face.boundingBox.height > 0 else {
             reset()
@@ -47,7 +56,7 @@ struct PreviewSlimLandmarkSmoother {
         defer { previousRaw = face; previousTime = time }
         guard let previous, let raw = previousRaw, let lastTime = previousTime,
               time >= lastTime, time - lastTime <= 0.25,
-              let oldPoints = previous.landmarks[.faceContour], oldPoints.count == points.count,
+              let oldPoints = trackingPoints(previous), oldPoints.count == points.count,
               associated(raw, face) else {
             self.previous = face
             return [face]
@@ -70,8 +79,18 @@ struct PreviewSlimLandmarkSmoother {
         let smoothed = zip(oldPoints, points).map {
             CGPoint(x: blend($0.x, $1.x), y: blend($0.y, $1.y))
         }
+        var landmarks: [FacialLandmarkRegion: [CGPoint]] = [.faceContour: smoothed]
+        if includesAllFeatures {
+            landmarks = face.landmarks
+            for (name, current) in face.landmarks {
+                guard let old = previous.landmarks[name], old.count == current.count else { continue }
+                landmarks[name] = zip(old, current).map {
+                    CGPoint(x: blend($0.x, $1.x), y: blend($0.y, $1.y))
+                }
+            }
+        }
         let output = DetectedFace(boundingBox: smoothedBox, confidence: face.confidence,
-                                  landmarks: [.faceContour: smoothed])
+                                  landmarks: landmarks)
         self.previous = output
         return [output]
     }
@@ -87,13 +106,21 @@ struct PreviewSlimLandmarkSmoother {
         guard (0.75...1.33).contains(b.width / a.width),
               (0.75...1.33).contains(b.height / a.height),
               hypot((a.midX - b.midX) / a.width, (a.midY - b.midY) / a.height) < 0.20,
-              let oldPoints = old.landmarks[.faceContour],
-              let newPoints = current.landmarks[.faceContour], oldPoints.count == newPoints.count else {
+              let oldPoints = trackingPoints(old),
+              let newPoints = trackingPoints(current), oldPoints.count == newPoints.count else {
             return false
         }
+        if includesAllFeatures && FacialLandmarkRegion.allCases.contains(where: {
+            old.landmarks[$0]?.count != current.landmarks[$0]?.count
+        }) { return false }
         return zip(oldPoints, newPoints).allSatisfy {
             hypot(($0.x - $1.x) / a.width, ($0.y - $1.y) / a.height) < 0.20
         }
+    }
+
+    private func trackingPoints(_ face: DetectedFace) -> [CGPoint]? {
+        if !includesAllFeatures { return face.landmarks[.faceContour] }
+        return FacialLandmarkRegion.allCases.flatMap { face.landmarks[$0] ?? [] }
     }
 }
 

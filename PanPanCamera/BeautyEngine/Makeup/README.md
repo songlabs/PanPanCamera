@@ -1,3 +1,5 @@
 # Makeup
 
-Reserved for future on-device makeup composition. Version 0.1 has a category selection interface only.
+Product makeup is implemented by `Rendering/CoreImage/MakeupProcessingStep.swift`,
+using the existing Vision landmarks and shared Preview/final processing configuration.
+See [implementation and acceptance boundaries](../../../docs/MakeupAndFilters.md).

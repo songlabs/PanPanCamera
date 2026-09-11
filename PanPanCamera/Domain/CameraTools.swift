@@ -8,12 +8,12 @@ enum BeautyCategory: String, CaseIterable, Identifiable {
     var id: Self { self }
 }
 
-enum FilterPreset: String, CaseIterable, Identifiable {
+enum FilterPreset: String, CaseIterable, Identifiable, Sendable {
     case original, natural, clear, warm, cool
     var id: Self { self }
 }
 
-enum MakeupTool: String, CaseIterable, Identifiable {
+enum MakeupTool: String, CaseIterable, Identifiable, Sendable {
     case lip, blush, eye, brow
     var id: Self { self }
 }

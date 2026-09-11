@@ -192,6 +192,7 @@ struct DebugFaceMaskStep {}
         self.assertCountEqual(kernels, [
             APP / 'Rendering/CoreImage/TexturePreservingSkinSmoothingStep.swift',
             APP / 'Rendering/CoreImage/LocalSkinCorrectionStep.swift',
+            APP / 'Rendering/CoreImage/MakeupProcessingStep.swift',
         ])
 
     def test_local_skin_corrections_share_preview_and_final_pipeline_without_new_workers(self):
@@ -202,13 +203,40 @@ struct DebugFaceMaskStep {}
         self.assertNotRegex(code, r'\b(?:CIContext|CGContext|DispatchQueue|Task|URLSession|UIImage)\s*[(.{]')
         self.assertIn('quality == .preview ? 640 : 1280', local)
         self.assertIn('condition: .notOnQueue(.main)', local)
-        self.assertIn('let skinResult = try process(image', processor)
+        self.assertIn('var result = try processFaceEffects(image', processor)
+        self.assertIn('let result = try processSkin(source', processor)
         self.assertEqual(final.count('try processor.process(input'), 2)
         self.assertEqual(final.count('quality: .final'), 2)
         self.assertIn('strength: configuration.effectiveBlemish', processor)
         self.assertIn('strength: configuration.effectiveDarkCircles', processor)
         self.assertLess(processor.index('NaturalSkinToneAdjustmentStep'), processor.index('BlemishAttenuationStep'))
         self.assertLess(processor.index('BlemishAttenuationStep'), processor.index('DarkCircleCorrectionStep'))
+
+    def test_color_effects_use_shared_state_and_all_product_output_paths(self):
+        view = (APP / 'Presentation/Camera/CameraView.swift').read_text(encoding='utf-8')
+        state = (APP / 'Presentation/Camera/CameraToolState.swift').read_text(encoding='utf-8')
+        processor = (APP / 'Rendering/CoreImage/BeautyImageProcessor.swift').read_text(encoding='utf-8')
+        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
+        frame = (APP / 'Camera/Capture/CameraFaceFrameProcessor.swift').read_text(encoding='utf-8')
+        self.assertIn('MakeupPanel(parameters: $camera.beautyParameters)', view)
+        self.assertIn('FilterPanel(parameters: $camera.beautyParameters)', view)
+        self.assertNotRegex(state, r'var (?:makeupTool|filterPreset)')
+        preview = processor.split('func process(_ source:')[0]
+        self.assertLess(preview.index('try processFaceEffects(image'), preview.index('try faceCorrection.makeOutput'))
+        self.assertLess(preview.index('try faceCorrection.makeOutput'), preview.index('try filter.makeOutput'))
+        self.assertIn('configuration: configuration.makeup', processor)
+        self.assertEqual(final.count('configuration.requiresFaceDetection'), 2)
+        self.assertEqual(final.count('|| !configuration.filter.isBypassed'), 2)
+        self.assertEqual(final.count('try processor.process(input'), 2)
+        self.assertIn('makeupFaces: makeupFaces', frame)
+        for name in ('MakeupProcessingStep', 'FilterProcessingStep'):
+            code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
+            self.assertNotRegex(code, r'\b(?:CIContext|DispatchQueue|Task|VisionFaceDetector)\s*\(')
+            self.assertIn('condition: .notOnQueue(.main)', code)
+        for name in ('Makeup/MakeupPanel', 'Filter/FilterPanel'):
+            code = (APP / f'Presentation/{name}.swift').read_text(encoding='utf-8')
+            self.assertIn('compact: true', code)
+            self.assertNotIn('UnimplementedNotice', code)
 
     def test_mock_semantics_do_not_read_pixels_or_classify_skin_color(self):
         code = '\n'.join(line.split('//')[0] for line in

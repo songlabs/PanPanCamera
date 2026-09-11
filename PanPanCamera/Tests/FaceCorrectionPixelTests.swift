@@ -166,6 +166,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 var changes: [Double] = []
                 for strength in [0.0, 0.5, 1.0] {
                     var parameters = BeautyParameters()
+                    for makeup in MakeupTool.allCases { parameters.setValue(0, for: makeup) }
                     parameters.setValue(0, for: SkinTool.auto)
                     for other in FaceTool.allCases where other != .auto { parameters.setValue(0, for: other) }
                     parameters.setValue(strength * 100, for: tool)

@@ -17,14 +17,34 @@ struct BeautyParameters: Equatable, Sendable {
 
     private var skin: [SkinTool: Double] = [:]
     private var face: [FaceTool: Double] = [:]
+    private var makeup: [MakeupTool: Double] = [:]
+    private var filters: [FilterPreset: Double] = [:]
     private(set) var selectedSkin: SkinTool = .auto
     private(set) var selectedFace: FaceTool = .auto
+    private(set) var selectedMakeup: MakeupTool = .lip
+    private(set) var selectedFilter: FilterPreset = .original
 
     func value(for tool: SkinTool) -> Double { skin[tool, default: Self.defaultValue] }
     func value(for tool: FaceTool) -> Double { face[tool, default: Self.defaultValue] }
+    func value(for tool: MakeupTool) -> Double { makeup[tool, default: Self.defaultValue] }
+    func value(for preset: FilterPreset) -> Double {
+        preset == .original ? 0 : filters[preset, default: Self.defaultValue]
+    }
 
     mutating func select(_ tool: SkinTool) { selectedSkin = tool }
     mutating func select(_ tool: FaceTool) { selectedFace = tool }
+    mutating func select(_ tool: MakeupTool) { selectedMakeup = tool }
+    mutating func select(_ preset: FilterPreset) { selectedFilter = preset }
+
+    mutating func setValue(_ value: Double, for tool: MakeupTool) {
+        guard value.isFinite else { return }
+        makeup[tool] = Self.clamp(value)
+    }
+
+    mutating func setValue(_ value: Double, for preset: FilterPreset) {
+        guard value.isFinite, preset != .original else { return }
+        filters[preset] = Self.clamp(value)
+    }
 
     mutating func setValue(_ value: Double, for tool: SkinTool) {
         guard value.isFinite else { return }
@@ -62,12 +82,19 @@ struct BeautyParameters: Equatable, Sendable {
             faceWidthStrength: value(for: FaceTool.width) / Self.range.upperBound,
             chinStrength: value(for: FaceTool.chin) / Self.range.upperBound,
             foreheadStrength: value(for: FaceTool.forehead) / Self.range.upperBound,
-            cheekbonesStrength: value(for: FaceTool.cheekbones) / Self.range.upperBound
+            cheekbonesStrength: value(for: FaceTool.cheekbones) / Self.range.upperBound,
+            makeup: MakeupConfiguration(
+                lip: value(for: MakeupTool.lip) / Self.range.upperBound,
+                blush: value(for: MakeupTool.blush) / Self.range.upperBound,
+                eye: value(for: MakeupTool.eye) / Self.range.upperBound,
+                brow: value(for: MakeupTool.brow) / Self.range.upperBound),
+            filter: FilterConfiguration(preset: selectedFilter,
+                intensity: value(for: selectedFilter) / Self.range.upperBound)
         )
     }
 }
 
-/// Immutable renderer input. Preview and final capture share the skin semantics,
+/// Immutable renderer input. Preview and final capture share skin, makeup and filter semantics,
 /// while Face Correction is consumed only by Preview. Shutter capture still keeps
 /// one value snapshot rather than UI state.
 /// Eye, nose and mouth controls remain absent until reliable
@@ -86,6 +113,8 @@ struct BeautyConfiguration: Equatable, Sendable {
     let chinStrength: Double
     let foreheadStrength: Double
     let cheekbonesStrength: Double
+    let makeup: MakeupConfiguration
+    let filter: FilterConfiguration
 
     init(enabled: Bool = false, overallStrength: Double = 0,
           smoothingStrength: Double = 0, brighteningStrength: Double = 0,
@@ -93,7 +122,8 @@ struct BeautyConfiguration: Equatable, Sendable {
           darkCirclesStrength: Double = 0, faceOverallStrength: Double = 0,
           faceSlimStrength: Double = 0, faceWidthStrength: Double = 0,
           chinStrength: Double = 0, foreheadStrength: Double = 0,
-          cheekbonesStrength: Double = 0) {
+          cheekbonesStrength: Double = 0, makeup: MakeupConfiguration = .disabled,
+          filter: FilterConfiguration = .original) {
         self.enabled = enabled
         self.overallStrength = Self.unit(overallStrength)
         self.smoothingStrength = Self.unit(smoothingStrength)
@@ -107,6 +137,8 @@ struct BeautyConfiguration: Equatable, Sendable {
         self.chinStrength = Self.unit(chinStrength)
         self.foreheadStrength = Self.unit(foreheadStrength)
         self.cheekbonesStrength = Self.unit(cheekbonesStrength)
+        self.makeup = makeup
+        self.filter = filter
     }
 
     static let disabled = Self()
@@ -122,10 +154,18 @@ struct BeautyConfiguration: Equatable, Sendable {
     var effectiveForehead: Double { faceOverallStrength * foreheadStrength }
     var effectiveCheekbones: Double { faceOverallStrength * cheekbonesStrength }
 
-    var isPhotoBypassed: Bool {
+    var isSkinBypassed: Bool {
         !enabled ||
             (effectiveSmoothing == 0 && effectiveBrightening == 0 && effectiveTone == 0 &&
                 effectiveBlemish == 0 && effectiveDarkCircles == 0)
+    }
+
+    var isPhotoBypassed: Bool {
+        !enabled || (isSkinBypassed && makeup.isBypassed && filter.isBypassed)
+    }
+
+    var requiresFaceDetection: Bool {
+        enabled && (!isSkinBypassed || !makeup.isBypassed)
     }
 
     var isFaceCorrectionBypassed: Bool {

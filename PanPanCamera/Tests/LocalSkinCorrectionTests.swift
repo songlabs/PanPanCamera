@@ -212,6 +212,7 @@ final class LocalSkinCorrectionTests: XCTestCase {
             let store = BeautyConfigurationStore()
             for (tool, p) in [(SkinTool.blemish, blemishPoint(face)), (.darkCircles, darkPoint)] {
                 var values = BeautyParameters()
+                for makeup in MakeupTool.allCases { values.setValue(0, for: makeup) }
                 values.setValue(0, for: FaceTool.auto)
                 values.setValue(100, for: SkinTool.auto)
                 for child in SkinTool.allCases where child != .auto { values.setValue(0, for: child) }

@@ -1,5 +1,12 @@
 # Local Beauty processing pipelines
 
+Product color effects now use shared MakeupConfiguration/FilterConfiguration. Preview
+composes skin -> landmark makeup -> existing face warp -> global filter. Final capture
+composes skin -> makeup -> filter; face warp stays Preview-only. Global filters work
+without faces. See [makeup/filter implementation and acceptance](../../docs/MakeupAndFilters.md)
+for current state, parameter rules, algorithms, tests and device limitations. Historical
+validation counts below describe their original development stages.
+
 The original AVCaptureVideoPreviewLayer remains active as the zero-strength and failure
 fallback. When implemented Beauty effects are active, CameraFaceFrameProcessor places
 only its newest native frame in BeautyPreviewFrameStore. BeautyPreviewRenderer consumes

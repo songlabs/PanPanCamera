@@ -1,5 +1,11 @@
 # Natural Skin Tone & Illumination / Natural Skin Retouch
 
+Product makeup and global filters are now additional shared Preview/Capture stages;
+see [MakeupAndFilters.md](../../../docs/MakeupAndFilters.md) for their current contract,
+bounded recipes, native-output integration and Apple/device acceptance limits. Makeup
+reuses local mask helpers and adds a cached brow-detail kernel; the older DEBUG-stage
+reports below are historical and do not describe this task's verification results.
+
 The reusable texture, protection and tone components are now called by
 BeautyImageProcessor for the production preview and final-photo paths as well as by the
 independent DebugPhotoProcessing diagnostics. Preview consumes cached live Vision face

@@ -2381,6 +2381,41 @@
         }
       }
     },
+    "filter.clear.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "明るさを少し上げ、重い色味をやわらげます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "略微提亮并减轻过重色彩，让画面更清透。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "略微提亮並減輕過重色彩，讓畫面更清透。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Lift brightness and soften heavy colors for a clearer look."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "밝기를 조금 높이고 짙은 색감을 부드럽게 조정합니다."
+          }
+        }
+      }
+    },
     "filter.cool": {
       "extractionState": "manual",
       "localizations": {
@@ -2416,37 +2451,37 @@
         }
       }
     },
-    "filter.detail": {
+    "filter.cool.detail": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "プリセットの選択のみ対応しています。フィルターの効果はプレビューにも写真にも適用されません。"
+            "value": "青みを抑えながら、ほんのり涼しげな色合いに。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前仅支持预设选择，滤镜效果不会应用于预览或照片。"
+            "value": "轻微增加冷色倾向，避免明显偏蓝。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "目前僅支援預設選擇，濾鏡效果不會套用至預覽或照片。"
+            "value": "輕微增加冷色傾向，避免明顯偏藍。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Preset selection only. Filter effects are not applied to the preview or photos."
+            "value": "Add a subtle cool tone while keeping blue tones restrained."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "지금은 프리셋만 선택할 수 있어요. 필터 효과는 미리보기와 사진에 적용되지 않아요."
+            "value": "푸른 기운은 억제하면서 은은한 차가운 색감을 더합니다."
           }
         }
       }
@@ -2486,6 +2521,41 @@
         }
       }
     },
+    "filter.natural.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "色と明暗を控えめに整え、自然な印象に。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻微调整整体色彩与明暗，保留自然观感。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輕微調整整體色彩與明暗，保留自然觀感。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gently balance color and contrast for a natural look."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "전체 색감과 명암을 가볍게 조정해 자연스럽게 표현합니다."
+          }
+        }
+      }
+    },
     "filter.original": {
       "extractionState": "manual",
       "localizations": {
@@ -2517,6 +2587,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "원본"
+          }
+        }
+      }
+    },
+    "filter.original.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "フィルターを加えず、現在の画像を保ちます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留当前图像，不添加滤镜。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留目前影像，不加入濾鏡。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Keep the current image without adding a filter."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "현재 이미지에 필터를 추가하지 않습니다."
+          }
+        }
+      }
+    },
+    "filter.strengthRange": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% フィルターなし · 100% フル効果"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 原图 · 100% 完整效果"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 原圖 · 100% 完整效果"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% Original · 100% Full effect"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 원본 · 100% 전체 효과"
           }
         }
       }
@@ -2587,6 +2727,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "따뜻하게"
+          }
+        }
+      }
+    },
+    "filter.warm.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "黄みを抑えながら、ほんのり暖かい色合いに。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻微增加暖色倾向，避免明显偏黄。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輕微增加暖色傾向，避免明顯偏黃。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add subtle warmth while keeping yellow tones restrained."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "노란 기운은 억제하면서 은은한 따뜻함을 더합니다."
           }
         }
       }
@@ -2836,6 +3011,41 @@
         }
       }
     },
+    "makeup.blush.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "頬にやわらかな血色を加え、自然になじませます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为双颊增加柔和气色，让边缘自然融入肤色。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "為雙頰增加柔和氣色，讓邊緣自然融入膚色。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add a soft flush to the cheeks with gently blended edges."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "양 볼에 은은한 생기를 더하고 경계를 부드럽게 표현합니다."
+          }
+        }
+      }
+    },
     "makeup.brow": {
       "extractionState": "manual",
       "localizations": {
@@ -2871,37 +3081,37 @@
         }
       }
     },
-    "makeup.detail": {
+    "makeup.brow.detail": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "メイクの項目選択のみ対応しています。色やメイクの効果はまだ適用されません。"
+            "value": "眉の形と毛の質感を保ち、色を少し深めます。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "当前仅支持选择美妆类别，尚未应用颜色或美妆效果。"
+            "value": "轻量加深眉部颜色，保留原有眉形和毛发纹理。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "目前僅支援選擇美妝類別，尚未套用顏色或美妝效果。"
+            "value": "輕量加深眉部顏色，保留原有眉形和毛髮紋理。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Category selection only. Colors and makeup effects are not applied yet."
+            "value": "Gently deepen brow color while preserving shape and texture."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "지금은 메이크업 종류만 선택할 수 있어요. 색상과 메이크업 효과는 아직 적용되지 않아요."
+            "value": "본래 눈썹 모양과 결을 살리며 색을 조금 진하게 합니다."
           }
         }
       }
@@ -2941,6 +3151,41 @@
         }
       }
     },
+    "makeup.eye.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目の輪郭に沿って、目元を控えめに引き立てます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沿眼部轮廓轻量增强眼周，保留自然眼神。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "沿眼部輪廓輕量增強眼周，保留自然眼神。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gently enhance the eye area along its natural contours."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "눈의 자연스러운 윤곽을 따라 눈 주변을 은은하게 강조합니다."
+          }
+        }
+      }
+    },
     "makeup.lip": {
       "extractionState": "manual",
       "localizations": {
@@ -2972,6 +3217,76 @@
           "stringUnit": {
             "state": "translated",
             "value": "립"
+          }
+        }
+      }
+    },
+    "makeup.lip.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "唇の質感と陰影を保ち、自然な血色を加えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自然调整唇部颜色，保留纹理和明暗层次。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自然調整唇部顏色，保留紋理和明暗層次。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Add natural lip color while preserving texture and shading."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "입술의 질감과 명암을 살리며 자연스러운 색을 더합니다."
+          }
+        }
+      }
+    },
+    "makeup.strengthRange": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 処理なし · 100% 最大"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 不处理 · 100% 最大"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 不處理 · 100% 最大"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% No effect · 100% Maximum"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 효과 없음 · 100% 최대"
           }
         }
       }
@@ -3437,31 +3752,31 @@
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "写真撮影、結果プレビュー、美肌のリアルタイム表示と写真への適用に対応しています。顔補正、メイク、フィルターは調整・選択画面のみです。ビデオ、ポートレート、アルバム、比率変更、タイマーは未対応です。"
+            "value": "写真撮影、結果プレビュー、美肌・メイク・フィルターのリアルタイム表示と写真への適用に対応しています。小顔・顔幅・あご・おでこ・頬骨の補正はリアルタイム表示のみです。目・鼻・口の形状補正、ビデオ、ポートレート、アルバム、比率変更、タイマーは未対応です。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "支持拍照、结果预览，以及美肌实时预览和照片处理。美型、美妆与滤镜仅提供调整或选择界面。暂不支持视频、人像、相册、画幅更改或定时拍摄。"
+            "value": "支持拍照、结果预览，以及美肌、美妆和滤镜的实时预览与照片处理。小脸、脸宽、下巴、额头和颧骨调整仅用于实时预览。暂不支持眼、鼻、嘴的形状调整，以及视频、人像、相册、画幅更改或定时拍摄。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "支援拍照、結果預覽，以及美肌即時預覽和相片處理。美型、美妝與濾鏡僅提供調整或選擇介面。尚未支援影片、人像、相簿、比例變更或計時拍攝。"
+            "value": "支援拍照、結果預覽，以及美肌、美妝和濾鏡的即時預覽與相片處理。小臉、臉寬、下巴、額頭和顴骨調整僅用於即時預覽。尚未支援眼、鼻、嘴的形狀調整，以及影片、人像、相簿、比例變更或計時拍攝。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Photo capture, result preview, and live/final skin processing are implemented. Reshape, makeup, and filters provide controls only. Video, portrait, album, ratio changes, and timer capture are unavailable."
+            "value": "Photo capture, result preview, and live/final skin, makeup, and filter processing are implemented. Slim, face width, chin, forehead, and cheekbone adjustments apply to live preview only. Eye, nose, and mouth reshaping, video, portrait, album, ratio changes, and timer capture are unavailable."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "사진 촬영, 결과 미리보기, 피부 보정의 실시간 미리보기와 사진 적용을 지원해요. 얼굴 보정, 메이크업, 필터는 조절 또는 선택 화면만 제공해요. 동영상, 인물 모드, 앨범, 비율 변경, 타이머 촬영은 아직 지원하지 않아요."
+            "value": "사진 촬영, 결과 미리보기, 피부 보정·메이크업·필터의 실시간 미리보기와 사진 적용을 지원해요. 작은 얼굴, 얼굴 너비, 턱, 이마, 광대뼈 조정은 실시간 미리보기에만 적용돼요. 눈·코·입 형태 보정, 동영상, 인물 모드, 앨범, 비율 변경, 타이머 촬영은 아직 지원하지 않아요."
           }
         }
       }

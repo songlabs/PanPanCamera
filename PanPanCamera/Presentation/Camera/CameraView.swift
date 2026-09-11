@@ -187,8 +187,8 @@ struct CameraView: View {
         switch panel {
         case .beauty: BeautyPanel(parameters: $camera.beautyParameters,
                                   category: $tools.beautyCategory)
-        case .filters: FilterPanel(selection: $tools.filterPreset)
-        case .makeup: MakeupPanel(selection: $tools.makeupTool)
+        case .filters: FilterPanel(parameters: $camera.beautyParameters)
+        case .makeup: MakeupPanel(parameters: $camera.beautyParameters)
         case .settings: SettingsView()
         case .album: FeaturePlaceholderView(title: .album, detail: .albumDetail)
         case .aspectRatio: FeaturePlaceholderView(title: .aspectRatio, detail: .aspectRatioDetail, current: .nativeSensor)

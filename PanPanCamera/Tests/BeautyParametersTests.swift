@@ -14,7 +14,110 @@ final class BeautyParametersTests: XCTestCase {
             blemishStrength: 0.5, darkCirclesStrength: 0.5,
             faceOverallStrength: 0.5, faceSlimStrength: 0.5,
             faceWidthStrength: 0.5, chinStrength: 0.5,
-            foreheadStrength: 0.5, cheekbonesStrength: 0.5))
+            foreheadStrength: 0.5, cheekbonesStrength: 0.5,
+            makeup: MakeupConfiguration(lip: 0.5, blush: 0.5, eye: 0.5, brow: 0.5)))
+    }
+
+    func testMakeupMappingAndToolSelectionPreserveIndependentValues() {
+        var values = BeautyParameters()
+        let controls: [(MakeupTool, KeyPath<MakeupConfiguration, Double>)] = [
+            (.lip, \.lip), (.blush, \.blush), (.eye, \.eye), (.brow, \.brow)
+        ]
+        for (tool, key) in controls {
+            XCTAssertEqual(values.value(for: tool), 50)
+            values.select(tool)
+            for strength in [0.0, 25, 50, 75, 100] {
+                values.setValue(strength, for: values.selectedMakeup)
+                XCTAssertEqual(values.processingConfiguration.makeup[keyPath: key], strength / 100)
+                for (other, _) in controls where other != tool {
+                    XCTAssertEqual(values.value(for: other), 50)
+                }
+            }
+            values.setValue(50, for: tool)
+        }
+        values.setValue(23, for: MakeupTool.lip)
+        values.select(MakeupTool.brow)
+        values.setValue(81, for: values.selectedMakeup)
+        values.select(MakeupTool.lip)
+        XCTAssertEqual(values.value(for: values.selectedMakeup), 23)
+        XCTAssertEqual(values.value(for: MakeupTool.brow), 81)
+        XCTAssertEqual(values.value(for: SkinTool.auto), 50)
+        XCTAssertEqual(values.value(for: FaceTool.auto), 50)
+    }
+
+    func testFilterPresetSelectionPreservesIntensityAndOriginalAlwaysBypasses() {
+        var values = BeautyParameters()
+        XCTAssertEqual(values.selectedFilter, .original)
+        XCTAssertEqual(values.value(for: FilterPreset.original), 0)
+        for preset in FilterPreset.allCases where preset != .original {
+            values.select(preset)
+            XCTAssertEqual(values.value(for: preset), 50)
+            for strength in [0.0, 25, 50, 100] {
+                values.setValue(strength, for: preset)
+                XCTAssertEqual(values.processingConfiguration.filter.preset, preset)
+                XCTAssertEqual(values.processingConfiguration.filter.intensity, strength / 100)
+                XCTAssertEqual(values.processingConfiguration.filter.isBypassed, strength == 0)
+            }
+        }
+        values.setValue(37, for: FilterPreset.warm)
+        values.select(FilterPreset.original)
+        values.setValue(100, for: FilterPreset.original)
+        XCTAssertEqual(values.processingConfiguration.filter, .original)
+        values.select(FilterPreset.warm)
+        XCTAssertEqual(values.value(for: values.selectedFilter), 37)
+        XCTAssertEqual(values.processingConfiguration.filter.intensity, 0.37)
+    }
+
+    func testColorControlsClampAndRejectInvalidUIValues() {
+        var values = BeautyParameters()
+        for input in [-10.0, 0, 50, 100, 150] {
+            for tool in MakeupTool.allCases { values.setValue(input, for: tool) }
+            for preset in FilterPreset.allCases { values.setValue(input, for: preset) }
+            for tool in MakeupTool.allCases { XCTAssertEqual(values.value(for: tool), min(100, max(0, input))) }
+            for preset in FilterPreset.allCases where preset != .original {
+                XCTAssertEqual(values.value(for: preset), min(100, max(0, input)))
+            }
+        }
+        let before = values
+        for invalid in [Double.nan, .infinity, -.infinity] {
+            for tool in MakeupTool.allCases { values.setValue(invalid, for: tool) }
+            for preset in FilterPreset.allCases { values.setValue(invalid, for: preset) }
+        }
+        XCTAssertEqual(values, before)
+        for input in [-1.0, 0, 0.5, 1, 2, .nan, .infinity] {
+            let expected = input.isFinite ? min(1, max(0, input)) : 0
+            let makeup = MakeupConfiguration(lip: input, blush: input, eye: input, brow: input)
+            XCTAssertEqual([makeup.lip, makeup.blush, makeup.eye, makeup.brow], Array(repeating: expected, count: 4))
+            XCTAssertEqual(makeup.isBypassed, expected == 0)
+            XCTAssertEqual(FilterConfiguration(preset: .warm, intensity: input).intensity, expected)
+            XCTAssertTrue(FilterConfiguration(preset: .original, intensity: input).isBypassed)
+        }
+    }
+
+    func testSkinFaceMakeupAndFilterRemainIndependentInOneSnapshot() {
+        var values = BeautyParameters()
+        values.setValue(80, for: SkinTool.auto)
+        values.setValue(40, for: FaceTool.auto)
+        values.setValue(70, for: MakeupTool.lip)
+        values.select(FilterPreset.cool)
+        values.setValue(30, for: FilterPreset.cool)
+        let snapshot = values.processingConfiguration
+        values.setValue(0, for: SkinTool.auto)
+        values.setValue(0, for: FaceTool.auto)
+        XCTAssertEqual(values.processingConfiguration.makeup, snapshot.makeup)
+        XCTAssertEqual(values.processingConfiguration.filter, snapshot.filter)
+        XCTAssertFalse(values.processingConfiguration.isPhotoBypassed)
+        for tool in MakeupTool.allCases { values.setValue(0, for: tool) }
+        XCTAssertFalse(values.processingConfiguration.requiresFaceDetection)
+        XCTAssertFalse(values.processingConfiguration.isBypassed)
+        values.select(FilterPreset.original)
+        XCTAssertTrue(values.processingConfiguration.isBypassed)
+        XCTAssertEqual(snapshot.makeup.lip, 0.7)
+        XCTAssertEqual(snapshot.filter.intensity, 0.3)
+        XCTAssertEqual(snapshot.effectiveSmoothing, 0.64, accuracy: 0.000_001)
+        XCTAssertEqual(snapshot.effectiveFaceSlim, 0.16, accuracy: 0.000_001)
+        XCTAssertTrue(BeautyConfiguration(enabled: false, makeup: snapshot.makeup,
+                                         filter: snapshot.filter).isBypassed)
     }
 
     func testConfigurationClampsEveryNormalizedInputAndRejectsNonfiniteValues() {

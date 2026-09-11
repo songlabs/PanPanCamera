@@ -21,9 +21,11 @@ final class FinalBeautyProcessor: @unchecked Sendable {
         let rawOrientation = (metadata[kCGImagePropertyOrientation as String] as? NSNumber)?.uint32Value ?? 1
         let orientation = CGImagePropertyOrientation(rawValue: rawOrientation) ?? .up
         do {
-            let faces = try detector.detect(image, orientation: orientation)
-            // No detected face means an exact original-data bypass, not a needless JPEG generation.
-            guard !faces.isEmpty else { return data }
+            let faces = configuration.requiresFaceDetection
+                ? try detector.detect(image, orientation: orientation) : []
+            // Global filters work on scenes without faces. Face-only jobs retain
+            // the exact original bytes when Vision finds no face.
+            guard !faces.isEmpty || !configuration.filter.isBypassed else { return data }
             var input = CIImage(cgImage: image).oriented(orientation)
             input = input.transformed(by: CGAffineTransform(translationX: -input.extent.minX,
                                                             y: -input.extent.minY))
@@ -41,8 +43,9 @@ final class FinalBeautyProcessor: @unchecked Sendable {
         // Face Correction is intentionally Preview-only in this task.
         guard !configuration.isPhotoBypassed else { return silentEncoder.encode(frame) }
         do {
-            let detected = try detector.detect(frame.pixelBuffer, orientation: frame.orientation)
-            guard !detected.isEmpty else { return silentEncoder.encode(frame) }
+            let detected = configuration.requiresFaceDetection
+                ? try detector.detect(frame.pixelBuffer, orientation: frame.orientation) : []
+            guard !detected.isEmpty || !configuration.filter.isBypassed else { return silentEncoder.encode(frame) }
             let faces = BeautyImageProcessor.reorientedFaces(detected, from: frame.orientation,
                 to: frame.orientation, mirrored: frame.mirrored)
             let exif = SilentFrameOrientation.exif(captureOrientation: frame.orientation,

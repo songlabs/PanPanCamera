@@ -37,12 +37,14 @@ enum BeautyEffectAmplitude {
     static let finalToneConsistency = 0.50
 }
 
-/// Shared skin-effect definition plus Preview-only face geometry. Preview supplies
-/// a smaller aspect-filled image while final capture supplies native photo pixels;
-/// Face Correction deliberately stops at the Preview boundary.
+/// Shared skin, makeup and global color effects plus Preview-only face geometry.
+/// Makeup is composited in landmark space before warping the combined pixels;
+/// the global filter always consumes the final result of the preceding steps.
 struct BeautyImageProcessor: Sendable {
     enum Failure: Error { case invalidExtent }
     private let faceCorrection = FaceCorrectionPreviewStep()
+    private let makeup = MakeupProcessingStep()
+    private let filter = FilterProcessingStep()
 
     func previewImage(for frame: BeautyPreviewFrame, displayRotationAngle: CGFloat,
                       targetSize: CGSize) throws -> CIImage? {
@@ -69,6 +71,9 @@ struct BeautyImageProcessor: Sendable {
         var slimFaces = frame.slimFaces.map {
             Self.reorientedFaces($0, from: frame.orientation, to: displayOrientation, mirrored: false)
         }
+        var makeupFaces = frame.makeupFaces.map {
+            Self.reorientedFaces($0, from: frame.orientation, to: displayOrientation, mirrored: false)
+        }
         let normalizedAngle = (displayRotationAngle.truncatingRemainder(dividingBy: 360) + 360)
             .truncatingRemainder(dividingBy: 360)
         var residual = normalizedAngle - CGFloat(displayOrientation.rawValue)
@@ -89,6 +94,10 @@ struct BeautyImageProcessor: Sendable {
                 Self.transformedFaces($0, sourceExtent: originalExtent,
                                       transform: rotation, outputExtent: rotated.extent)
             }
+            makeupFaces = makeupFaces.map {
+                Self.transformedFaces($0, sourceExtent: originalExtent,
+                                      transform: rotation, outputExtent: rotated.extent)
+            }
             image = rotated.transformed(by: translation)
         }
         if frame.mirrored {
@@ -97,6 +106,9 @@ struct BeautyImageProcessor: Sendable {
             orientedFaces = Self.reorientedFaces(orientedFaces, from: displayOrientation,
                                                  to: displayOrientation, mirrored: true)
             slimFaces = slimFaces.map {
+                Self.reorientedFaces($0, from: displayOrientation, to: displayOrientation, mirrored: true)
+            }
+            makeupFaces = makeupFaces.map {
                 Self.reorientedFaces($0, from: displayOrientation, to: displayOrientation, mirrored: true)
             }
         }
@@ -111,6 +123,9 @@ struct BeautyImageProcessor: Sendable {
         let fittedFaces = Self.fittedFaces(orientedFaces, sourceExtent: sourceExtent,
                                            targetExtent: target, transform: transform)
         let fittedSlimFaces = slimFaces.map {
+            Self.fittedFaces($0, sourceExtent: sourceExtent, targetExtent: target, transform: transform)
+        }
+        let fittedMakeupFaces = makeupFaces.map {
             Self.fittedFaces($0, sourceExtent: sourceExtent, targetExtent: target, transform: transform)
         }
         let geometry = FaceCorrectionGeometry.result(faces: fittedFaces,
@@ -136,27 +151,44 @@ struct BeautyImageProcessor: Sendable {
             displayRotationAngle: displayRotationAngle,
             mirrored: frame.mirrored
         )
-        guard !frame.configuration.isBypassed, !fittedFaces.isEmpty else {
+        guard !frame.configuration.isBypassed else {
             return BeautyPreviewProcessingResult(image: nil, geometryDebug: debug)
         }
-        let skinResult = try process(image, faces: fittedFaces, configuration: frame.configuration,
-                                     quality: .preview)
-        if let faceResult = try faceCorrection.makeOutput(source: skinResult,
-                                                          warps: geometry.warps) {
-            return BeautyPreviewProcessingResult(image: faceResult, geometryDebug: debug)
+        var result = try processFaceEffects(image, faces: fittedFaces,
+            makeupFaces: fittedMakeupFaces, configuration: frame.configuration, quality: .preview)
+        if let shaped = try faceCorrection.makeOutput(source: result, warps: geometry.warps) {
+            result = shaped
         }
-        // If only Face Correction is active but usable landmarks are unavailable,
-        // keep the original AVCaptureVideoPreviewLayer visible instead of rendering raw pixels again.
-        return BeautyPreviewProcessingResult(
-            image: frame.configuration.isPhotoBypassed ? nil : skinResult,
-            geometryDebug: debug
-        )
+        if let colored = try filter.makeOutput(source: result, configuration: frame.configuration.filter) {
+            result = colored
+        }
+        // No face/usable feature and no filter: use the native preview fallback.
+        return BeautyPreviewProcessingResult(image: result === image ? nil : result, geometryDebug: debug)
     }
 
     func process(_ source: CIImage, faces: [DetectedFace], configuration: BeautyConfiguration,
                  quality: BeautyProcessingQuality) throws -> CIImage {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        guard !configuration.isPhotoBypassed, !faces.isEmpty else { return source }
+        guard !configuration.isPhotoBypassed else { return source }
+        let result = try processFaceEffects(source, faces: faces, configuration: configuration, quality: quality)
+        return try filter.makeOutput(source: result, configuration: configuration.filter) ?? result
+    }
+
+    func processFaceEffects(_ source: CIImage, faces: [DetectedFace],
+                            makeupFaces: [DetectedFace]? = nil,
+                            configuration: BeautyConfiguration,
+                            quality: BeautyProcessingQuality) throws -> CIImage {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        guard configuration.enabled else { return source }
+        let result = try processSkin(source, faces: faces, configuration: configuration, quality: quality)
+        return try makeup.makeOutput(source: result, faces: makeupFaces ?? faces,
+                                     configuration: configuration.makeup) ?? result
+    }
+
+    private func processSkin(_ source: CIImage, faces: [DetectedFace], configuration: BeautyConfiguration,
+                             quality: BeautyProcessingQuality) throws -> CIImage {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        guard !configuration.isSkinBypassed, !faces.isEmpty else { return source }
         guard !source.extent.isEmpty, !source.extent.isInfinite, !source.extent.isNull else {
             throw Failure.invalidExtent
         }
