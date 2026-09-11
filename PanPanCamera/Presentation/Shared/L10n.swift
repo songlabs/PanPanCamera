@@ -51,7 +51,14 @@ enum L10n: String, CaseIterable {
     case intensity = "beauty.intensity"
     case auto = "beauty.auto"
     case beautyOverall = "beauty.overall"
-    case beautySkinUnavailableDetail = "beauty.skin.unavailableDetail"
+    case skinOverallDetail = "beauty.skin.overallDetail"
+    case skinOverallRange = "beauty.skin.overallRange"
+    case skinStrengthRange = "beauty.skin.strengthRange"
+    case skinSmoothDetail = "skin.smooth.detail"
+    case skinBrightenDetail = "skin.brighten.detail"
+    case skinToneDetail = "skin.tone.detail"
+    case skinBlemishDetail = "skin.blemish.detail"
+    case skinDarkCirclesDetail = "skin.darkCircles.detail"
     case faceOverallDetail = "beauty.face.overallDetail"
     case faceOverallRange = "beauty.face.overallRange"
     case faceStrengthRange = "beauty.face.strengthRange"
@@ -172,6 +179,19 @@ extension BeautyCategory {
 }
 
 extension SkinTool {
+    var detail: L10n {
+        switch self {
+        case .auto: return .skinOverallDetail
+        case .smooth: return .skinSmoothDetail
+        case .brighten: return .skinBrightenDetail
+        case .tone: return .skinToneDetail
+        case .blemish: return .skinBlemishDetail
+        case .darkCircles: return .skinDarkCirclesDetail
+        }
+    }
+
+    var strengthRangeDetail: L10n { self == .auto ? .skinOverallRange : .skinStrengthRange }
+
     var label: L10n {
         switch self {
         case .auto: return .beautyOverall

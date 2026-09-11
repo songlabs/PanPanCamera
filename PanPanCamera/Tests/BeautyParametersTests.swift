@@ -11,6 +11,7 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(values.processingConfiguration, BeautyConfiguration(
             enabled: true, overallStrength: 0.5, smoothingStrength: 0.5,
             brighteningStrength: 0.5, toneStrength: 0.5,
+            blemishStrength: 0.5, darkCirclesStrength: 0.5,
             faceOverallStrength: 0.5, faceSlimStrength: 0.5,
             faceWidthStrength: 0.5, chinStrength: 0.5,
             foreheadStrength: 0.5, cheekbonesStrength: 0.5))
@@ -121,6 +122,8 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(configuration.effectiveSmoothing, 0.09, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveBrightening, 0.09, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveTone, 0.09, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveBlemish, 0.09, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveDarkCircles, 0.09, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveFaceSlim, 0.09, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveFaceWidth, 0.09, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveChin, 0.09, accuracy: 0.000_001)
@@ -211,21 +214,43 @@ final class BeautyParametersTests: XCTestCase {
                 for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones] {
                     values.setValue(strength * 100, for: tool)
                 }
-                for tool in [SkinTool.smooth, .brighten, .tone] {
+                for tool in [SkinTool.smooth, .brighten, .tone, .blemish, .darkCircles] {
                     values.setValue(strength * 100, for: tool)
                 }
                 let config = values.processingConfiguration
                 for actual in [config.faceSlimStrength, config.faceWidthStrength, config.chinStrength,
                                config.foreheadStrength, config.cheekbonesStrength,
-                               config.smoothingStrength, config.brighteningStrength, config.toneStrength] {
+                               config.smoothingStrength, config.brighteningStrength, config.toneStrength,
+                               config.blemishStrength, config.darkCirclesStrength] {
                     XCTAssertEqual(actual, strength, accuracy: 0.000_001)
                 }
                 for actual in [config.effectiveFaceSlim, config.effectiveFaceWidth, config.effectiveChin,
                                config.effectiveForehead, config.effectiveCheekbones,
-                               config.effectiveSmoothing, config.effectiveBrightening, config.effectiveTone] {
+                               config.effectiveSmoothing, config.effectiveBrightening, config.effectiveTone,
+                               config.effectiveBlemish, config.effectiveDarkCircles] {
                     XCTAssertEqual(actual, auto * strength, accuracy: 0.000_001)
                 }
             }
         }
+    }
+
+    func testLocalSkinControlsClampAndIndividuallyPreventPhotoBypass() {
+        for input in [-1.0, 0, 0.5, 1, 2, .nan, .infinity, -.infinity] {
+            let expected = input.isFinite ? min(1, max(0, input)) : 0
+            let blemish = BeautyConfiguration(enabled: true, overallStrength: 1, blemishStrength: input)
+            let dark = BeautyConfiguration(enabled: true, overallStrength: 1, darkCirclesStrength: input)
+            XCTAssertEqual(blemish.blemishStrength, expected)
+            XCTAssertEqual(dark.darkCirclesStrength, expected)
+            XCTAssertEqual(blemish.effectiveBlemish, expected)
+            XCTAssertEqual(dark.effectiveDarkCircles, expected)
+            XCTAssertEqual(blemish.isPhotoBypassed, expected == 0)
+            XCTAssertEqual(dark.isPhotoBypassed, expected == 0)
+            XCTAssertEqual(blemish.isBypassed, expected == 0)
+            XCTAssertEqual(dark.isBypassed, expected == 0)
+        }
+        XCTAssertTrue(BeautyConfiguration(enabled: true, overallStrength: 0,
+            blemishStrength: 1, darkCirclesStrength: 1).isPhotoBypassed)
+        XCTAssertTrue(BeautyConfiguration(enabled: false, overallStrength: 1,
+            blemishStrength: 1, darkCirclesStrength: 1).isPhotoBypassed)
     }
 }

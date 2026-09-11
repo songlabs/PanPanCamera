@@ -55,6 +55,8 @@ struct BeautyParameters: Equatable, Sendable {
             smoothingStrength: value(for: SkinTool.smooth) / Self.range.upperBound,
             brighteningStrength: value(for: SkinTool.brighten) / Self.range.upperBound,
             toneStrength: value(for: SkinTool.tone) / Self.range.upperBound,
+            blemishStrength: value(for: SkinTool.blemish) / Self.range.upperBound,
+            darkCirclesStrength: value(for: SkinTool.darkCircles) / Self.range.upperBound,
             faceOverallStrength: value(for: FaceTool.auto) / Self.range.upperBound,
             faceSlimStrength: value(for: FaceTool.slim) / Self.range.upperBound,
             faceWidthStrength: value(for: FaceTool.width) / Self.range.upperBound,
@@ -68,7 +70,7 @@ struct BeautyParameters: Equatable, Sendable {
 /// Immutable renderer input. Preview and final capture share the skin semantics,
 /// while Face Correction is consumed only by Preview. Shutter capture still keeps
 /// one value snapshot rather than UI state.
-/// Blemish, dark-circle, eye, nose and mouth controls remain absent until reliable
+/// Eye, nose and mouth controls remain absent until reliable
 /// local processors for those controls exist. Face geometry is Preview-only.
 struct BeautyConfiguration: Equatable, Sendable {
     let enabled: Bool
@@ -76,6 +78,8 @@ struct BeautyConfiguration: Equatable, Sendable {
     let smoothingStrength: Double
     let brighteningStrength: Double
     let toneStrength: Double
+    let blemishStrength: Double
+    let darkCirclesStrength: Double
     let faceOverallStrength: Double
     let faceSlimStrength: Double
     let faceWidthStrength: Double
@@ -85,7 +89,8 @@ struct BeautyConfiguration: Equatable, Sendable {
 
     init(enabled: Bool = false, overallStrength: Double = 0,
           smoothingStrength: Double = 0, brighteningStrength: Double = 0,
-          toneStrength: Double = 0, faceOverallStrength: Double = 0,
+          toneStrength: Double = 0, blemishStrength: Double = 0,
+          darkCirclesStrength: Double = 0, faceOverallStrength: Double = 0,
           faceSlimStrength: Double = 0, faceWidthStrength: Double = 0,
           chinStrength: Double = 0, foreheadStrength: Double = 0,
           cheekbonesStrength: Double = 0) {
@@ -94,6 +99,8 @@ struct BeautyConfiguration: Equatable, Sendable {
         self.smoothingStrength = Self.unit(smoothingStrength)
         self.brighteningStrength = Self.unit(brighteningStrength)
         self.toneStrength = Self.unit(toneStrength)
+        self.blemishStrength = Self.unit(blemishStrength)
+        self.darkCirclesStrength = Self.unit(darkCirclesStrength)
         self.faceOverallStrength = Self.unit(faceOverallStrength)
         self.faceSlimStrength = Self.unit(faceSlimStrength)
         self.faceWidthStrength = Self.unit(faceWidthStrength)
@@ -107,6 +114,8 @@ struct BeautyConfiguration: Equatable, Sendable {
     var effectiveSmoothing: Double { overallStrength * smoothingStrength }
     var effectiveBrightening: Double { overallStrength * brighteningStrength }
     var effectiveTone: Double { overallStrength * toneStrength }
+    var effectiveBlemish: Double { overallStrength * blemishStrength }
+    var effectiveDarkCircles: Double { overallStrength * darkCirclesStrength }
     var effectiveFaceSlim: Double { faceOverallStrength * faceSlimStrength }
     var effectiveFaceWidth: Double { faceOverallStrength * faceWidthStrength }
     var effectiveChin: Double { faceOverallStrength * chinStrength }
@@ -115,7 +124,8 @@ struct BeautyConfiguration: Equatable, Sendable {
 
     var isPhotoBypassed: Bool {
         !enabled ||
-            (effectiveSmoothing == 0 && effectiveBrightening == 0 && effectiveTone == 0)
+            (effectiveSmoothing == 0 && effectiveBrightening == 0 && effectiveTone == 0 &&
+                effectiveBlemish == 0 && effectiveDarkCircles == 0)
     }
 
     var isFaceCorrectionBypassed: Bool {

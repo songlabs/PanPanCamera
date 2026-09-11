@@ -189,7 +189,26 @@ struct DebugFaceMaskStep {}
             self.assertNotRegex(code, r'\bCoreImageRendering\.render\s*\(')
         kernels = [path for path in (APP / 'Rendering').rglob('*.swift')
                    if re.search(r'\bCIColorKernel\s*\(source:', path.read_text(encoding='utf-8'))]
-        self.assertEqual(kernels, [APP / 'Rendering/CoreImage/TexturePreservingSkinSmoothingStep.swift'])
+        self.assertCountEqual(kernels, [
+            APP / 'Rendering/CoreImage/TexturePreservingSkinSmoothingStep.swift',
+            APP / 'Rendering/CoreImage/LocalSkinCorrectionStep.swift',
+        ])
+
+    def test_local_skin_corrections_share_preview_and_final_pipeline_without_new_workers(self):
+        local = (APP / 'Rendering/CoreImage/LocalSkinCorrectionStep.swift').read_text(encoding='utf-8')
+        processor = (APP / 'Rendering/CoreImage/BeautyImageProcessor.swift').read_text(encoding='utf-8')
+        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
+        code = '\n'.join(line.split('//')[0] for line in local.splitlines())
+        self.assertNotRegex(code, r'\b(?:CIContext|CGContext|DispatchQueue|Task|URLSession|UIImage)\s*[(.{]')
+        self.assertIn('quality == .preview ? 640 : 1280', local)
+        self.assertIn('condition: .notOnQueue(.main)', local)
+        self.assertIn('let skinResult = try process(image', processor)
+        self.assertEqual(final.count('try processor.process(input'), 2)
+        self.assertEqual(final.count('quality: .final'), 2)
+        self.assertIn('strength: configuration.effectiveBlemish', processor)
+        self.assertIn('strength: configuration.effectiveDarkCircles', processor)
+        self.assertLess(processor.index('NaturalSkinToneAdjustmentStep'), processor.index('BlemishAttenuationStep'))
+        self.assertLess(processor.index('BlemishAttenuationStep'), processor.index('DarkCircleCorrectionStep'))
 
     def test_mock_semantics_do_not_read_pixels_or_classify_skin_color(self):
         code = '\n'.join(line.split('//')[0] for line in

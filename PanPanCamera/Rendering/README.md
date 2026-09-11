@@ -14,7 +14,8 @@ source format permits. Failures do not replace the original preview, while final
 produce the existing capture error instead of saving damaged data.
 
 BeautyImageProcessor defines the skin effect order and parameter mapping: texture-
-preserving smoothing, bounded local brightening, then neutral tone consistency. Preview
+preserving smoothing, bounded local brightening, neutral tone consistency, local
+blemish attenuation, then landmark-based under-eye correction and the final crop. Preview
 uses the same definition on a smaller aspect-filled image with lighter internal settings;
 final uses native pixels. Preview then maps the main face's contour/eyebrow landmarks to
 the five local Face Correction controls. Slim uses six softly sampled contour regions
@@ -24,8 +25,11 @@ displacement map and one explicit vector-sampling CI kernel; missing/incomplete 
 fall back to the original Preview layer. Face Auto batch-sets the category parameters,
 and each implemented control is rendered at Auto multiplied by its concrete strength.
 Face geometry is intentionally absent from final-photo processing. Both branches remain
-entirely local. There is no upload, third-party SDK, skin segmentation, eye/nose/mouth
-warp, blemish or dark-circle algorithm. Apple/device acceptance remains pending.
+entirely local. There is no upload, third-party SDK, skin segmentation or eye/nose/mouth
+warp. Blemish and dark-circle strengths now use the same Skin Auto multiplication and
+native capture snapshot as the existing skin effects. See the CoreImage README for
+the conservative algorithms, missing-landmark bypasses and validation limits.
+Apple/device acceptance remains pending.
 
 See [the Preview strength audit](../../docs/BeautyPreviewStrengthAudit.md) for the
 historical parameter chain, skin quality differences, and the

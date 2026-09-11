@@ -6,15 +6,14 @@ struct BeautyPanel: View {
     @Binding var category: BeautyCategory
 
     var body: some View {
-        PanelContainer(title: category.label, compact: category == .face) {
-            VStack(spacing: category == .face ? 8 : 20) {
+        PanelContainer(title: category.label, compact: true) {
+            VStack(spacing: 8) {
                 Picker(selection: $category) {
                     ForEach(BeautyCategory.allCases) { category in Text(category.label).tag(category) }
                 } label: { Text(L10n.beautyCategory) }
                 .pickerStyle(.segmented)
                 if category == .skin {
                     SkinBeautyPanel(parameters: $parameters)
-                    UnimplementedNotice(message: .beautySkinUnavailableDetail)
                 } else {
                     FaceReshapePanel(parameters: $parameters)
                 }

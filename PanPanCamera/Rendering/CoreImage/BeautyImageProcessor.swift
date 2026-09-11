@@ -209,6 +209,22 @@ struct BeautyImageProcessor: Sendable {
                 image = output
             }
         }
+        // Detect protection from the original pixels so base smoothing cannot erase
+        // edges that these local corrections must preserve. Share it between both.
+        if configuration.effectiveBlemish > 0 || configuration.effectiveDarkCircles > 0,
+           let mask = try LocalSkinCorrection.effectiveMask(source: source,
+                regions: geometry.regions, landmarks: geometry.landmarks) {
+            if let output = try BlemishAttenuationStep().makeOutput(source: image,
+                regions: geometry.regions, landmarks: geometry.landmarks, effectiveSkinMask: mask,
+                strength: configuration.effectiveBlemish, quality: quality) {
+                image = output
+            }
+            if let output = try DarkCircleCorrectionStep().makeOutput(source: image,
+                regions: geometry.regions, landmarks: geometry.landmarks, effectiveSkinMask: mask,
+                strength: configuration.effectiveDarkCircles, quality: quality) {
+                image = output
+            }
+        }
         return image.cropped(to: source.extent)
     }
 

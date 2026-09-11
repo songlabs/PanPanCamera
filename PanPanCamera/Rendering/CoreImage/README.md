@@ -8,6 +8,64 @@ contract on the original PhotoOutput data or native silent pixel buffer. Texture
 tone remain separate explainable low-frequency approximations, not semantic skin
 detection, identity verification or a visually accepted result.
 
+## Local blemish and under-eye correction
+
+`LocalSkinCorrectionStep.swift` adds two production stages after base texture,
+brightening and tone processing, before crop (and before existing Preview face warp).
+Both use `overallStrength * childStrength`; zero skips the stage. They share one
+effective skin/protection mask derived from the original stage input. Existing
+geometric face coverage, optional semantic-mask composition, edge protection and
+landmark protection are reused; nose protection is made full for these two stages.
+The production path still has no skin segmentation and cannot identify temporary
+blemishes versus permanent marks. Missing semantics are the existing geometric
+fallback, not evidence of skin recognition.
+
+Blemish attenuation requires the eyes, eyebrows, lips and nose landmarks for the
+affected face. On a bounded analysis image, small and larger Gaussian references
+isolate local red/chromatic differences. Relative redness and local contrast admit
+candidates; deep neutral/brown marks are rejected conservatively. A feathered
+candidate mask is multiplied by the effective mask again after upsampling. The
+candidate adds a bounded reference-minus-small delta to the original pixels, retaining
+their high-frequency residual. At full effective strength, blending is at most 0.75
+and each channel delta before blending is at most 0.10 in the linear working space.
+Gaussian references are not used as the output face. This intentionally targets small
+reddish blemishes; faint or non-red marks may be left alone, and real freckles/moles
+still require photo acceptance. It is attenuation, not inpainting or guaranteed removal.
+
+Under-eye correction constructs each local frame from the actual eye polygon's long
+axis; eyebrow position, when present, selects the direction away from the brow. The
+feathered ellipse follows eye width and tilt and begins beyond the lowest polygon
+projection with a 2%-eye-width gap. Missing eyes bypass individually. A nearby lower
+cheek reference follows the same frame; both destination and reference coverage must
+be allowed by the face/effective mask. Only a measured luminance deficit is lifted,
+by at most half that deficit and 0.055 linear luminance. A small bounded chroma delta
+reduces color differences. Flat skin is unchanged, no fixed color is painted, and no
+geometry is altered. The original image carries skin texture and under-eye structure.
+
+Analysis images have a 640-pixel long-edge bound in Preview and 1280 in final capture;
+the final source/output retain native dimensions. Kernels are immutable static values,
+graphs are local to the existing worker, and no new context/model/queue/photo upload
+is introduced. These stages use the same legacy `CIColorKernel(source:)` API already
+used by texture reconstruction; Apple compilation/runtime and performance remain to
+be checked. Sampling and scalar operations follow Apple's
+[kernel language reference](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CIKernelLangRef/ci_gslang_ext.html)
+and [filter reference](https://developer.apple.com/library/archive/documentation/GraphicsImaging/Reference/CoreImageFilterReference/index.html).
+
+`LocalSkinCorrectionTests` adds Apple pixel readback for zero, monotonic strengths,
+mask locality, full feature protection, neutral/dark marks, flat skin, tilted eyes,
+single/missing eyes, nonzero extents and actual production Preview/final-quality image
+changes from UI/configuration snapshots. Native PhotoOutput and silent encoding still
+call that same `.final` processor; the source-scope regression checks both call sites.
+Synthetic tests do not establish Vision accuracy, camera encoding parity or real-photo
+quality. The Windows delivery checks parsed 91 Swift files, typechecked four Domain
+and three camera control files, validated 109 keys in five languages/project membership,
+and passed 46 Python tests. The new Apple XCTest cases have not been executed locally.
+
+尚未完成 Apple 平台 / 真机验收。Verify matching compact skin/face sheet height, both
+controls at 0/25/50/75/100, slider flicker, moving-face mask stability, front mirroring,
+portrait/landscape orientation, Preview/photo semantics, eyes/brows/lips/nose/hair
+protection, FPS/CPU/memory and thermals. An exact-SHA Actions trigger is not CI success.
+
 ## Preview-only Face Correction
 
 `FaceCorrectionGeometry` selects the largest valid face, then the face nearest the

@@ -29,7 +29,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 | Flash | 按硬件/输出支持循环 Off / Auto / On，通过照片设置实际使用闪光灯；无硬件支持时禁用 |
 | 拍照 | 支持 shutter suppression 时使用 AVCapturePhotoOutput 原始高质量 Data，否则使用原生最新 VideoDataOutput frame；Beauty 后保存相册并显示结果 |
 | 主界面 | 半透明圆角顶部栏、白色/半透明底栏、柔粉色中央快门、照片模式 |
-| 美肌 | 总强度、磨皮、提亮、肤色一致性已接入实时预览与最终照片；祛痘、黑眼圈仍为参数 UI；各值独立 0–100，默认 50 |
+| 美肌 | 总强度、磨皮、提亮、肤色一致性、局部祛痘和黑眼圈已接入实时预览与最终照片；各值独立 0–100，默认 50；视觉效果仍待真机验收 |
 | 美型 | 自动作为总强度，瘦脸、脸宽、下巴、额头、颧骨已接入实时 Preview；大眼、眼距、眼高、鼻宽、鼻长、嘴型、嘴宽仍为参数 UI；照片暂不应用美型 |
 | 滤镜 | Original / Natural / Clear / Warm / Cool 本地化预设选择骨架 |
 | 美妆 | Lip / Blush / Eye / Brow 本地化类别选择骨架 |
@@ -40,7 +40,7 @@ PanPanCamera 是原生 iOS 美颜相机，当前 **0.1.0 仍处于基础架构�
 | DEBUG 照片处理 | Mock FaceRegion / FacialLandmarks / Skin Semantic Mask → 每脸柔边覆盖与皮肤权重配对 → 五官和细节保护 → EffectiveSkinMaskComposer → 原两尺度纹理重建及单次 Blend；支持六种 Mask、原图、处理图、Difference 与 0 / 0.25 / 0.5 A/B，未接入正式照片流程 |
 | GitHub Actions | iOS CI、手动 Simulator Screenshot、TestFlight 交付基础设施；TestFlight 尚未实际执行 |
 
-美肌和美型的总强度是分类内全部参数的批量控制器，并与具体参数相乘得到实际强度。美肌的磨皮、提亮和肤色一致性使用同一不可变 `BeautyConfiguration` 语义接入 Preview 与 Final，快门时会保存配置快照。顔補正的瘦脸／脸宽／下巴／额头／颧骨复用同一配置传播链路，但几何处理只在 Preview 执行。祛痘、黑眼圈与其余眼鼻嘴美型参数仍不改变像素，界面提供五语言准确说明。滤镜／美妆也不渲染效果。关闭面板再打开保留本次运行参数，重启 App 后恢复默认值。
+美肌和美型的总强度是分类内全部参数的批量控制器，并与具体参数相乘得到实际强度。美肌的磨皮、提亮、肤色一致性、局部祛痘和黑眼圈使用同一不可变 `BeautyConfiguration` 语义接入 Preview 与 Final，快门时会保存配置快照。祛痘保守弱化局部偏红瑕疵，黑眼圈根据实际眼睛 landmarks 有限修正眼下暗沉；全部在本地处理，没有皮肤分割或生成式补脸。美肌面板采用与美型一致的 compact 容器和百分比控件。顔補正的瘦脸／脸宽／下巴／额头／颧骨复用同一配置传播链路，但几何处理只在 Preview 执行。其余眼鼻嘴美型参数仍不改变像素，界面提供五语言准确说明。滤镜／美妆也不渲染效果。关闭面板再打开保留本次运行参数，重启 App 后恢复默认值。尚未完成 Apple 平台 / 真机验收。
 
 照片通过现有 add-only Photos 权限流程保存到系统相册，结果界面同时持有本次预览对象；返回相机后释放内存对象。不申请麦克风权限。前置预览与拍摄结果采用一致镜像策略，后置不镜像。全屏预览会裁掉部分传感器画面边缘，照片保留原生完整比例；比例说明入口会提示这一点。
 
@@ -257,7 +257,7 @@ inventory 输出尺寸、大小、SHA256 和两种验证结果。下载后仍需
 
 1. 在现有 Vision 检测和 landmarks 基础上实现 Stable Face Tracking。
 2. 将顔補正扩展到最终照片，并实现其余眼鼻嘴参数；本次仅做 Preview 的五项局部几何。
-3. 实现祛痘、黑眼圈、真实 Filter Rendering 与真实 Makeup Rendering。
+3. 验收局部祛痘／黑眼圈的真实图像与实时性能；实现真实 Filter Rendering 与真实 Makeup Rendering。
 4. Video Recording、Video Beauty、Photo Editor。
 5. 照片导入、持久化照片存储。
 6. 比例裁切、Timer、人像模式；发行凭据仍需单独配置。

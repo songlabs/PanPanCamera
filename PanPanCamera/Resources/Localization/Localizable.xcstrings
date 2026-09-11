@@ -526,37 +526,107 @@
         }
       }
     },
-    "beauty.skin.unavailableDetail": {
+    "beauty.skin.overallDetail": {
       "extractionState": "manual",
       "localizations": {
         "ja": {
           "stringUnit": {
             "state": "translated",
-            "value": "シミ・ニキビとクマ補正はまだ適用されません。"
+            "value": "各項目をまとめて設定し、美肌全体の強さを調整。"
           }
         },
         "zh-Hans": {
           "stringUnit": {
             "state": "translated",
-            "value": "祛痘祛斑和黑眼圈调整尚未应用。"
+            "value": "批量设置各项，并控制美肤整体强度。"
           }
         },
         "zh-Hant": {
           "stringUnit": {
             "state": "translated",
-            "value": "祛痘祛斑和黑眼圈調整尚未套用。"
+            "value": "批次設定各項，並控制美膚整體強度。"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Blemish and dark-circle adjustments are not yet applied."
+            "value": "Set all skin controls together and scale their overall effect."
           }
         },
         "ko": {
           "stringUnit": {
             "state": "translated",
-            "value": "잡티와 다크서클 보정은 아직 적용되지 않습니다."
+            "value": "모든 피부 항목을 함께 설정하고 전체 강도를 조절합니다."
+          }
+        }
+      }
+    },
+    "beauty.skin.overallRange": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% オフ · 100% 各項目の設定強度を適用"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 关闭 · 100% 按各项强度应用"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 關閉 · 100% 按各項強度套用"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% off · 100% applies each control at its set strength"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 끄기 · 100% 각 항목의 설정 강도 적용"
+          }
+        }
+      }
+    },
+    "beauty.skin.strengthRange": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% オフ · 100% 最大（全体の強さに連動）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 不处理 · 100% 最大（随总强度）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 不處理 · 100% 最大（隨總強度）"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% off · 100% maximum (scaled by overall strength)"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "0% 끄기 · 100% 최대 (전체 강도에 연동)"
           }
         }
       }
@@ -3431,6 +3501,41 @@
         }
       }
     },
+    "skin.blemish.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "質感を残し、赤みのある小さなニキビ跡を和らげます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "局部弱化偏红的小痘印，保留肌肤纹理。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "局部弱化偏紅的小痘印，保留肌膚紋理。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soften small reddish blemishes while retaining texture."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피부 질감을 유지하며 작고 붉은 여드름 자국을 완화합니다."
+          }
+        }
+      }
+    },
     "skin.brighten": {
       "extractionState": "manual",
       "localizations": {
@@ -3462,6 +3567,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "미백"
+          }
+        }
+      }
+    },
+    "skin.brighten.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "顔の肌を少し明るくします。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻微提亮面部肌肤。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輕微提亮臉部肌膚。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gently brighten facial skin."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "얼굴 피부를 은은하게 밝힙니다."
           }
         }
       }
@@ -3501,6 +3641,41 @@
         }
       }
     },
+    "skin.darkCircles.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目の下の暗さと色むらを控えめに補正します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "轻柔改善眼下暗沉与色差，保留真实结构。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "輕柔改善眼下暗沉與色差，保留真實結構。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gently reduce under-eye shadows and color differences."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "눈 밑의 자연스러운 구조를 유지하며 어두움과 색 차이를 줄입니다."
+          }
+        }
+      }
+    },
     "skin.smooth": {
       "extractionState": "manual",
       "localizations": {
@@ -3536,6 +3711,41 @@
         }
       }
     },
+    "skin.smooth.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "肌の質感を残しながら、細かな凹凸を和らげます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留肌肤纹理，柔化细小不平整。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "保留肌膚紋理，柔化細小不平整。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Soften small irregularities while retaining skin texture."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "피부 질감을 유지하며 잔잔한 요철을 완화합니다."
+          }
+        }
+      }
+    },
     "skin.tone": {
       "extractionState": "manual",
       "localizations": {
@@ -3567,6 +3777,41 @@
           "stringUnit": {
             "state": "translated",
             "value": "피부 톤"
+          }
+        }
+      }
+    },
+    "skin.tone.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "肌の局所的な色むらを自然に整えます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自然减轻局部肤色色差。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自然減輕局部膚色色差。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gently even out local skin tone differences."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "국소적인 피부색 차이를 자연스럽게 완화합니다."
           }
         }
       }
