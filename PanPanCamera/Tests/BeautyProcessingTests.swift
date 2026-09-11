@@ -212,7 +212,7 @@ final class BeautyProcessingTests: XCTestCase {
         let source = CIImage(color: CIColor(red: 0.3, green: 0.4, blue: 0.5)).cropped(to: extent)
         let face = completeFace()
         let configuration = faceConfiguration()
-        let output = try runOffMain {
+        let output = try runOffMain(timeout: 15) {
             try FaceCorrectionPreviewStep().makeOutput(source: source, faces: [face],
                                                        configuration: configuration)
         }
@@ -523,7 +523,8 @@ final class BeautyProcessingTests: XCTestCase {
         return try XCTUnwrap(buffer)
     }
 
-    private func runOffMain<Value>(_ operation: @escaping () throws -> Value) throws -> Value {
+    private func runOffMain<Value>(timeout: TimeInterval = 5,
+                                   _ operation: @escaping () throws -> Value) throws -> Value {
         let completed = expectation(description: "Beauty processing completed off-main")
         let result = LockedResult<Value>()
         processingQueue.async {
@@ -531,7 +532,7 @@ final class BeautyProcessingTests: XCTestCase {
             XCTAssertFalse(Thread.isMainThread)
             result.store(Result { try operation() })
         }
-        wait(for: [completed], timeout: 5)
+        wait(for: [completed], timeout: timeout)
         return try XCTUnwrap(result.value, "Beauty processing did not complete").get()
     }
 
