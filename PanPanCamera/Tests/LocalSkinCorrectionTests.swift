@@ -9,6 +9,12 @@ import XCTest
 final class LocalSkinCorrectionTests: XCTestCase {
     private let extent = CGRect(x: 0, y: 0, width: 256, height: 256)
 
+    // Only for semantically unchanged pixels after a real Core Image render graph:
+    // absorb small GPU/half-float/color-pipeline precision differences in RGBAf readback.
+    // Apple CI observed a maximum delta of 0.00021460652; 3e-4 leaves a small margin
+    // while remaining well below one 8-bit level (1/255). Not for effect or mask checks.
+    private let unchangedPixelTolerance: Float = 0.000_3
+
     func testZeroStrengthAndMissingLandmarksBypassWithoutChangingPixels() async throws {
         try await Task.detached { [self] in
             let face = try landmarks()
@@ -59,7 +65,7 @@ final class LocalSkinCorrectionTests: XCTestCase {
                         for y in stride(from: 4, through: 252, by: 48) {
                             let p = CGPoint(x: x, y: y)
                             if !permitted.contains(p) {
-                                XCTAssertLessThan(difference(source, output, p), 0.000_1)
+                                XCTAssertLessThan(difference(source, output, p), unchangedPixelTolerance)
                             }
                         }
                     }
@@ -67,7 +73,7 @@ final class LocalSkinCorrectionTests: XCTestCase {
                               CGPoint(x: permitted.maxX + 2, y: point.y),
                               CGPoint(x: point.x, y: permitted.minY - 2),
                               CGPoint(x: point.x, y: permitted.maxY + 2)] {
-                        XCTAssertLessThan(difference(source, output, p), 0.000_1)
+                        XCTAssertLessThan(difference(source, output, p), unchangedPixelTolerance)
                     }
                 }
             }
@@ -110,13 +116,13 @@ final class LocalSkinCorrectionTests: XCTestCase {
                 let result = try XCTUnwrap(BlemishAttenuationStep().makeOutput(source: input,
                     regions: [face.region], landmarks: [face], effectiveSkinMask: solid(1, 1, 1),
                     strength: 1, quality: .final))
-                XCTAssertLessThan(difference(input, result, blemishPoint(face)), 0.000_1)
+                XCTAssertLessThan(difference(input, result, blemishPoint(face)), unchangedPixelTolerance)
             }
             let flat = solid(0.65, 0.50, 0.43)
             let unchanged = try XCTUnwrap(BlemishAttenuationStep().makeOutput(source: flat,
                 regions: [face.region], landmarks: [face], effectiveSkinMask: solid(1, 1, 1),
                 strength: 1, quality: .final))
-            XCTAssertLessThan(difference(flat, unchanged, blemishPoint(face)), 0.000_1)
+            XCTAssertLessThan(difference(flat, unchanged, blemishPoint(face)), unchangedPixelTolerance)
         }.value
     }
 
@@ -167,9 +173,9 @@ final class LocalSkinCorrectionTests: XCTestCase {
                         XCTAssertGreaterThan(lift, previous + 0.000_01)
                         XCTAssertLessThanOrEqual(lift, 0.056)
                         previous = lift
-                        XCTAssertLessThan(difference(source, output, absentArea.center), 0.000_1)
+                        XCTAssertLessThan(difference(source, output, absentArea.center), unchangedPixelTolerance)
                         for p in [CGPoint(x: 1, y: 1), blemishPoint(face)] + face.imagePoints(for: present, in: extent) {
-                            XCTAssertLessThan(difference(source, output, p), 0.000_1)
+                            XCTAssertLessThan(difference(source, output, p), unchangedPixelTolerance)
                         }
                         XCTAssertEqual(output.extent, source.extent)
                     }
@@ -180,7 +186,7 @@ final class LocalSkinCorrectionTests: XCTestCase {
                 regions: [complete.region], landmarks: [complete], effectiveSkinMask: solid(1, 1, 1),
                 strength: 1, quality: .final))
             let area = try XCTUnwrap(UnderEyeRegion.make(landmarks: complete, eye: .leftEye, in: extent))
-            XCTAssertLessThan(difference(flat, unchanged, area.center), 0.000_1)
+            XCTAssertLessThan(difference(flat, unchanged, area.center), unchangedPixelTolerance)
             let translated = source.transformed(by: CGAffineTransform(translationX: -13, y: 21))
             let output = try XCTUnwrap(DarkCircleCorrectionStep().makeOutput(source: translated,
                 regions: [complete.region], landmarks: [complete],
@@ -234,8 +240,8 @@ final class LocalSkinCorrectionTests: XCTestCase {
                         previousFinal = finalChange
                         XCTAssertEqual(rendered.extent, extent)
                         XCTAssertEqual(final.extent, extent)
-                        XCTAssertLessThan(difference(source, rendered, CGPoint(x: 1, y: 1)), 0.000_1)
-                        XCTAssertLessThan(difference(source, final, CGPoint(x: 1, y: 1)), 0.000_1)
+                        XCTAssertLessThan(difference(source, rendered, CGPoint(x: 1, y: 1)), unchangedPixelTolerance)
+                        XCTAssertLessThan(difference(source, final, CGPoint(x: 1, y: 1)), unchangedPixelTolerance)
                     }
                 }
             }
