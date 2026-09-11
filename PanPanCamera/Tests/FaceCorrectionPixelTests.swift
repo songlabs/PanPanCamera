@@ -24,7 +24,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 configuration: configuration(1), extent: extent)
             XCTAssertTrue(zeroGeometry.warps.isEmpty)
             XCTAssertTrue(zeroGeometry.smallFaceWarps.allSatisfy { $0.visibleOffset == .zero })
-            XCTAssertEqual(fullGeometry.warps.count, 2)
+            XCTAssertEqual(fullGeometry.warps.count, 12)
             let direct0 = try step.makeOutput(source: source, warps: zeroGeometry.warps)
             XCTAssertNil(direct0)
             let direct100 = try XCTUnwrap(step.makeOutput(source: source, warps: fullGeometry.warps))
@@ -132,7 +132,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
             let step = FaceCorrectionPreviewStep()
             let offsets = [CGVector(dx: 12, dy: 0), CGVector(dx: 2, dy: 0), CGVector(dx: 0, dy: 7)]
             let warps = offsets.map {
-                FaceCorrectionWarp(kind: .slimLeft, center: center, radius: 48, visibleOffset: $0)
+                FaceCorrectionWarp(kind: .widthLeft, center: center, radius: 48, visibleOffset: $0)
             }
             for ordered in [warps, Array(warps.reversed())] {
                 let map = try step.displacementMap(for: ordered, extent: extent)
@@ -145,7 +145,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 XCTAssertEqual(Double(after[0] - before[0]) * Double(extent.width), -14, accuracy: 0.25)
                 XCTAssertEqual(Double(after[1] - before[1]) * Double(extent.height), -7, accuracy: 0.25)
             }
-            let opposite = FaceCorrectionWarp(kind: .slimRight, center: center, radius: 48,
+            let opposite = FaceCorrectionWarp(kind: .widthRight, center: center, radius: 48,
                                               visibleOffset: CGVector(dx: -12, dy: 0))
             let cancelled = try XCTUnwrap(step.makeOutput(source: source, warps: [warps[0], opposite]))
             let expected = floatPixel(source, at: center), actual = floatPixel(cancelled, at: center)
@@ -230,11 +230,15 @@ final class FaceCorrectionPixelTests: XCTestCase {
                     case .forehead: toolKinds = [.foreheadLeft, .foreheadRight]
                     default: toolKinds = [.cheekbonesLeft, .cheekbonesRight]
                     }
-                    expected = fullWarps.filter { toolKinds.contains($0.kind) }.reduce(CGVector.zero) { total, warp in
+                    let selected = fullWarps.filter { toolKinds.contains($0.kind) }
+                    expected = selected.reduce(CGVector.zero) { total, warp in
                         let distance = hypot(point.x - warp.center.x, point.y - warp.center.y)
                         let weight = min(1, max(0, (warp.radius - distance) / (warp.radius * 0.7)))
                         return CGVector(dx: total.dx - warp.visibleOffset.dx * weight,
                                         dy: total.dy - warp.visibleOffset.dy * weight)
+                    }
+                    if tool == .slim {
+                        expected = CGVector(dx: -slimOffset(selected, at: point), dy: 0)
                     }
                 }
                 for (index, strength) in [(1, 0.5), (2, 1.0), (3, 0.0)] {
@@ -257,7 +261,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
             let step = FaceCorrectionPreviewStep()
             for offset in [CGVector(dx: 12.5, dy: 0), CGVector(dx: -12.5, dy: 0),
                            CGVector(dx: 0, dy: 7.5), CGVector(dx: 0, dy: -7.5)] {
-                let warp = FaceCorrectionWarp(kind: .slimLeft, center: center,
+                let warp = FaceCorrectionWarp(kind: .widthLeft, center: center,
                                                radius: 48, visibleOffset: offset)
                 let map = try step.displacementMap(for: [warp], extent: shiftedExtent)
                 XCTAssertEqual(map.image.extent, shiftedExtent)
@@ -294,7 +298,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
             }
             let productionWarps = FaceCorrectionGeometry.warps(faces: [fixtureFace()],
                 configuration: configuration(1), extent: extent)
-            XCTAssertEqual(productionWarps.count, 2)
+            XCTAssertEqual(productionWarps.count, 12)
             let productionRamp = try coordinateRamp()
             let productionOutput = try XCTUnwrap(step.makeOutput(source: productionRamp, warps: productionWarps))
             for warp in productionWarps {
@@ -302,7 +306,8 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 let after = floatPixel(productionOutput, at: warp.center)
                 let sampledDX = Double(after[0] - before[0]) * Double(extent.width)
                 let sampledDY = Double(after[1] - before[1]) * Double(extent.height)
-                XCTAssertEqual(sampledDX, -Double(warp.visibleOffset.dx), accuracy: 0.25)
+                let sample = CGPoint(x: floor(warp.center.x) + 0.5, y: floor(warp.center.y) + 0.5)
+                XCTAssertEqual(sampledDX, -Double(slimOffset(productionWarps, at: sample)), accuracy: 0.25)
                 XCTAssertEqual(sampledDY, -Double(warp.visibleOffset.dy), accuracy: 0.25)
                 print("FaceCorrection production direction: kind=\(warp.kind) " +
                       "visibleOffset=\(warp.visibleOffset) sampledOffset=\([sampledDX, sampledDY])")
@@ -470,6 +475,110 @@ final class FaceCorrectionPixelTests: XCTestCase {
             print("FaceCorrection Metal texture pixel metrics: \(diff.json)")
             assertLocalizedChange(diff)
         }.value
+    }
+
+    func testSlimFieldEveryRegionContributesWithoutOverwriteAndBoundsOverlap() async throws {
+        try await Task.detached { [self] in
+            let step = FaceCorrectionPreviewStep()
+            let controls = FaceCorrectionGeometry.warps(faces: [fixtureFace()],
+                configuration: configuration(1), extent: extent)
+            XCTAssertEqual(controls.count, 12)
+            for index in controls.indices {
+                let anchor = controls[index]
+                let point = CGPoint(x: floor(anchor.center.x) + 0.5, y: floor(anchor.center.y) + 0.5)
+                func offset(_ warps: [FaceCorrectionWarp]) throws -> CGFloat {
+                    let map = try step.displacementMap(for: warps, extent: extent)
+                    return (0.5 - CGFloat(floatPixel(map.image, at: point)[0])) * map.scale
+                }
+                let baseline = try offset(controls)
+                let expected = slimOffset(controls, at: point)
+                XCTAssertEqual(baseline, expected, accuracy: 0.03)
+                XCTAssertEqual(try offset(Array(controls.reversed())), baseline, accuracy: 0.03)
+                XCTAssertLessThanOrEqual(abs(baseline), controls.map { abs($0.visibleOffset.dx) }.max()! + 0.03)
+                var changed = controls
+                changed[index] = FaceCorrectionWarp(kind: anchor.kind, center: anchor.center,
+                    radius: anchor.radius, visibleOffset: CGVector(dx: anchor.visibleOffset.dx + 2, dy: 0))
+                let actualDelta = try offset(changed) - baseline
+                XCTAssertGreaterThan(actualDelta, 0.1, "Control \(index) must reach the actual map")
+                XCTAssertEqual(actualDelta, slimOffset(changed, at: point) - expected, accuracy: 0.04)
+            }
+        }.value
+    }
+
+    func testSlimMapStrengthAndSupportEdgeRemainContinuous() async throws {
+        try await Task.detached { [self] in
+            let step = FaceCorrectionPreviewStep()
+            let full = FaceCorrectionGeometry.warps(faces: [fixtureFace()],
+                configuration: configuration(1), extent: extent)
+            let center = try XCTUnwrap(full.first).center
+            let sample = CGPoint(x: floor(center.x) + 0.5, y: floor(center.y) + 0.5)
+            var values: [CGFloat] = []
+            for strength in [0.49, 0.50, 0.51] {
+                let controls = FaceCorrectionGeometry.warps(faces: [fixtureFace()],
+                    configuration: configuration(strength), extent: extent)
+                let map = try step.displacementMap(for: controls, extent: extent)
+                let value = (0.5 - CGFloat(floatPixel(map.image, at: sample)[0])) * map.scale
+                XCTAssertEqual(value, slimOffset(full, at: sample) * strength, accuracy: 0.03)
+                values.append(value)
+            }
+            XCTAssertEqual(values[2] - values[1], values[1] - values[0], accuracy: 0.01)
+            let single = FaceCorrectionWarp(kind: .slimLeft, center: CGPoint(x: 128.5, y: 192.5),
+                                           radius: 48, visibleOffset: CGVector(dx: 12, dy: 0))
+            let map = try step.displacementMap(for: [single], extent: extent)
+            for distance in [47.0, 48.0, 49.0] {
+                let p = CGPoint(x: single.center.x + distance, y: single.center.y)
+                let value = (0.5 - CGFloat(floatPixel(map.image, at: p)[0])) * map.scale
+                XCTAssertEqual(value, slimOffset([single], at: p), accuracy: 0.01)
+                XCTAssertLessThan(abs(value), 0.03)
+            }
+        }.value
+    }
+
+    func testFullStrengthSlimMapHasNoHorizontalFold() async throws {
+        try await Task.detached { [self] in
+            // Face Auto = 1 as well as Slim = 1: exercise the full 12%-width input,
+            // including overlapping outer supports in the background around the face.
+            let warps = FaceCorrectionGeometry.warps(faces: [fixtureFace()],
+                configuration: BeautyConfiguration(enabled: true, faceOverallStrength: 1,
+                                                    faceSlimStrength: 1), extent: extent)
+            let map = try FaceCorrectionPreviewStep().displacementMap(for: warps, extent: extent)
+            let width = Int(extent.width), height = Int(extent.height)
+            var values = [Float](repeating: 0, count: width * height * 4)
+            let context = CIContext(options: [.cacheIntermediates: false])
+            values.withUnsafeMutableBytes {
+                context.render(map.image, toBitmap: $0.baseAddress!, rowBytes: width * 16,
+                    bounds: extent, format: .RGBAf,
+                    colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+            }
+            var minimumJacobian: CGFloat = 1
+            for row in 0..<height {
+                for x in 0..<(width - 1) {
+                    let i = (row * width + x) * 4
+                    // Inverse X(p) = p.x + (R(p)-0.5)*scale must stay increasing.
+                    let jacobian = 1 + CGFloat(values[i + 4] - values[i]) * map.scale
+                    minimumJacobian = min(minimumJacobian, jacobian)
+                }
+            }
+            XCTAssertGreaterThan(minimumJacobian, 0.1, "Full-strength outer overlap must not fold")
+            let faceBox = fixtureFace().boundingBox
+            let chin = CGPoint(x: extent.width * faceBox.midX,
+                               y: extent.height * (faceBox.minY + faceBox.height * 0.03))
+            let point = CGPoint(x: floor(chin.x) + 0.5, y: floor(chin.y) + 0.5)
+            XCTAssertLessThan(abs(slimOffset(warps, at: point)), 0.5)
+        }.value
+    }
+
+    // Independent scalar oracle for Apple's rendered normalized field. Tests above
+    // compare real RG readback and source sampling; graph creation alone cannot pass.
+    private func slimOffset(_ warps: [FaceCorrectionWarp], at point: CGPoint) -> CGFloat {
+        var total: CGFloat = 0, offset: CGFloat = 0
+        for warp in warps {
+            let t = min(1, hypot(point.x - warp.center.x, point.y - warp.center.y) / warp.radius)
+            let weight = 1 - t * t * (3 - 2 * t)
+            total += weight
+            offset += weight * warp.visibleOffset.dx
+        }
+        return offset / sqrt(1 + total * total)
     }
 
     private func configuration(_ strength: Double) -> BeautyConfiguration {

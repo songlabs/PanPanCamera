@@ -194,7 +194,7 @@ final class BeautyProcessingTests: XCTestCase {
         let warps = FaceCorrectionGeometry.warps(faces: [completeFace()],
             configuration: faceConfiguration(), extent: extent)
 
-        XCTAssertEqual(warps.count, 11)
+        XCTAssertEqual(warps.count, 21)
         XCTAssertTrue(warps.allSatisfy { extent.insetBy(dx: -1, dy: -1).contains($0.center) })
         XCTAssertTrue(warps.allSatisfy { $0.radius >= 1 && $0.radius < 40 })
         XCTAssertGreaterThan(try warp(.slimLeft, in: warps).visibleOffset.dx, 0)
@@ -264,9 +264,9 @@ final class BeautyProcessingTests: XCTestCase {
         let zero = FaceCorrectionGeometry.result(faces: [completeFace()],
             configuration: parameters.processingConfiguration, extent: extent)
         XCTAssertTrue(zero.warps.isEmpty)
-        XCTAssertEqual(zero.smallFaceWarps.count, 2)
+        XCTAssertEqual(zero.smallFaceWarps.count, 12)
         XCTAssertTrue(zero.smallFaceWarps.allSatisfy { $0.visibleOffset == .zero })
-        XCTAssertEqual(try warp(.slimLeft, in: zero.smallFaceWarps).radius, 26.4,
+        XCTAssertEqual(try warp(.slimLeft, in: zero.smallFaceWarps).radius, 38.4,
                        accuracy: 0.000_001)
 
         parameters.setValue(100, for: FaceTool.slim)
@@ -313,7 +313,7 @@ final class BeautyProcessingTests: XCTestCase {
 
         let backLeft = try warp(.slimLeft, in: back.smallFaceWarps)
         let frontRight = try warp(.slimRight, in: front.smallFaceWarps)
-        XCTAssertEqual(backLeft.radius, 29.7, accuracy: 0.000_001)
+        XCTAssertEqual(backLeft.radius, 43.2, accuracy: 0.000_001)
         XCTAssertEqual(frontRight.radius, backLeft.radius, accuracy: 0.000_001)
         XCTAssertEqual(frontRight.center.x, 300 - backLeft.center.x, accuracy: 0.000_001)
         XCTAssertEqual(frontRight.center.y, backLeft.center.y, accuracy: 0.000_001)
@@ -360,6 +360,128 @@ final class BeautyProcessingTests: XCTestCase {
         XCTAssertEqual(mirroredRight.center.y, originalLeft.center.y, accuracy: 0.000_001)
         XCTAssertEqual(mirroredRight.visibleOffset.dx, -originalLeft.visibleOffset.dx,
                        accuracy: 0.000_001)
+    }
+
+    func testSlimHasSixRegionsPerSideAndContinuousFractionalStrength() throws {
+        let extent = CGRect(x: 0, y: 0, width: 600, height: 800)
+        var previous: [FaceCorrectionWarp]?
+        for value in [0.0001, 0.01, 0.49, 0.495, 0.50, 0.505, 0.51, 1.0] {
+            let warps = FaceCorrectionGeometry.warps(faces: [completeFace()],
+                configuration: BeautyConfiguration(enabled: true, faceOverallStrength: 1,
+                                                    faceSlimStrength: value), extent: extent)
+            XCTAssertEqual(warps.filter { $0.kind == .slimLeft }.count, 6)
+            XCTAssertEqual(warps.filter { $0.kind == .slimRight }.count, 6)
+            for (index, warp) in warps.enumerated() {
+                XCTAssertGreaterThan(abs(warp.visibleOffset.dx), 0)
+                XCTAssertEqual(warp.visibleOffset.dy, 0)
+                XCTAssertLessThanOrEqual(abs(warp.visibleOffset.dx), 360 * 0.12 * value)
+                if let previous {
+                    XCTAssertEqual(warp.center, previous[index].center)
+                    XCTAssertEqual(warp.radius, previous[index].radius)
+                }
+            }
+            XCTAssertEqual(warps[0].visibleOffset.dx, 360 * 0.12 * value, accuracy: 1e-9)
+            XCTAssertLessThan(abs(warps[10].visibleOffset.dx), abs(warps[0].visibleOffset.dx))
+            previous = warps
+        }
+    }
+
+    func testSlimDoesNotSwitchNearestLandmarkForOnePixelPerturbations() throws {
+        let extent = CGRect(x: 0, y: 0, width: 600, height: 800)
+        let box = CGRect(x: 0, y: 0, width: 1, height: 1)
+        let a = CGPoint(x: 0.08, y: 0.39), b = CGPoint(x: 0.22, y: 0.30)
+        let config = BeautyConfiguration(enabled: true, faceOverallStrength: 1, faceSlimStrength: 1)
+        var last: [FaceCorrectionWarp]?
+        for pixels in [0.0, 1.0, 2.0] {
+            let face = DetectedFace(boundingBox: box, confidence: 1, landmarks: [.faceContour: [
+                CGPoint(x: a.x - pixels / 600, y: a.y + pixels / 800), b,
+                CGPoint(x: 0.5, y: 0.03), CGPoint(x: 0.78, y: 0.30), CGPoint(x: 0.92, y: 0.39)
+            ]])
+            let warps = FaceCorrectionGeometry.warps(faces: [face], configuration: config, extent: extent)
+            XCTAssertEqual(warps.count, 12)
+            if let last {
+                for (old, current) in zip(last, warps) {
+                    XCTAssertLessThan(hypot(old.center.x - current.center.x,
+                                            old.center.y - current.center.y), 3)
+                }
+            }
+            last = warps
+        }
+        // Old closest(target: .12, .30) switches A -> B after the 1px perturbation.
+        XCTAssertGreaterThan(hypot((a.x - b.x) * 600, (a.y - b.y) * 800), 100)
+    }
+
+    func testPreviewSlimSmoothingSuppressesJitterAndFollowsMotionAtFrameCadence() throws {
+        var smoother = PreviewSlimLandmarkSmoother()
+        let base = completeFace()
+        XCTAssertEqual(smoother.update(faces: [base], observationTime: 1, time: 1), [base])
+        let stable = try XCTUnwrap(smoother.update(faces: [base], observationTime: 1, time: 1.03).first)
+        XCTAssertEqual(stable.landmarks[.faceContour], base.landmarks[.faceContour])
+        let jitter = shiftedFace(base, dx: 1.0 / 600)
+        let damped = try XCTUnwrap(smoother.update(faces: [jitter], observationTime: 1.06, time: 1.06).first)
+        let shift = damped.boundingBox.minX - base.boundingBox.minX
+        XCTAssertGreaterThan(shift, 0)
+        XCTAssertLessThan(shift, 1.0 / 600 * 0.6)
+
+        let moved = shiftedFace(base, dx: base.boundingBox.width * 0.08)
+        let first = try XCTUnwrap(smoother.update(faces: [moved], observationTime: 1.09, time: 1.09).first)
+        XCTAssertGreaterThan(first.boundingBox.minX - base.boundingBox.minX,
+                             (moved.boundingBox.minX - base.boundingBox.minX) * 0.7)
+        // Same Vision observation continues to converge on subsequent camera frames.
+        let second = try XCTUnwrap(smoother.update(faces: [moved], observationTime: 1.09, time: 1.12).first)
+        XCTAssertGreaterThan(second.boundingBox.minX, first.boundingBox.minX)
+        XCTAssertLessThan(second.boundingBox.minX, moved.boundingBox.minX)
+    }
+
+    func testPreviewSlimSmoothingResetsOnLossAmbiguityStaleTopologyAndNewGeneration() throws {
+        let face = completeFace(), next = shiftedFace(completeFace(), dx: 0.02)
+        var smoother = PreviewSlimLandmarkSmoother()
+        _ = smoother.update(faces: [face], observationTime: 1, time: 1)
+        XCTAssertTrue(smoother.update(faces: [], observationTime: 1.03, time: 1.03).isEmpty)
+        XCTAssertEqual(smoother.update(faces: [next], observationTime: 1.06, time: 1.06), [next])
+        XCTAssertEqual(smoother.update(faces: [face, next], observationTime: 1.09, time: 1.09), [face, next])
+        XCTAssertEqual(smoother.update(faces: [face], observationTime: 1.12, time: 1.12), [face])
+        XCTAssertTrue(smoother.update(faces: [face], observationTime: 1.12, time: 1.7).isEmpty)
+        XCTAssertEqual(smoother.update(faces: [next], observationTime: 1.73, time: 1.73), [next])
+        let far = shiftedFace(face, dx: 0.15)
+        XCTAssertEqual(smoother.update(faces: [far], observationTime: 1.76, time: 1.76), [far])
+        let fewer = DetectedFace(boundingBox: far.boundingBox, confidence: 1,
+            landmarks: [.faceContour: Array(try XCTUnwrap(far.landmarks[.faceContour]).dropLast())])
+        XCTAssertEqual(smoother.update(faces: [fewer], observationTime: 1.79, time: 1.79), [fewer])
+        let weak = DetectedFace(boundingBox: face.boundingBox, confidence: 0.2, landmarks: face.landmarks)
+        XCTAssertTrue(smoother.update(faces: [weak], observationTime: 1.82, time: 1.82).isEmpty)
+        XCTAssertEqual(smoother.update(faces: [next], observationTime: 1.85, time: 1.85), [next])
+        // A new camera/orientation/activation processor owns a fresh smoother.
+        smoother = PreviewSlimLandmarkSmoother()
+        XCTAssertEqual(smoother.update(faces: [face], observationTime: 1.88, time: 1.88), [face])
+    }
+
+    func testPreviewConsumesSmoothedContourOnlyForSlim() throws {
+        let raw = completeFace(), smoothed = shiftedFace(completeFace(), dx: 0.01)
+        let buffer = try pixelBuffer(width: 200, height: 300)
+        let config = faceConfiguration()
+        let snapshot = try XCTUnwrap(runOffMain {
+            try BeautyImageProcessor().previewResult(for: BeautyPreviewFrame(pixelBuffer: buffer,
+                orientation: .up, mirrored: false, faces: [raw], configuration: config,
+                slimFaces: [smoothed]), displayRotationAngle: 0,
+                targetSize: CGSize(width: 200, height: 300)).geometryDebug
+        })
+        let extent = CGRect(x: 0, y: 0, width: 200, height: 300)
+        let expected = FaceCorrectionGeometry.warps(faces: [smoothed], configuration: config, extent: extent)
+        let original = FaceCorrectionGeometry.warps(faces: [raw], configuration: config, extent: extent)
+        for (actual, desired) in zip(snapshot.warps, original) where !actual.isSlim {
+            XCTAssertEqual(actual.center.x, desired.center.x, accuracy: 1e-9)
+            XCTAssertEqual(actual.center.y, desired.center.y, accuracy: 1e-9)
+        }
+        for (actual, desired) in zip(snapshot.smallFaceWarps, expected.filter(\.isSlim)) {
+            XCTAssertEqual(actual.center.x, desired.center.x, accuracy: 1e-9)
+            XCTAssertEqual(actual.center.y, desired.center.y, accuracy: 1e-9)
+        }
+    }
+
+    private func shiftedFace(_ face: DetectedFace, dx: CGFloat) -> DetectedFace {
+        DetectedFace(boundingBox: face.boundingBox.offsetBy(dx: dx, dy: 0), confidence: face.confidence,
+                     landmarks: face.landmarks.mapValues { $0.map { CGPoint(x: $0.x + dx, y: $0.y) } })
     }
 
     private func faceConfiguration() -> BeautyConfiguration {

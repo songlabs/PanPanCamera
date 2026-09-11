@@ -1,5 +1,137 @@
 # Preview strength investigation
 
+## 2026-09-11: Slim continuity repair (Apple/device acceptance pending)
+
+This section describes the repair against `4f2a64f4bc2d6089db1bb319c344bc4945b59899`.
+The sections below it retain the earlier overwrite/strength investigation as history.
+
+### Actual data flow and confirmed discontinuity
+
+`VNDetectFaceLandmarksRequest` returns `faceContour` points in face-relative normalized
+coordinates. `FaceCoordinates.imageLandmarks` applies the observation bounding box;
+the result is image-relative, bottom-left, oriented and unmirrored. Preview reorients
+those points with the image, applies any residual rotation, mirrors the front image
+once, then fits both to the same aspect-fill drawable extent. Geometry converts the
+normalized fitted coordinates to CI pixels. No Preview-layer point conversion is
+applied a second time.
+
+Before this repair, Slim used **one contour point per side**, selected afresh by
+`closest` to face-relative targets `(0.12, 0.30)` and `(0.88, 0.30)`. Neither the jaw
+curve nor chin-side contour was blended into Slim. Width/Cheekbones separately selected
+their own contour points; Chin used two lower side points plus one center; Forehead
+used eyebrow averages. Those other controls do not make Slim a multi-region field.
+
+The nearest-point selector is discontinuous. For a 600 x 800 face, contour candidates
+A=(0.08,0.39), B=(0.22,0.30) have squared target distances 0.0097 and 0.0100.
+Moving A by (-1px,+1px) changes its distance to 0.01006267: selection switches to B,
+moving the old control center about **112px**. This is a synthetic counterexample to
+the actual selector, not a measurement of the user's recording.
+
+The old radius was `0.22 * faceWidth`; its alpha was constant inside 30% radius then
+linearly fell to zero. There was no finite jump at the outer boundary, but its slope
+changed at both ends and a single local zone carried all Slim movement. A separate
+0.05px admission cutoff created a small discontinuity near zero. The earlier opaque
+overwrite bug is already fixed in the baseline: fields add signed vectors to one RG
+map, and the final kernel samples the image once. No last-point overwrite remains.
+
+Vision runs at most eight starts/second, with request-duration cooldown. `latestFaces`
+was replaced directly and reused between detections; there was no EMA, confidence gate,
+stable identity or tracking request. Raw coordinate steps therefore entered the field
+directly. The absence of filtering is confirmed in code; the share of the recording's
+jitter attributable to real Vision noise has not been measured on a device.
+
+The face Slider used `step: 1`. Values otherwise remained Double, normalized once by
+100, then multiplied by Face Auto and `0.120 * faceWidth`. No 49/50/51 branch or extra
+midrange warp activation exists. Endpoint clamps are continuous. The strength cap,
+Auto semantics, default 50 and 0...100 range remain unchanged.
+
+### Minimal Preview changes
+
+- Slim alone accepts fractional Slider values; other face controls retain their
+  `step: 1` Slider, including its accessibility increments. No layout, text, default
+  or other Beauty parameter changed.
+- Six fixed targets per side use Gaussian-weighted contour sampling (sigma 0.10 in
+  face-relative coordinates), avoiding discrete nearest-index changes. All valid
+  contour points contribute; these are geometric anchors, not new Vision landmark types.
+- Mid-cheek gain is 1; upper cheek, intermediate cheek, jaw angle, jawline and chin-side
+  gains are 0.65, 0.90, 0.80, 0.55 and 0.20. Radii are respectively 0.32, 0.32, 0.32,
+  0.30, 0.24 and 0.16 of face width. Center inset stays 0.018 of width. Movement is
+  inward horizontally; the chin center has no Slim control.
+- One cached CI kernel computes all 12 weights `1 - t*t*(3 - 2*t)`, with
+  `t = clamp(distance/radius, 0, 1)`, then `D = sum(w*offset)/sqrt(1+sum(w)^2)`.
+  The weight and slope go to zero at the support edge. Normalization is continuous,
+  bounds overlap by the largest input and leaves a feathered outer edge. A scalar
+  probe rejected the initial `max(1,sum(w))` denominator: its derivative corner and
+  steep outer overlap could fold the inverse field at full strength. The smooth
+  denominator removes that corner without changing the maximum input strength or
+  spreading the controls farther into unrelated features. The only
+  `step` in the kernel masks unused zero-radius argument slots, independent of strength.
+  Width/Chin/Forehead/Cheekbones retain their existing additive field and falloff.
+- The scale bound uses maximum Slim magnitude plus the other controls' sum, rather
+  than summing all twelve normalized Slim controls. Encoding scale cancels on decode;
+  this avoids unnecessary source ROI expansion and loss of map precision.
+- `CameraFaceFrameProcessor` owns a small `PreviewSlimLandmarkSmoother`. It updates
+  at camera-frame cadence with `alpha = 1-exp(-dt/tau)`: tau smoothly varies from
+  60ms (small jitter, alpha about 0.24 at 60fps / 0.43 at 30fps) toward 18ms for motion
+  reaching 8% of the face dimensions. These are engineering starting values, not
+  device-accepted tuning. Repeated Vision observations continue converging each frame.
+- Empty/failed detections reset immediately, even if the display drops that frame.
+  Confidence below 0.5, stale observations over 0.5s and incomplete contour bypass Slim.
+  Multi-face observations clear history and use current raw geometry. A frame gap over
+  0.25s, contour count change, center/point shift of 20% or scale outside 0.75...1.33
+  resets to current data. Camera/orientation/activation generation replacement constructs
+  a new smoother. Only Slim uses the smoothed contour/box; other effects keep raw data.
+
+Vision supplies no persistent face ID here. The conservative single-face association
+cannot distinguish two people exchanging the same position without an observed gap;
+it is not biometric identity verification. Multi-face primary selection also remains
+stateless. Those limits need explicit multi-person device checks.
+
+### Capture, cost and validation
+
+Both native PhotoOutput and silent-frame capture call `FinalBeautyProcessor.process`,
+which only applies skin effects. They never call the Face Correction generator; the
+baseline already has no captured-photo Slim effect. This repair preserves Capture.
+Preview/photo face-shape parity therefore remains unmet, rather than being claimed fixed.
+
+Added work is bounded CPU EMA/contour arithmetic, small point/warp/vector arrays and
+one twelve-region kernel evaluation. There are no new buffers, frame queues, contexts,
+models, SDKs or source-image warp chains. Kernel compilation is static/lazy once; one
+map and one in-flight command buffer remain the bounds. Smoothing can rebuild maps at
+camera cadence instead of only Vision cadence. Actual FPS, GPU time, allocations,
+shutter latency and thermals have not been measured.
+
+Regression coverage in the existing registered XCTest files now includes fractional
+strength (including tiny positive values), six regions per side, 1/2px perturbations,
+EMA jitter/follow/reset, actual Preview consumption of smoothed Slim-only coordinates,
+and production-map readback for every control, order independence, overlap bounds,
+49/50/51 continuity, the feathered support edge and a full-strength no-fold assertion.
+Existing additive non-Slim vector
+and pixel-locality assertions remain; production expectations now use normalized Slim.
+
+Windows validation: 89-file Swift parsing, host typechecking of the existing pure Swift
+Domain/camera helpers, project validation and 45 Python tests passed. The repository's
+`run_pipeline_tests.py` was attempted but failed before tests due to missing Windows
+`msvcrt.lib`, `oldnames.lib`, `msvcprt.lib`. There is no local Xcode, Apple SDK typecheck,
+XCTest execution, Core Image/Metal kernel execution or real-camera evidence.
+
+An independent Python scalar probe read the six production zone constants and checked
+90,601 samples spanning the face and surrounding background. With the final smooth
+normalizer, the symmetric fixture's minimum horizontal inverse Jacobian was 0.25149
+(positive, no fold); 49/50/51 second differences were below 1.5e-14. A 1px X/Y contour
+perturbation moved anchors at most 1.45px and changed the sampled field by at most
+0.822px, instead of the old 112px center switch. These are model-specific numerical
+checks, not execution of Swift, the CI kernel or real-image naturalness validation.
+
+Device acceptance remains pending: static face 0→25→50→75→100 and back, slow fractional
+dragging, speech/translation/depth/head turns, full-strength cheek/jaw/chin quality,
+face loss/reentry/swap, front mirror/rotation, and FPS/shutter response. Existing opt-in
+DEBUG strength diagnostics can read the real combined map and existing geometry
+snapshots expose all twelve final control positions/radii/vectors. No new diagnostic
+UI, persisted landmarks or uploads were added.
+
+**尚未完成 Apple 平台 / 真机验收。Do not mark Slim Preview finally accepted.**
+
 Investigated baseline: `4a760d0e67e509e64247a369321e609399424520`, clean `main`,
 equal to `origin/main` and the remote main ref before changes. Windows host; no
 Xcode, Core Image runtime, iPhone, or new device recording was available.

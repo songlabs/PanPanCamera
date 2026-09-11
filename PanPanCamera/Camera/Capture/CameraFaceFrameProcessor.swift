@@ -71,6 +71,8 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
     private let device: AVCaptureDevice
     private let onResult: (FaceDetectionDelivery) -> Void
     private var latestFaces: [DetectedFace] = []
+    private var latestFaceTime: TimeInterval = -.infinity
+    private var slimSmoother = PreviewSlimLandmarkSmoother()
 
     init(device: AVCaptureDevice, orientation: FaceImageOrientation, detector: VisionFaceDetector,
          frameStore: SilentFrameStore, previewFrameStore: BeautyPreviewFrameStore,
@@ -110,7 +112,7 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
                                                 timestamp: CMSampleBufferGetPresentationTimeStamp(sampleBuffer),
                                                 orientation: orientation, position: position,
                                                 mirrored: position == .front, metadata: metadata))
-                publishPreview(buffer)
+                publishPreview(buffer, at: start)
             }
             guard delivery.begin(at: start) else { return }
             let size = buffer.map {
@@ -118,6 +120,7 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
             } ?? .zero
             var faces: [DetectedFace] = []
             var outcome = FaceDetectionFrame.Outcome.missingPixelBuffer
+            latestFaceTime = start
             if let buffer {
                 do {
                     faces = try detector.detect(buffer, orientation: orientation)
@@ -128,8 +131,12 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
                     latestFaces = []
                     outcome = .visionFailed
                 }
+            } else {
+                latestFaces = []
             }
-            if let buffer { publishPreview(buffer) }
+            // Reset immediately even if the renderer misses the empty detection frame.
+            if latestFaces.isEmpty { slimSmoother.reset() }
+            if let buffer { publishPreview(buffer, at: ProcessInfo.processInfo.systemUptime) }
             let frame = FaceDetectionFrame(faces: faces, orientation: orientation, deviceID: deviceID,
                                            pixelSize: size,
                                            timestamp: CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)),
@@ -138,14 +145,15 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
         }
     }
 
-    private func publishPreview(_ buffer: CVPixelBuffer) {
+    private func publishPreview(_ buffer: CVPixelBuffer, at time: TimeInterval) {
         let configuration = beautyConfiguration.snapshot()
         guard !configuration.isBypassed || FaceGeometryDebugMode.isEnabled else {
             previewFrameStore.clear()
             return
         }
+        let slimFaces = slimSmoother.update(faces: latestFaces, observationTime: latestFaceTime, time: time)
         previewFrameStore.replace(BeautyPreviewFrame(pixelBuffer: buffer, orientation: orientation,
             mirrored: position == .front, faces: latestFaces,
-            configuration: configuration))
+            configuration: configuration, slimFaces: slimFaces))
     }
 }

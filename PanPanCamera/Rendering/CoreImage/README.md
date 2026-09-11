@@ -14,22 +14,31 @@ detection, identity verification or a visually accepted result.
 image center on an area tie. It requires a usable face contour; Forehead additionally
 requires both eyebrow regions. Auto batch-sets all face parameters, while Slim, Width,
 Chin, Forehead and Cheekbones multiply their own 0...1 value by Auto. Each control
-produces small inward or vertical movements around contour/eyebrow anchors. At full
-effective strength the largest single movement is capped at 6% of face width or 1.8%
+produces inward or vertical movements around contour/eyebrow anchors. At full
+effective strength the largest single movement is capped at 12% of face width or 3.6%
 of face height; the default Auto and concrete UI values produce 25% effective strength.
 
 `FaceCorrectionPreviewStep` encodes those movements as feathered radial fields over a
 neutral RG displacement map and applies one explicit vector-sampling `CIKernel`. R/G
 encode inverse X/Y sampling offsets around 0.5, with
-`scale = max(1, 2 * sum(offset magnitudes))` in CI pixels. Each feathered signed vector
-is added to the map; later effects cannot cover earlier vectors. The sum bound avoids
+`scale = max(1, 2 * (maximum Slim offset + sum(other offset magnitudes)))` in CI pixels.
+Slim has six Gaussian-weighted contour anchors per side (upper/mid cheek through jaw
+to chin sides), with peak gain 1 and taper to 0.2 near the chin. One cached kernel
+evaluates all twelve cubic radial weights and combines `sum(weight * offset) / sqrt(1 + sum(weight)^2)`.
+This keeps support edges at zero and bounds overlap without a chain of twelve filters.
+Other controls keep their additive radial fields; later effects cannot cover earlier vectors. The bound avoids
 clipping and cancels during decoding, so it does not scale the visible strength.
 The kernel samples at `destination + (RG - 0.5) * scale`, using
 `samplerTransform` for source coordinates and an expanded source ROI. The former
 `CIDisplacementDistortion` accepts a grayscale texture; its documented contract does
 not provide this RG vector decoding. The latest
 map is cached until landmarks, configuration or target extent changes. It creates no
-CIContext, UIImage, queue, task, pixel-buffer cache or per-face history. The existing
+CIContext, UIImage, queue, task or pixel-buffer cache. The camera processor owns a
+Preview-only single-face contour EMA, applied only to Slim before the existing image
+transforms. Its time constant varies continuously from 60 ms for jitter to 18 ms for
+motion. Loss, low confidence, topology/association changes, stale observations and
+camera-generation replacement reset history; multiple faces bypass smoothing.
+Geometric association is not biometric identity tracking. The existing
 1280-pixel Preview bound, latest-frame slot and single in-flight Metal command buffer
 remain unchanged. Zero, no face, invalid/incomplete contour and unavailable Forehead
 eyebrows bypass the applicable geometry without crashing or retaining stale data.

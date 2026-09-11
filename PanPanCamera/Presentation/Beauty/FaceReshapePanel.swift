@@ -39,15 +39,23 @@ struct FaceReshapePanel: View {
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
-            Slider(value: Binding(
-                get: { parameters.value(for: parameters.selectedFace) },
-                set: { parameters.setValue($0, for: parameters.selectedFace) }
-            ), in: BeautyParameters.range, step: 1) {
-                Text(parameters.selectedFace.label)
-            }
-            .frame(minHeight: 44)
-            .accessibilityHint(strengthHint)
-            .accessibilityValue(percentage)
+            strengthSlider
+                .frame(minHeight: 44)
+                .accessibilityHint(strengthHint)
+                .accessibilityValue(percentage)
+        }
+    }
+
+    @ViewBuilder
+    private var strengthSlider: some View {
+        let value = Binding(
+            get: { parameters.value(for: parameters.selectedFace) },
+            set: { parameters.setValue($0, for: parameters.selectedFace) }
+        )
+        if parameters.selectedFace == .slim {
+            Slider(value: value, in: BeautyParameters.range) { Text(parameters.selectedFace.label) }
+        } else {
+            Slider(value: value, in: BeautyParameters.range, step: 1) { Text(parameters.selectedFace.label) }
         }
     }
 

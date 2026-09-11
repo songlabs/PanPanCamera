@@ -17,8 +17,10 @@ BeautyImageProcessor defines the skin effect order and parameter mapping: textur
 preserving smoothing, bounded local brightening, then neutral tone consistency. Preview
 uses the same definition on a smaller aspect-filled image with lighter internal settings;
 final uses native pixels. Preview then maps the main face's contour/eyebrow landmarks to
-the five local Face Correction controls. Their feathered signed vectors are added into one
-cached RG displacement map and one explicit vector-sampling CI kernel; missing/incomplete landmarks
+the five local Face Correction controls. Slim uses six softly sampled contour regions
+per side, one normalized cubic field, and Preview-only temporal contour smoothing.
+The other controls retain their additive radial fields. These feed one cached RG
+displacement map and one explicit vector-sampling CI kernel; missing/incomplete landmarks
 fall back to the original Preview layer. Face Auto batch-sets the category parameters,
 and each implemented control is rendered at Auto multiplied by its concrete strength.
 Face geometry is intentionally absent from final-photo processing. Both branches remain

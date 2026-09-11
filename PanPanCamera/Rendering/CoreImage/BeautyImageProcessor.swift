@@ -66,6 +66,9 @@ struct BeautyImageProcessor: Sendable {
                                                         y: -image.extent.minY))
         var orientedFaces = Self.reorientedFaces(frame.faces, from: frame.orientation,
                                                  to: displayOrientation, mirrored: false)
+        var slimFaces = frame.slimFaces.map {
+            Self.reorientedFaces($0, from: frame.orientation, to: displayOrientation, mirrored: false)
+        }
         let normalizedAngle = (displayRotationAngle.truncatingRemainder(dividingBy: 360) + 360)
             .truncatingRemainder(dividingBy: 360)
         var residual = normalizedAngle - CGFloat(displayOrientation.rawValue)
@@ -82,6 +85,10 @@ struct BeautyImageProcessor: Sendable {
                                                 y: -rotated.extent.minY)
             orientedFaces = Self.transformedFaces(orientedFaces, sourceExtent: originalExtent,
                 transform: rotation, outputExtent: rotated.extent)
+            slimFaces = slimFaces.map {
+                Self.transformedFaces($0, sourceExtent: originalExtent,
+                                      transform: rotation, outputExtent: rotated.extent)
+            }
             image = rotated.transformed(by: translation)
         }
         if frame.mirrored {
@@ -89,6 +96,9 @@ struct BeautyImageProcessor: Sendable {
                                                             tx: image.extent.width, ty: 0))
             orientedFaces = Self.reorientedFaces(orientedFaces, from: displayOrientation,
                                                  to: displayOrientation, mirrored: true)
+            slimFaces = slimFaces.map {
+                Self.reorientedFaces($0, from: displayOrientation, to: displayOrientation, mirrored: true)
+            }
         }
         let sourceExtent = image.extent
         let target = CGRect(origin: .zero, size: targetSize)
@@ -100,8 +110,11 @@ struct BeautyImageProcessor: Sendable {
         image = image.transformed(by: transform).cropped(to: target)
         let fittedFaces = Self.fittedFaces(orientedFaces, sourceExtent: sourceExtent,
                                            targetExtent: target, transform: transform)
+        let fittedSlimFaces = slimFaces.map {
+            Self.fittedFaces($0, sourceExtent: sourceExtent, targetExtent: target, transform: transform)
+        }
         let geometry = FaceCorrectionGeometry.result(faces: fittedFaces,
-            configuration: frame.configuration, extent: target)
+            configuration: frame.configuration, extent: target, slimFaces: fittedSlimFaces)
         #if DEBUG
         // Diagnostic failure must not turn an otherwise valid Preview into a bypass.
         try? faceCorrection.logStrengthDiagnostics(configuration: frame.configuration,

@@ -16,6 +16,8 @@ struct FaceCorrectionWarp: Equatable, Sendable {
     let center: CGPoint
     let radius: CGFloat
     let visibleOffset: CGVector
+
+    var isSlim: Bool { kind == .slimLeft || kind == .slimRight }
 }
 
 /// The exact fitted Preview geometry used to build the production displacement map.
@@ -47,7 +49,7 @@ enum FaceCorrectionGeometry {
     }
 
     static func result(faces: [DetectedFace], configuration: BeautyConfiguration,
-                       extent: CGRect) -> FaceCorrectionGeometryResult {
+                       extent: CGRect, slimFaces: [DetectedFace]? = nil) -> FaceCorrectionGeometryResult {
         guard isValid(extent), let face = primaryFace(in: faces) else { return .empty }
         let contour = validLandmarks(.faceContour, in: face)
         let box = pixelRect(face.boundingBox, in: extent)
@@ -68,12 +70,10 @@ enum FaceCorrectionGeometry {
         var result: [FaceCorrectionWarp] = []
         let slim = CGFloat(configuration.effectiveFaceSlim)
         let appliedSlim = configuration.isFaceCorrectionBypassed ? 0 : slim
-        let candidateSmallFaceWarps = sidePair(left: leftLower, right: rightLower, extent: extent,
-            inset: box.width * 0.018, radius: box.width * 0.22,
-            movement: box.width * maximumSlimDisplacementRatio * appliedSlim,
-            leftKind: .slimLeft, rightKind: .slimRight, permitsZeroMovement: true)
+        let candidateSmallFaceWarps = slimControls(face: primaryFace(in: slimFaces ?? [face]),
+                                                   strength: appliedSlim, extent: extent)
         let activeSmallFaceWarps = candidateSmallFaceWarps.filter {
-            !configuration.isFaceCorrectionBypassed && slim > 0 && visibleMagnitude($0) >= 0.05
+            !configuration.isFaceCorrectionBypassed && slim > 0
         }
         result.append(contentsOf: activeSmallFaceWarps)
         let smallFaceWarps = candidateSmallFaceWarps.map { warp in
@@ -138,6 +138,49 @@ enum FaceCorrectionGeometry {
         }
         return FaceCorrectionGeometryResult(faceBox: box, contour: pixelContour,
                                             smallFaceWarps: smallFaceWarps, warps: result)
+    }
+
+    // Fixed anatomical targets, with soft contour sampling rather than nearest-point
+    // selection. Every valid contour point contributes continuously as the face moves.
+    // The first zone is mid-cheek (peak); the others connect upper cheek to jaw/chin.
+    private static let slimZones: [(x: CGFloat, y: CGFloat, gain: CGFloat, radius: CGFloat)] = [
+        (0.12, 0.36, 1.00, 0.32), (0.09, 0.56, 0.65, 0.32),
+        (0.10, 0.46, 0.90, 0.32), (0.19, 0.25, 0.80, 0.30),
+        (0.28, 0.15, 0.55, 0.24), (0.39, 0.07, 0.20, 0.16)
+    ]
+
+    private static func slimControls(face: DetectedFace?, strength: CGFloat,
+                                     extent: CGRect) -> [FaceCorrectionWarp] {
+        guard let face else { return [] }
+        let contour = validLandmarks(.faceContour, in: face)
+        let box = pixelRect(face.boundingBox, in: extent)
+        guard contour.count >= 5, box.width >= 8, box.height >= 8 else { return [] }
+        var controls: [FaceCorrectionWarp] = []
+        controls.reserveCapacity(12)
+        for zone in slimZones {
+            let left = contourAnchor(contour, target: CGPoint(x: zone.x, y: zone.y),
+                                     box: face.boundingBox)
+            let right = contourAnchor(contour, target: CGPoint(x: 1 - zone.x, y: zone.y),
+                                      box: face.boundingBox)
+            controls.append(contentsOf: sidePair(left: left, right: right, extent: extent,
+                inset: box.width * 0.018, radius: box.width * zone.radius,
+                movement: box.width * maximumSlimDisplacementRatio * strength * zone.gain,
+                leftKind: .slimLeft, rightKind: .slimRight, permitsZeroMovement: true))
+        }
+        return controls
+    }
+
+    private static func contourAnchor(_ points: [CGPoint], target: CGPoint, box: CGRect) -> CGPoint {
+        var sum = CGPoint.zero
+        var total: CGFloat = 0
+        for point in points {
+            let distance = squaredDistance(relative(point, in: box), target)
+            let weight = exp(-distance / (2 * 0.10 * 0.10))
+            sum.x += point.x * weight
+            sum.y += point.y * weight
+            total += weight
+        }
+        return CGPoint(x: sum.x / total, y: sum.y / total)
     }
 
     static func primaryFace(in faces: [DetectedFace]) -> DetectedFace? {
@@ -259,9 +302,6 @@ enum FaceCorrectionGeometry {
 
     private static func isFinite(_ value: CGFloat) -> Bool { value.isFinite }
 
-    private static func visibleMagnitude(_ warp: FaceCorrectionWarp) -> CGFloat {
-        hypot(warp.visibleOffset.dx, warp.visibleOffset.dy)
-    }
 }
 
 private extension CGRect {
@@ -366,15 +406,17 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
            let cachedMap, cachedScale > 0 { return (cachedMap, cachedScale) }
 
         let largest = warps.map { hypot($0.visibleOffset.dx, $0.visibleOffset.dy) }.max() ?? 0
-        guard largest >= 0.05 else { throw BeautyImageProcessor.Failure.invalidExtent }
+        guard largest > 0 else { throw BeautyImageProcessor.Failure.invalidExtent }
 
         // Encode inverse sampling offsets: R = X, G = Y, 0.5 = zero.
         // The matching kernel decodes these values into CI pixels exactly once.
         // Overlapping effects contribute vectors, not opaque layers. Bound the
         // sum so RG stays in 0...1 without clipping or normalizing strength again.
-        let scale = max(1, 2 * warps.reduce(CGFloat.zero) {
+        let slim = warps.filter(\.isSlim)
+        let slimBound = slim.map { abs($0.visibleOffset.dx) }.max() ?? 0
+        let scale = max(1, 2 * (slimBound + warps.filter { !$0.isSlim }.reduce(CGFloat.zero) {
             $0 + hypot($1.visibleOffset.dx, $1.visibleOffset.dy)
-        })
+        }))
         // Create encoded values through CIColorMatrix arithmetic so 0.5 stays neutral
         // in the renderer's linear working space instead of passing through color conversion.
         var displacement = try CoreImageRendering.filter("CIColorMatrix", parameters: [
@@ -385,7 +427,29 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
             "inputAVector": CIVector(x: 0, y: 0, z: 0, w: 0),
             "inputBiasVector": CIVector(x: 0.5, y: 0.5, z: 0, w: 1)
         ], in: extent)
-        for warp in warps {
+        // All twelve slim regions are evaluated together in ONE map kernel. Their
+        // overlap is normalized only within Slim; other controls retain their sum.
+        if !slim.isEmpty {
+            guard slim.count <= 12, let kernel = Self.slimDisplacement else {
+                throw CoreImageRendering.Failure.filterUnavailable
+            }
+            var arguments: [Any] = [displacement]
+            for index in 0..<12 {
+                if index < slim.count {
+                    let warp = slim[index]
+                    arguments.append(CIVector(x: warp.center.x, y: warp.center.y,
+                                              z: warp.radius, w: -warp.visibleOffset.dx / scale))
+                } else {
+                    arguments.append(CIVector(x: 0, y: 0, z: 0, w: 0))
+                }
+            }
+            guard let combined = kernel.apply(extent: extent,
+                roiCallback: { _, rect in rect }, arguments: arguments) else {
+                throw CoreImageRendering.Failure.filterUnavailable
+            }
+            displacement = combined
+        }
+        for warp in warps where !warp.isSlim {
             let falloff = try CoreImageRendering.filter("CIRadialGradient", parameters: [
                 "inputCenter": CIVector(cgPoint: warp.center),
                 "inputRadius0": warp.radius * 0.30,
@@ -406,6 +470,33 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
         cachedScale = scale
         return (displacement, scale)
     }
+
+    // Generated once: the legacy CI language has no array parameters. Unrolling a
+    // fixed twelve-element field avoids twelve gradient/filter graphs per frame.
+    // Cubic smoothstep has zero slope at both ends. sqrt(1 + sumW^2) preserves
+    // the zero-valued edge and bounds overlap without max(1, sumW)'s derivative
+    // corner, which made overlapping outer supports too steep at full strength.
+    private static let slimDisplacement: CIKernel? = {
+        let parameters = (0..<12).map { "vec4 c\($0)" }.joined(separator: ", ")
+        let contributions = (0..<12).map { index in
+            """
+            float t\(index) = clamp(distance(p, c\(index).xy) / max(1.0, c\(index).z), 0.0, 1.0);
+            float w\(index) = (1.0 - t\(index) * t\(index) * (3.0 - 2.0 * t\(index))) * step(0.5, c\(index).z);
+            total += w\(index);
+            delta += w\(index) * c\(index).w;
+            """
+        }.joined(separator: "\n")
+        return CIKernel(source: """
+            kernel vec4 continuousSlimField(sampler base, \(parameters)) {
+                vec2 p = destCoord();
+                float total = 0.0;
+                float delta = 0.0;
+                \(contributions)
+                vec2 value = sample(base, samplerTransform(base, p)).rg;
+                return vec4(value + vec2(delta / sqrt(1.0 + total * total), 0.0), 0.0, 1.0);
+            }
+            """)
+    }()
 
     // Source-over previously erased earlier effects wherever a later radial
     // field had alpha 1 (in particular Chin over Slim). Add only the weighted
