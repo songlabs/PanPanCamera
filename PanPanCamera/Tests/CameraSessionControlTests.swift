@@ -28,7 +28,8 @@ final class CameraSessionControlTests: XCTestCase {
         XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .right, mirrored: false), .right)
         XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .down, mirrored: false), .down)
         XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .left, mirrored: false), .left)
-        XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .right, mirrored: true), .rightMirrored)
+        XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .right, mirrored: true), .leftMirrored)
+        XCTAssertEqual(SilentFrameOrientation.exif(captureOrientation: .left, mirrored: true), .rightMirrored)
     }
     private func replace(allowed: Set<CameraPosition>) -> (CameraInputReplacement<CameraPosition>, [String]) {
         var operations: [String] = []

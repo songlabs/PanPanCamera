@@ -18,9 +18,12 @@ struct SilentFrameOrientation {
         case (.down, false): .down
         case (.left, false): .left
         case (.up, true): .upMirrored
-        case (.right, true): .rightMirrored
+        // ImageIO names describe the encoded pixels relative to display. A
+        // display-space horizontal mirror after a quarter-turn uses the
+        // opposite mirrored orientation name.
+        case (.right, true): .leftMirrored
         case (.down, true): .downMirrored
-        case (.left, true): .leftMirrored
+        case (.left, true): .rightMirrored
         }
     }
 }

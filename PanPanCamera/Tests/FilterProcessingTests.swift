@@ -7,6 +7,7 @@ import XCTest
 /// Apple pixel checks reuse the production context on a detached worker. Linear
 /// RGBA8 comparisons allow byte quantization; they do not establish naturalness.
 private enum FilterTestPixels {
+    static let context = CIContext(options: [.cacheIntermediates: false])
     static let colorSpace = CGColorSpace(name: CGColorSpace.extendedLinearSRGB)!
 
     static func image(alpha: UInt8 = 255, origin: CGPoint = .zero) -> CIImage {
@@ -24,16 +25,13 @@ private enum FilterTestPixels {
     }
 
     static func bytes(_ image: CIImage) throws -> [UInt8] {
-        let rendered = try XCTUnwrap(CoreImageRendering.createCGImage(image, colorSpace: colorSpace))
-        var rgba = [UInt8](repeating: 0, count: rendered.width * rendered.height * 4)
-        try rgba.withUnsafeMutableBytes { buffer in
-            // Normalize the CGImage's backend-dependent channel/row layout.
-            let context = try XCTUnwrap(CGContext(data: buffer.baseAddress,
-                width: rendered.width, height: rendered.height, bitsPerComponent: 8,
-                bytesPerRow: rendered.width * 4, space: colorSpace,
-                bitmapInfo: CGBitmapInfo.byteOrder32Big.rawValue | CGImageAlphaInfo.premultipliedLast.rawValue))
-            context.setBlendMode(.copy)
-            context.draw(rendered, in: CGRect(x: 0, y: 0, width: rendered.width, height: rendered.height))
+        let width = Int(image.extent.width), height = Int(image.extent.height)
+        var rgba = [UInt8](repeating: 0, count: width * height * 4)
+        rgba.withUnsafeMutableBytes { buffer in
+            // CIContext supports the extended-linear output space directly;
+            // an 8-bit CGContext does not support that color-space/bitmap pair.
+            context.render(image, toBitmap: buffer.baseAddress!, rowBytes: width * 4,
+                bounds: image.extent, format: .RGBA8, colorSpace: colorSpace)
         }
         return rgba
     }
