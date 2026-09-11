@@ -16,7 +16,7 @@ final class CameraServiceTests: XCTestCase {
             beautyConfigurations.append(configuration)
         }
         func switchCamera() {}
-        func capture(flash: FlashMode, beauty: BeautyConfiguration) {
+        func capture(flash: FlashMode, beauty: BeautyConfiguration, diagnostics: PhotoCaptureDiagnostics) {
             captures.append((flash, beauty))
         }
     }
@@ -109,7 +109,7 @@ final class CameraServiceTests: XCTestCase {
         camera.capture()
         XCTAssertTrue(camera.state.isCapturing)
         XCTAssertEqual(commands.captures.map { $0.flash }, [.off])
-        await deliver(.captureFinished(nil), to: commands)
+        await deliver(.captureFinished(succeeded: false), to: commands)
         XCTAssertEqual(camera.failure, .captureFailed)
         XCTAssertFalse(camera.state.isCapturing)
         XCTAssertTrue(camera.state.canCapture)
@@ -155,6 +155,54 @@ final class CameraServiceTests: XCTestCase {
         XCTAssertEqual(captured?.effectiveDarkCircles ?? -1, 0.86 * 0.35, accuracy: 0.000_001)
         XCTAssertEqual(captured?.effectiveFaceSlim ?? -1, 0.64 * 0.38, accuracy: 0.000_001)
         XCTAssertEqual(commands.captures.last?.beauty, captured)
+        await deliver(.captureFinished(succeeded: true), to: commands)
+        camera.capture()
+        XCTAssertEqual(commands.captures.count, 2)
+        XCTAssertEqual(commands.captures[0].beauty, captured)
+        XCTAssertEqual(commands.captures[1].beauty, camera.beautyParameters.processingConfiguration)
+        XCTAssertNotEqual(commands.captures[0].beauty, commands.captures[1].beauty)
+    }
+
+    func testAcquisitionReleasesShutterAndOlderProcessingFailureCannotEndNewCapture() async {
+        let commands = SessionCommands()
+        let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
+        await camera.setActive(true)
+        await deliver(.status(.running), to: commands)
+        camera.capture()
+        await deliver(.captureFinished(succeeded: true), to: commands)
+        XCTAssertTrue(camera.state.canCapture)
+        XCTAssertNil(camera.capturedPhoto)
+        camera.capture()
+        await deliver(.photoProcessingFinished(nil), to: commands)
+        XCTAssertTrue(camera.state.isCapturing)
+        XCTAssertEqual(camera.failure, .captureFailed)
+        await deliver(.captureFinished(succeeded: true), to: commands)
+        XCTAssertTrue(camera.state.canCapture)
+    }
+
+    func testSavedResultsUpdateInOrderWithoutChangingNewCaptureState() async throws {
+        let photos = try await Task.detached {
+            let bytes = try PhotoProcessingTestFixture.data()
+            return [try XCTUnwrap(CapturedPhoto(data: bytes)), try XCTUnwrap(CapturedPhoto(data: bytes))]
+        }.value
+        let commands = SessionCommands()
+        let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
+        await camera.setActive(true)
+        await deliver(.status(.running), to: commands)
+        camera.capture()
+        await deliver(.captureFinished(succeeded: true), to: commands)
+        camera.capture()
+        await deliver(.photoProcessingFinished(photos[0]), to: commands)
+        XCTAssertEqual(camera.capturedPhoto?.id, photos[0].id)
+        XCTAssertTrue(camera.state.isCapturing)
+        await deliver(.captureFinished(succeeded: true), to: commands)
+        await deliver(.photoProcessingFinished(photos[1]), to: commands)
+        XCTAssertEqual(camera.capturedPhoto?.id, photos[1].id)
+        XCTAssertTrue(camera.state.canCapture)
+        await deliver(.photoProcessingFinished(nil), to: commands)
+        XCTAssertEqual(camera.capturedPhoto?.id, photos[1].id)
+        XCTAssertEqual(camera.failure, .captureFailed)
+        XCTAssertTrue(camera.state.canCapture)
     }
 
     func testPreviewAndCaptureShareMultipliedEffectiveStrength() async throws {

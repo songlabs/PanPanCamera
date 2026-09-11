@@ -4,11 +4,12 @@ import SwiftUI
 struct CameraView: View {
     @ObservedObject var camera: CameraService
     @StateObject private var tools = CameraToolState()
+    @State private var presentedPhoto: CapturedPhoto?
     @Environment(\.scenePhase) private var scenePhase
     private let screenshot = ScreenshotConfiguration(arguments: ProcessInfo.processInfo.arguments)
 
     private var shouldRunCamera: Bool {
-        !screenshot.isEnabled && scenePhase == .active && camera.capturedPhoto == nil
+        !screenshot.isEnabled && scenePhase == .active && presentedPhoto == nil
     }
 
     var body: some View {
@@ -57,7 +58,7 @@ struct CameraView: View {
                 #endif
             }
         }
-        .fullScreenCover(item: $camera.capturedPhoto) { photo in
+        .fullScreenCover(item: $presentedPhoto) { photo in
             CaptureResultView(photo: photo)
         }
         .alert(Text(L10n.errorTitle), isPresented: Binding(
@@ -170,9 +171,18 @@ struct CameraView: View {
     }
 
     private func bottomTool(_ label: L10n, symbol: String, panel: CameraPanel) -> some View {
-        Button { tools.panel = panel } label: {
+        Button {
+            if panel == .album, let photo = camera.capturedPhoto { presentedPhoto = photo }
+            else { tools.panel = panel }
+        } label: {
             VStack(spacing: 8) {
-                Image(systemName: symbol).font(.system(size: PanPanTheme.iconSize, weight: .medium))
+                if panel == .album, let photo = camera.capturedPhoto {
+                    Image(uiImage: photo.preview).resizable().scaledToFill()
+                        .frame(width: PanPanTheme.iconSize, height: PanPanTheme.iconSize)
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                } else {
+                    Image(systemName: symbol).font(.system(size: PanPanTheme.iconSize, weight: .medium))
+                }
                 Text(label).font(.caption).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, minHeight: 60)

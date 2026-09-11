@@ -5,6 +5,36 @@
 	};
 	"objectVersion" = 56;
 	"objects" = {
+		"A40000000000000000000001" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PhotoCaptureDiagnostics.swift";
+			"sourceTree" = "<group>";
+		};
+		"A50000000000000000000001" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A40000000000000000000001";
+		};
+		"A40000000000000000000002" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PhotoProcessingQueue.swift";
+			"sourceTree" = "<group>";
+		};
+		"A50000000000000000000002" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A40000000000000000000002";
+		};
+		"A40000000000000000000003" = {
+			"isa" = "PBXFileReference";
+			"lastKnownFileType" = "sourcecode.swift";
+			"path" = "PhotoProcessingQueueTests.swift";
+			"sourceTree" = "<group>";
+		};
+		"A50000000000000000000003" = {
+			"isa" = "PBXBuildFile";
+			"fileRef" = "A40000000000000000000003";
+		};
 		"F20000000000000000000006" = {
 			"isa" = "PBXFileReference";
 			"lastKnownFileType" = "sourcecode.swift";
@@ -858,6 +888,8 @@
 		"B7BC98AC6C6124FAB19C4BBF" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"A40000000000000000000001",
+				"A40000000000000000000002",
 				"BE4399DC740038C1DBC36CC4",
 				"4B187487F6081294F51B53D6",
 				"842CBEB0C2E4C21556F7EC1D",
@@ -1326,6 +1358,7 @@
 		"A9F99B2CD4B4341BBBB50D75" = {
 			"isa" = "PBXGroup";
 			"children" = (
+				"A40000000000000000000003",
 				"F20000000000000000000004",
 				"F20000000000000000000005",
 				"F20000000000000000000006",
@@ -1417,6 +1450,8 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"A50000000000000000000001",
+				"A50000000000000000000002",
 				"C30000000000000000000001",
 				"B30000000000000000000001",
 				"F30000000000000000000001",
@@ -1509,6 +1544,7 @@
 			"isa" = "PBXSourcesBuildPhase";
 			"buildActionMask" = 2147483647;
 			"files" = (
+				"A50000000000000000000003",
 				"F30000000000000000000004",
 				"F30000000000000000000005",
 				"F30000000000000000000006",

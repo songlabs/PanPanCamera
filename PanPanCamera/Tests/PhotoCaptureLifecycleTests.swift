@@ -39,6 +39,40 @@ final class PhotoCaptureLifecycleTests: XCTestCase {
         checkCompletion(processingError: nil, finalError: CaptureError.final, expectsData: false)
     }
 
+    func testFinalCallbackAdmitsAnotherCaptureWhileIndependentJobIsStillProcessing() {
+        var registry = PhotoCaptureRegistry<PhotoCaptureProcessor>()
+        let processingStarted = expectation(description: "Independent job started")
+        let processingFinished = expectation(description: "Independent job finished")
+        let release = DispatchSemaphore(value: 0)
+        let worker = PhotoProcessingQueue(process: { _ in
+            XCTAssertFalse(Thread.isMainThread)
+            processingStarted.fulfill()
+            XCTAssertEqual(release.wait(timeout: .now() + 5), .success)
+            return nil
+        }, completion: { _ in processingFinished.fulfill() })
+        var first: PhotoCaptureProcessor? = PhotoCaptureProcessor { data in
+            guard registry.finish(id: 1), let data else { return }
+            XCTAssertTrue(worker.enqueue(PhotoProcessingJob(source: .photoData(data),
+                configuration: .disabled, diagnostics: .disabled)))
+        }
+        weak var retainedFirst = first
+        registry.register(first!, id: 1)
+        first = nil
+        retainedFirst?.process(data: Data([1]), error: nil)
+        XCTAssertEqual(registry.activeID, 1)
+        retainedFirst?.finish(error: nil)
+        wait(for: [processingStarted], timeout: 2)
+        XCTAssertNil(retainedFirst)
+        XCTAssertNil(registry.activeID)
+        XCTAssertEqual(worker.pendingCount, 1)
+        registry.register(PhotoCaptureProcessor { _ in }, id: 2)
+        XCTAssertEqual(registry.activeID, 2)
+        release.signal()
+        wait(for: [processingFinished], timeout: 2)
+        XCTAssertEqual(registry.activeID, 2, "Job completion cannot release a newer capture")
+        XCTAssertTrue(registry.finish(id: 2))
+    }
+
     func testResetLateCallbackReleasesOldProcessorWithoutCompletingNewCapture() {
         var registry = PhotoCaptureRegistry<PhotoCaptureProcessor>()
         var published: [Int64] = []

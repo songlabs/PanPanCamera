@@ -37,6 +37,7 @@ struct CameraState: Equatable, Sendable {
     var supportedFlashModes: [FlashMode] = [.off]
     var flash: FlashMode = .off
     var canSwitchCamera = false
+    // Only native acquisition occupies the shutter, never final processing/saving.
     var isCapturing = false
     var isSwitching = false
 

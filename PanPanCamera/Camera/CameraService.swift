@@ -9,7 +9,7 @@ final class CameraService: ObservableObject {
     @Published private(set) var previewDevice: AVCaptureDevice?
     @Published private(set) var faceDetection: FaceDetectionFrame?
     @Published private(set) var isFaceDetectionAvailable = false
-    @Published var capturedPhoto: CapturedPhoto?
+    @Published private(set) var capturedPhoto: CapturedPhoto?
     @Published var failure: CameraFailure?
     @Published var beautyParameters = BeautyParameters() {
         didSet { captureSession.setBeautyConfiguration(beautyParameters.processingConfiguration) }
@@ -17,6 +17,7 @@ final class CameraService: ObservableObject {
 
     private var isActive = false
     private var permissionRequestInFlight = false
+    private var captureDiagnostics: PhotoCaptureDiagnostics?
     private let permission: CameraPermissionProvider
     private let makeSession: (@escaping (CameraSessionEvent) -> Void) -> any CameraSessionControlling
     private lazy var captureSession: any CameraSessionControlling = makeSession { [weak self] event in
@@ -79,7 +80,9 @@ final class CameraService: ObservableObject {
         // Snapshot the value at the shutter boundary. Later slider changes cannot
         // affect this capture's asynchronous final processing.
         let beauty = beautyParameters.processingConfiguration
-        captureSession.capture(flash: state.flash, beauty: beauty)
+        let diagnostics = PhotoCaptureDiagnostics(configuration: beauty)
+        captureDiagnostics = diagnostics
+        captureSession.capture(flash: state.flash, beauty: beauty, diagnostics: diagnostics)
     }
 
     func selectMode(_ mode: CameraMode) { state.selectMode(mode) }
@@ -96,18 +99,17 @@ final class CameraService: ObservableObject {
             if state.status != .running { faceDetection = nil }
         case let .switching(value):
             state.isSwitching = value
-        case let .captureFinished(photo):
-            guard let photo else {
-                state.isCapturing = false
-                failure = .captureFailed
-                return
-            }
-            Task { [weak self] in
-                guard let self else { return }
-                if await PhotoLibrarySaver.save(photo.data) { capturedPhoto = photo }
-                else { failure = .captureFailed }
-                state.isCapturing = false
-            }
+        case let .captureFinished(succeeded):
+            state.isCapturing = false
+            if !succeeded { captureDiagnostics?.mark("capture_failed") }
+            captureDiagnostics?.mark("shutter_ui_released")
+            captureDiagnostics = nil
+            if !succeeded { failure = .captureFailed }
+        case let .photoProcessingFinished(photo):
+            // The serial worker publishes only after saving, in shutter order.
+            // An older job must never change a newer capture's busy state.
+            if let photo { capturedPhoto = photo }
+            else { failure = .captureFailed }
         case .switchFailed:
             state.isSwitching = false
             failure = .switchFailed

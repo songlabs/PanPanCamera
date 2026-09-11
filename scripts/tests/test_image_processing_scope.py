@@ -101,11 +101,14 @@ struct DebugFaceMaskStep {}
 
     def test_formal_capture_processes_both_native_source_paths_without_preview_screenshot_or_upscale(self):
         session = (APP / 'Camera/Session/CameraSession.swift').read_text(encoding='utf-8')
+        worker = (APP / 'Camera/Capture/PhotoProcessingQueue.swift').read_text(encoding='utf-8')
         final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
-        code = '\n'.join(line.split('//')[0] for line in (session + final).splitlines())
+        code = '\n'.join(line.split('//')[0] for line in (session + worker + final).splitlines())
         final_code = '\n'.join(line.split('//')[0] for line in final.splitlines())
-        self.assertIn('processPhotoData($0, configuration: beauty)', session)
-        self.assertIn('processSilentFrame(frame, configuration: beauty)', session)
+        self.assertIn('processPhotoData(input, configuration: job.configuration', worker)
+        self.assertIn('processSilentFrame(frame, configuration: job.configuration', worker)
+        self.assertIn('submitPhoto(.photoData(data)', session)
+        self.assertIn('submitPhoto(.silentFrame(frame)', session)
         self.assertNotRegex(code, r'\b(?:drawHierarchy|snapshotView|UIGraphicsImageRenderer|layer\.render)\b')
         self.assertNotRegex(final_code, r'\b(?:resized|resize|upscale|maximumDimension|maxPhotoDimensions)\b')
 
@@ -114,18 +117,35 @@ struct DebugFaceMaskStep {}
         frame_store = (APP / 'Rendering/BeautyPreviewFrameStore.swift').read_text(encoding='utf-8')
         renderer = (APP / 'Rendering/CoreImage/BeautyPreviewRenderer.swift').read_text(encoding='utf-8')
         self.assertIn('let beauty = beautyParameters.processingConfiguration', service)
-        self.assertIn('captureSession.capture(flash: state.flash, beauty: beauty)', service)
+        self.assertIn('captureSession.capture(flash: state.flash, beauty: beauty, diagnostics: diagnostics)', service)
         self.assertIn('private var latest: BeautyPreviewFrame?', frame_store)
         self.assertNotRegex(frame_store, r'\[(?:BeautyPreviewFrame|CVPixelBuffer)\]')
         self.assertIn('private var inFlight = false', renderer)
         self.assertNotRegex(renderer, r'queue\.asyncAfter|Task\s*[({.]')
+
+    def test_acquisition_releases_before_job_handoff_and_saved_result_is_explicit(self):
+        session = (APP / 'Camera/Session/CameraSession.swift').read_text(encoding='utf-8')
+        service = (APP / 'Camera/CameraService.swift').read_text(encoding='utf-8')
+        view = (APP / 'Presentation/Camera/CameraView.swift').read_text(encoding='utf-8')
+        native = session.split('let processor = PhotoCaptureProcessor(diagnostics:')[1].split('captures.register')[0]
+        self.assertLess(native.index('captures.finish(id:'), native.index('submitPhoto(.photoData(data)'))
+        silent = session.split('private func captureSilentFrame(')[1].split('private func submitPhoto(')[0]
+        self.assertNotIn('captures.register', silent)
+        self.assertLess(silent.index('onEvent(.captureFinished(succeeded: true))'),
+                        silent.index('submitPhoto(.silentFrame(frame)'))
+        saved = service.split('case let .photoProcessingFinished(photo):')[1].split('case .switchFailed:')[0]
+        self.assertNotIn('isCapturing =', saved)
+        self.assertNotIn('PhotoLibrarySaver.save', service)
+        self.assertIn('.fullScreenCover(item: $presentedPhoto)', view)
+        self.assertIn('scenePhase == .active && presentedPhoto == nil', view)
+        self.assertNotIn('.fullScreenCover(item: $camera.capturedPhoto)', view)
 
     def test_beauty_zero_and_disabled_bypass_before_final_photo_decode(self):
         config = (APP / 'Domain/BeautyParameters.swift').read_text(encoding='utf-8')
         final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
         self.assertIn('!enabled ||', config)
         self.assertIn('var isPhotoBypassed: Bool', config)
-        bypass = final.index('guard !configuration.isPhotoBypassed else { return data }')
+        bypass = final.index('guard !configuration.isPhotoBypassed else {')
         decode = final.index('CGImageSourceCreateWithData')
         self.assertLess(bypass, decode)
 
@@ -204,7 +224,7 @@ struct DebugFaceMaskStep {}
         self.assertIn('quality == .preview ? 640 : 1280', local)
         self.assertIn('condition: .notOnQueue(.main)', local)
         self.assertIn('var result = try processFaceEffects(image', processor)
-        self.assertIn('let result = try processSkin(source', processor)
+        self.assertIn('try processSkin(source', processor)
         self.assertEqual(final.count('try processor.process(input'), 2)
         self.assertEqual(final.count('quality: .final'), 2)
         self.assertIn('strength: configuration.effectiveBlemish', processor)
@@ -225,7 +245,7 @@ struct DebugFaceMaskStep {}
         self.assertLess(preview.index('try processFaceEffects(image'), preview.index('try faceCorrection.makeOutput'))
         self.assertLess(preview.index('try faceCorrection.makeOutput'), preview.index('try filter.makeOutput'))
         self.assertIn('configuration: configuration.makeup', processor)
-        self.assertEqual(final.count('configuration.requiresFaceDetection'), 2)
+        self.assertEqual(final.count('? try diagnostics.measure("vision_face_detection")'), 2)
         self.assertEqual(final.count('|| !configuration.filter.isBypassed'), 2)
         self.assertEqual(final.count('try processor.process(input'), 2)
         self.assertIn('makeupFaces: makeupFaces', frame)

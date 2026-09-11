@@ -3,7 +3,7 @@ import ImageIO
 import Photos
 
 /// Immutable data and an EXIF-oriented, downsampled display image.
-/// Created on the session queue; UIKit only reads the image after main-actor delivery.
+/// Created on the photo worker; UIKit only reads the image after main-actor delivery.
 struct CapturedPhoto: Identifiable, @unchecked Sendable {
     let id = UUID()
     let data: Data

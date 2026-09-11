@@ -167,22 +167,33 @@ struct BeautyImageProcessor: Sendable {
     }
 
     func process(_ source: CIImage, faces: [DetectedFace], configuration: BeautyConfiguration,
-                 quality: BeautyProcessingQuality) throws -> CIImage {
+                 quality: BeautyProcessingQuality,
+                 diagnostics: PhotoCaptureDiagnostics = .disabled) throws -> CIImage {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard !configuration.isPhotoBypassed else { return source }
-        let result = try processFaceEffects(source, faces: faces, configuration: configuration, quality: quality)
-        return try filter.makeOutput(source: result, configuration: configuration.filter) ?? result
+        let result = try processFaceEffects(source, faces: faces, configuration: configuration,
+                                            quality: quality, diagnostics: diagnostics)
+        return try diagnostics.measure("filter_graph") {
+            try filter.makeOutput(source: result, configuration: configuration.filter) ?? result
+        }
     }
 
     func processFaceEffects(_ source: CIImage, faces: [DetectedFace],
                             makeupFaces: [DetectedFace]? = nil,
                             configuration: BeautyConfiguration,
-                            quality: BeautyProcessingQuality) throws -> CIImage {
+                            quality: BeautyProcessingQuality,
+                            diagnostics: PhotoCaptureDiagnostics = .disabled) throws -> CIImage {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard configuration.enabled else { return source }
-        let result = try processSkin(source, faces: faces, configuration: configuration, quality: quality)
-        return try makeup.makeOutput(source: result, faces: makeupFaces ?? faces,
-                                     configuration: configuration.makeup) ?? result
+        // CIImage is lazy: these durations measure graph/mask construction. All
+        // deferred pixel work is included in the single final render measurement.
+        let result = try diagnostics.measure("skin_graph") {
+            try processSkin(source, faces: faces, configuration: configuration, quality: quality)
+        }
+        return try diagnostics.measure("makeup_graph") {
+            try makeup.makeOutput(source: result, faces: makeupFaces ?? faces,
+                                  configuration: configuration.makeup) ?? result
+        }
     }
 
     private func processSkin(_ source: CIImage, faces: [DetectedFace], configuration: BeautyConfiguration,

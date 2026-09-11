@@ -4,7 +4,8 @@ enum CameraSessionEvent {
     case configuration(AVCaptureDevice, CameraPosition, Bool, [FlashMode])
     case status(CameraStatus)
     case switching(Bool)
-    case captureFinished(CapturedPhoto?)
+    case captureFinished(succeeded: Bool)
+    case photoProcessingFinished(CapturedPhoto?)
     case switchFailed
     case faceDetection(FaceDetectionDelivery?)
     case faceDetectionAvailability(Bool)
@@ -17,7 +18,7 @@ protocol CameraSessionControlling: AnyObject {
     func setRunning(_ shouldRun: Bool)
     func setBeautyConfiguration(_ configuration: BeautyConfiguration)
     func switchCamera()
-    func capture(flash: FlashMode, beauty: BeautyConfiguration)
+    func capture(flash: FlashMode, beauty: BeautyConfiguration, diagnostics: PhotoCaptureDiagnostics)
 }
 
 /// Owns all capture graph mutations on queue. The preview layer is the only external
@@ -28,12 +29,13 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     private let output = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let videoQueue = DispatchQueue(label: "camera.panpan.faces", qos: .utility)
-    private let encodingQueue = DispatchQueue(label: "camera.panpan.silent-encoding", qos: .userInitiated)
     private let faceDetector = VisionFaceDetector()
     private let frameStore = SilentFrameStore()
     let beautyPreviewFrames = BeautyPreviewFrameStore()
     private let beautyConfiguration = BeautyConfigurationStore()
-    private let finalBeautyProcessor = FinalBeautyProcessor()
+    private lazy var photoProcessing = PhotoProcessingQueue { [weak self] photo in
+        self?.queue.async { [weak self] in self?.onEvent(.photoProcessingFinished(photo)) }
+    }
     private var faceProcessor: CameraFaceFrameProcessor?
     private var faceRotationObservation: NSKeyValueObservation?
     private var videoOutputReady = false
@@ -113,22 +115,31 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         }
     }
 
-    func capture(flash: FlashMode, beauty: BeautyConfiguration) {
+    func capture(flash: FlashMode, beauty: BeautyConfiguration, diagnostics: PhotoCaptureDiagnostics) {
         queue.async { [self] in
             guard configured, session.isRunning, !session.isInterrupted, captures.activeID == nil else {
-                onEvent(.captureFinished(nil))
+                onEvent(.captureFinished(succeeded: false))
                 return
             }
-            if captureStrategy() == .silentVideoFrame {
-                captureSilentFrame(beauty: beauty)
+            let strategy = captureStrategy()
+            diagnostics.selectSource(strategy == .silentVideoFrame ? "silent_frame" : "photo_output")
+            // Reject before obtaining another native image, never after silently
+            // accumulating an unbounded set of full-resolution frames.
+            guard photoProcessing.canAcceptJob else {
+                diagnostics.backlog(photoProcessing.pendingCount, rejected: true)
+                onEvent(.captureFinished(succeeded: false))
+                return
+            }
+            if strategy == .silentVideoFrame {
+                captureSilentFrame(beauty: beauty, diagnostics: diagnostics)
                 return
             }
             guard let connection = output.connection(with: .video), connection.isActive else {
-                onEvent(.captureFinished(nil)); return
+                onEvent(.captureFinished(succeeded: false)); return
             }
             let angle = rotation?.videoRotationAngleForHorizonLevelCapture ?? 90
             guard connection.isVideoRotationAngleSupported(angle) else {
-                onEvent(.captureFinished(nil))
+                onEvent(.captureFinished(succeeded: false))
                 return
             }
             connection.videoRotationAngle = angle
@@ -148,22 +159,18 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             settings.photoQualityPrioritization = .quality
             settings.maxPhotoDimensions = output.maxPhotoDimensions
             let captureID = settings.uniqueID
-            let processor = PhotoCaptureProcessor { [weak self] data in
-                guard let self else { return }
-                self.encodingQueue.async {
-                    let processed = autoreleasepool {
-                        data.flatMap {
-                            self.finalBeautyProcessor.processPhotoData($0, configuration: beauty)
-                        }
-                    }
-                    self.queue.async {
-                        guard self.captures.finish(id: captureID) else { return }
-                        let photo = processed.flatMap(CapturedPhoto.init(data:))
-                        self.onEvent(.captureFinished(photo))
+            let processor = PhotoCaptureProcessor(diagnostics: diagnostics) { [weak self] data in
+                self?.queue.async { [weak self] in
+                    guard let self, self.captures.finish(id: captureID) else { return }
+                    diagnostics.mark("capture_slot_released")
+                    self.onEvent(.captureFinished(succeeded: data != nil))
+                    if let data {
+                        self.submitPhoto(.photoData(data), beauty: beauty, diagnostics: diagnostics)
                     }
                 }
             }
             captures.register(processor, id: captureID)
+            diagnostics.mark("avcapture_submitted")
             output.capturePhoto(with: settings, delegate: processor)
         }
     }
@@ -175,22 +182,26 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         return .silentVideoFrame
     }
 
-    private func captureSilentFrame(beauty: BeautyConfiguration) {
+    private func captureSilentFrame(beauty: BeautyConfiguration, diagnostics: PhotoCaptureDiagnostics) {
         dispatchPrecondition(condition: .onQueue(queue))
-        guard let frame = frameStore.take() else { onEvent(.captureFinished(nil)); return }
-        // A sentinel occupies the existing one-capture registry without retaining an AV delegate.
-        let captureID = Int64.min
-        let token = PhotoCaptureProcessor { _ in }
-        captures.register(token, id: captureID)
-        encodingQueue.async { [weak self] in
-            guard let self else { return }
-            let data = autoreleasepool {
-                self.finalBeautyProcessor.processSilentFrame(frame, configuration: beauty)
-            }
-            self.queue.async {
-                guard self.captures.finish(id: captureID) else { return }
-                self.onEvent(.captureFinished(data.flatMap(CapturedPhoto.init(data:))))
-            }
+        diagnostics.mark("silent_frame_start")
+        guard let frame = frameStore.take() else {
+            onEvent(.captureFinished(succeeded: false)); return
+        }
+        // Taking the native buffer completes acquisition; no AV delegate/slot is
+        // needed for the independent job that now owns that immutable frame.
+        diagnostics.mark("capture_data")
+        diagnostics.mark("capture_slot_released")
+        onEvent(.captureFinished(succeeded: true))
+        submitPhoto(.silentFrame(frame), beauty: beauty, diagnostics: diagnostics)
+    }
+
+    private func submitPhoto(_ source: PhotoProcessingJob.Source, beauty: BeautyConfiguration,
+                             diagnostics: PhotoCaptureDiagnostics) {
+        dispatchPrecondition(condition: .onQueue(queue))
+        if !photoProcessing.enqueue(PhotoProcessingJob(source: source, configuration: beauty,
+                                                       diagnostics: diagnostics)) {
+            onEvent(.photoProcessingFinished(nil))
         }
     }
 
@@ -413,7 +424,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
                 guard let self else { return }
                 self.stopFaceDetection()
                 if self.captures.invalidateActive() {
-                    self.onEvent(.captureFinished(nil))
+                    self.onEvent(.captureFinished(succeeded: false))
                 }
                 self.lifecycle.recover(wasReset: wasReset,
                                        restart: { self.startIfNeeded() },

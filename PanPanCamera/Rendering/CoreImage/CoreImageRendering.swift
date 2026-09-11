@@ -5,18 +5,28 @@ import ImageIO
 import Metal
 
 final class SilentFrameEncoder: @unchecked Sendable {
-    func encode(_ frame: SilentFrame) -> Data? {
+    func encode(_ frame: SilentFrame, diagnostics: PhotoCaptureDiagnostics = .disabled) -> Data? {
         dispatchPrecondition(condition: .notOnQueue(.main))
         let orientation = SilentFrameOrientation.exif(captureOrientation: frame.orientation,
                                                       mirrored: frame.mirrored)
         let image = CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(orientation)
         let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let cgImage = CoreImageRendering.createCGImage(image, colorSpace: colorSpace) else { return nil }
+        guard let cgImage = diagnostics.measure("core_image_render", {
+            CoreImageRendering.createCGImage(image, colorSpace: colorSpace)
+        }) else { diagnostics.mark("render_failed"); return nil }
+        return diagnostics.measure("image_encode") {
+            let result = encodeImage(cgImage, metadata: frame.metadata)
+            if result == nil { diagnostics.mark("encode_failed") }
+            return result
+        }
+    }
+
+    private func encodeImage(_ cgImage: CGImage, metadata originalMetadata: [String: Any]) -> Data? {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else {
             return nil
         }
-        var metadata = frame.metadata
+        var metadata = originalMetadata
         metadata[kCGImagePropertyOrientation as String] = CGImagePropertyOrientation.up.rawValue
         metadata[kCGImageDestinationLossyCompressionQuality as String] = 1.0
         CGImageDestinationAddImage(destination, cgImage, metadata as CFDictionary)
