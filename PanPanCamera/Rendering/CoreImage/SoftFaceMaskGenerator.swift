@@ -62,17 +62,19 @@ struct BeautySkinMaskGenerator: Sendable {
     enum Failure: Error { case filterUnavailable }
 
     func makeMasks(source: CIImage, regions: [FaceRegion]) throws -> [SkinMaskResult] {
-        guard let classifier = Self.classifier else { throw Failure.filterUnavailable }
+        guard !regions.isEmpty else { return [] }
         let extent = source.extent
         let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: extent)
+        let classified = try CoreImageRendering.filter("CIColorCube", parameters: [
+            kCIInputImageKey: source,
+            "inputCubeDimension": Self.cubeDimension,
+            "inputCubeData": Self.cubeData
+        ], in: extent)
         var results: [SkinMaskResult] = []
         for region in regions {
             let roi = region.imageRect(in: extent)
             guard roi.width >= 1, roi.height >= 1,
                   let face = try SoftFaceMaskGenerator().makeMask(regions: [region], in: extent) else { continue }
-            guard let classified = classifier.apply(extent: extent, arguments: [source]) else {
-                throw Failure.filterUnavailable
-            }
             let semantic = try CoreImageRendering.filter("CIMultiplyCompositing", parameters: [
                 kCIInputImageKey: classified, kCIInputBackgroundImageKey: face
             ], in: extent)
@@ -104,24 +106,44 @@ struct BeautySkinMaskGenerator: Sendable {
             .cropped(to: extent)
     }
 
-    private static let classifier = CIColorKernel(source: """
-        kernel vec4 beautySkin(__sample p) {
-            vec3 c = unpremultiply(p).rgb;
-            float hi = max(c.r, max(c.g, c.b));
-            float lo = min(c.r, min(c.g, c.b));
-            float chroma = hi - lo;
-            float y = dot(c, vec3(0.299, 0.587, 0.114));
-            float warm = c.r - c.b;
-            float greenBalance = c.r - c.g;
-            float exposure = smoothstep(0.06, 0.20, y) * (1.0 - smoothstep(0.92, 1.0, y));
-            float hueFamily = smoothstep(-0.035, 0.035, warm) *
-                              (1.0 - smoothstep(0.30, 0.52, warm)) *
-                              (1.0 - smoothstep(0.22, 0.42, abs(greenBalance)));
-            float colorfulness = smoothstep(0.018, 0.075, chroma) *
-                                 (1.0 - smoothstep(0.62, 0.88, chroma));
-            float confidence = exposure * hueFamily * mix(0.58, 1.0, colorfulness);
-            confidence *= step(0.001, p.a);
-            return vec4(vec3(clamp(confidence, 0.0, 1.0)), 1.0);
+    private static let cubeDimension = 64
+    private static let cubeData: Data = {
+        var values: [Float] = []
+        values.reserveCapacity(cubeDimension * cubeDimension * cubeDimension * 4)
+        let scale = Float(cubeDimension - 1)
+        for blueIndex in 0..<cubeDimension {
+            let blue = Float(blueIndex) / scale
+            for greenIndex in 0..<cubeDimension {
+                let green = Float(greenIndex) / scale
+                for redIndex in 0..<cubeDimension {
+                    let red = Float(redIndex) / scale
+                    let confidence = skinConfidence(red: red, green: green, blue: blue)
+                    values.append(contentsOf: [confidence, confidence, confidence, 1])
+                }
+            }
         }
-        """)
+        return values.withUnsafeBufferPointer(Data.init(buffer:))
+    }()
+
+    private static func skinConfidence(red: Float, green: Float, blue: Float) -> Float {
+        let high = max(red, max(green, blue))
+        let low = min(red, min(green, blue))
+        let chroma = high - low
+        let luminance = red * 0.299 + green * 0.587 + blue * 0.114
+        let warmth = red - blue
+        let greenBalance = red - green
+        let exposure = smoothstep(0.06, 0.20, luminance) *
+            (1 - smoothstep(0.92, 1, luminance))
+        let hueFamily = smoothstep(-0.035, 0.035, warmth) *
+            (1 - smoothstep(0.30, 0.52, warmth)) *
+            (1 - smoothstep(0.22, 0.42, abs(greenBalance)))
+        let colorfulness = smoothstep(0.018, 0.075, chroma) *
+            (1 - smoothstep(0.62, 0.88, chroma))
+        return min(1, max(0, exposure * hueFamily * (0.58 + 0.42 * colorfulness)))
+    }
+
+    private static func smoothstep(_ edge0: Float, _ edge1: Float, _ value: Float) -> Float {
+        let t = min(1, max(0, (value - edge0) / (edge1 - edge0)))
+        return t * t * (3 - 2 * t)
+    }
 }
