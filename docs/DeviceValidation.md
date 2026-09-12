@@ -98,6 +98,23 @@ If these conditions cannot be produced, retain Pending rather than treating unit
 
 ### Beauty Preview and Final Photo
 
+For the skin-only retouch check, use the same front-facing subject, camera, distance,
+lighting and parameter values on the parent commit and the candidate commit. Save the
+two PhotoOutput results as `before` and `after`, then run the DEBUG
+`DebugPhotoProcessing.beautyMaskOverlay` output on the candidate source. Cyan marks the
+beauty ROI, green is the final effective skin coverage, and red is excluded non-skin or
+protected detail. These three images are the required comparison artifact; do not use a
+preview screenshot as the PhotoOutput result.
+
+- [ ] Pending — the cyan ROI is the face box expanded 15% at the top and 5% on each side,
+      clamped at image edges.
+- [ ] Pending — green covers the central forehead and the skin immediately below the
+      hairline; red/no coverage remains on hair, eyes, eyebrows, lips, nostril detail and
+      visible glasses frames.
+- [ ] Pending — compare Preview, PhotoOutput and silent frame: mask boundaries and effect
+      direction agree after accounting for resolution, orientation and front-camera mirror.
+- [ ] Pending — inspect the feathered green/red transition at 200% for hard edges or halos.
+
 - [ ] Pending — overall strength 0 reveals the original preview path; 0 to 100 changes the live face result without reopening the panel.
 - [ ] Pending — Face Auto scales the same five local effects; Slim narrows the lower face without shrinking eyes/nose/mouth.
 - [ ] Pending — Width changes the side contour only; Chin remains subtle without a sharp V-face result.

@@ -123,6 +123,10 @@ final class BeautyProcessingTests: XCTestCase {
                         if strength == 0 { XCTAssertNil(result.image) }
                         else { XCTAssertNotNil(result.image) }
                         let fittedBox = try XCTUnwrap(result.geometryDebug?.faceBox)
+                        let beautyROI = try XCTUnwrap(result.geometryDebug?.beautyROIs.first)
+                        XCTAssertGreaterThan(beautyROI.maxY, fittedBox.maxY)
+                        XCTAssertLessThan(beautyROI.minX, fittedBox.minX)
+                        XCTAssertGreaterThan(beautyROI.maxX, fittedBox.maxX)
                         let geometry = try XCTUnwrap(result.geometryDebug?.warps)
                         if strength == 0 { XCTAssertTrue(geometry.isEmpty); continue }
                         let actual = try warp(kind, in: geometry)

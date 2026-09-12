@@ -12,6 +12,7 @@ enum DebugPhotoProcessing {
     enum Output: Sendable {
         case original, faceMask, skinMask, featureProtectionMask, detailProtectionMask
         case combinedProtectionMask, effectiveSkinMask, processed, difference
+        case beautyMaskOverlay
         case processedTexture, toneAdjusted, toneDifference
         // Preserve existing developer call sites while using descriptive new modes.
         static let processedPhoto = Self.processed
@@ -48,7 +49,8 @@ enum DebugPhotoProcessing {
                 result = try retouch(input, regions: regions, components: components)
             case .faceMask:
                 result = try DebugFaceMaskStep().process(input.image, regions: regions)
-            case .skinMask, .featureProtectionMask, .detailProtectionMask, .combinedProtectionMask, .effectiveSkinMask:
+            case .skinMask, .featureProtectionMask, .detailProtectionMask, .combinedProtectionMask, .effectiveSkinMask,
+                 .beautyMaskOverlay:
                 let source = CIImage(cgImage: input.image.cgImage)
                 let black = CIImage(color: CIColor(red: 0, green: 0, blue: 0)).cropped(to: source.extent)
                 let landmarks = try MockFaceLandmarkDetector<ProcessingImage>().detectLandmarks(in: input.image, regions: regions)
@@ -60,6 +62,11 @@ enum DebugPhotoProcessing {
                 case .featureProtectionMask: mask = masks?.featureProtectionMask ?? black
                 case .detailProtectionMask: mask = masks?.detailProtectionMask ?? black
                 case .combinedProtectionMask: mask = masks?.combinedProtectionMask ?? black
+                case .beautyMaskOverlay:
+                    guard let masks else { mask = black; break }
+                    result = try overlay(source: source, masks: masks, regions: regions, matching: input.image)
+                    return JobImage(image: result, output: input.output, configuration: input.configuration,
+                        components: input.components, skinMaskProvider: input.skinMaskProvider)
                 default: mask = masks?.effectiveSkinMask ?? black
                 }
                 result = try CoreImageRendering.render(mask, matching: input.image)
@@ -76,6 +83,34 @@ enum DebugPhotoProcessing {
             }
             return JobImage(image: result, output: input.output, configuration: input.configuration,
                 components: input.components, skinMaskProvider: input.skinMaskProvider)
+        }
+
+        private func overlay(source: CIImage, masks: EffectiveSkinMaskComposer.Masks,
+                             regions: [FaceRegion], matching image: ProcessingImage) throws -> ProcessingImage {
+            let extent = source.extent
+            let inverseSkin = try CoreImageRendering.grayMask(masks.skinMask, scale: -1, bias: 1)
+            let nonSkin = try CoreImageRendering.filter("CIMultiplyCompositing", parameters: [
+                kCIInputImageKey: masks.faceMask, kCIInputBackgroundImageKey: inverseSkin
+            ], in: extent)
+            let excluded = try CoreImageRendering.filter("CIMaximumCompositing", parameters: [
+                kCIInputImageKey: nonSkin, kCIInputBackgroundImageKey: masks.combinedProtectionMask
+            ], in: extent)
+            let green = CIImage(color: CIColor(red: 0, green: 1, blue: 0, alpha: 0.42)).cropped(to: extent)
+            let red = CIImage(color: CIColor(red: 1, green: 0, blue: 0, alpha: 0.48)).cropped(to: extent)
+            var output = try CoreImageRendering.blend(green, over: source, mask: masks.effectiveSkinMask)
+            output = try CoreImageRendering.blend(red, over: output, mask: excluded)
+            let cyan = CIImage(color: CIColor(red: 0, green: 0.9, blue: 1, alpha: 0.9))
+            for region in regions {
+                let r = region.imageRect(in: extent).integral
+                let width = max(1, min(r.width, r.height) * 0.006)
+                for edge in [CGRect(x: r.minX, y: r.minY, width: r.width, height: width),
+                             CGRect(x: r.minX, y: r.maxY - width, width: r.width, height: width),
+                             CGRect(x: r.minX, y: r.minY, width: width, height: r.height),
+                             CGRect(x: r.maxX - width, y: r.minY, width: width, height: r.height)] {
+                    output = cyan.cropped(to: edge.intersection(extent)).composited(over: output)
+                }
+            }
+            return try CoreImageRendering.render(output.cropped(to: extent), matching: image)
         }
 
         private func retouch(_ input: JobImage, regions: [FaceRegion],
