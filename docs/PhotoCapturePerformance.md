@@ -127,7 +127,7 @@ No photo pixels, EXIF contents, device identifiers or face coordinates are logge
 | Saving | `save_enqueue`, `save_start`, `save_end`, `photo_saved` / `save_failed` |
 | Waiting | `queue_wait_processing`, `queue_wait_save` |
 | Stages | `decode`, `vision`, `skin_graph`, `makeup_graph`, `filter_graph`, `render`, `encode`, `thumbnail` |
-| Totals | `shutter_to_capture`, `capture_to_processing`, `processing_total`, `save_total`, `shutter_to_saved`, plus one `[CameraPerformance]` Capture/Processing/Encoding/PhotoKit/Total summary |
+| Totals | `shutter_to_capture`, `capture_to_processing`, `processing_total`, `save_total`, `shutter_to_saved`, plus one `[CameraPerformance]` Capture/Processing/Encoding/PhotoKit/Authorization/SaveQueue/Total summary |
 | PhotoKit | `authorization_start/end`, `authorization`, `performChanges_start`, `photokit_completion_callback`, `performChanges` |
 | Backpressure | `pending_total`, `pending_processing`, `pending_save`, `processingQueued/Active`, `saveQueued/Active`, `backlog_rejected` |
 
@@ -140,6 +140,12 @@ CV pixel format are logged. Compressed PhotoOutput may expose no pixel buffer;
 that case explicitly says `encoded_no_pixel_buffer`, not an invented CV format.
 Resolved dimensions describe the delivered processed photo, per Apple's
 [photoDimensions contract](https://developer.apple.com/documentation/avfoundation/avcaptureresolvedphotosettings/photodimensions).
+
+`PhotoKit` is strictly the `performChanges` transaction through its completion
+callback; authorization is reported separately. `SaveQueue` covers the whole save
+worker interval, including authorization and callback dispatch. A stage that never
+starts (for example PhotoKit after denied authorization) reports `0.00ms` rather
+than attributing authorization time to PhotoKit.
 
 CIImage is lazy: `skin_graph`, `makeup_graph` and `filter_graph` measure graph/mask
 construction; GPU evaluation is included in the one final `render`. These numbers

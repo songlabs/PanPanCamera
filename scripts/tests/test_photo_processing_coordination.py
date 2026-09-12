@@ -127,6 +127,16 @@ final class DelegateToken {}
         }
         wait(failed); wait(failed)
         precondition(failureWorker.pendingCount == 0 && failureWorker.canAcceptJob)
+
+        let summary = PhotoCaptureDiagnostics(configuration: first)
+        summary.selectSource("photo_output")
+        for stage in ["capture_data_ready", "processing_enqueue", "processing_start",
+                      "encoding_start", "encoding_end", "processing_end", "save_enqueue",
+                      "save_start", "authorization_start", "authorization_end",
+                      "performChanges_start", "photokit_completion_callback", "save_end",
+                      "photo_saved"] {
+            summary.mark(stage)
+        }
         print("PASS host FIFO, snapshots, slot independence, bounded backlog, delayed save failure, processing failure")
     }
 }
@@ -169,6 +179,12 @@ class PhotoProcessingCoordinationTests(unittest.TestCase):
                         self.assertIn('stage=backlog_rejected pending_total=2', run.stdout)
                         self.assertIn('stage=save_failed', run.stdout)
                         self.assertIn('stage=processing_failed', run.stdout)
+                        self.assertRegex(
+                            run.stdout,
+                            r'\[CameraPerformance\].*Capture=[0-9.]+ms '
+                            r'Processing=[0-9.]+ms Encoding=[0-9.]+ms '
+                            r'PhotoKit=[0-9.]+ms Authorization=[0-9.]+ms '
+                            r'SaveQueue=[0-9.]+ms Total=[0-9.]+ms')
                     else:
                         self.assertNotIn('[PhotoPerformance]', run.stdout)
 

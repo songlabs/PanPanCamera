@@ -130,11 +130,16 @@ final class PhotoCaptureDiagnostics: @unchecked Sendable {
               let saveStarted = milestones["save_start"] else { return }
         let effectsEnded = milestones["encoding_start"] ?? processingEnded
         let encoding = duration(from: milestones["encoding_start"], to: milestones["encoding_end"])
+        let authorization = duration(from: milestones["authorization_start"], to: milestones["authorization_end"])
+        let photoKit = duration(from: milestones["performChanges_start"],
+                                to: milestones["photokit_completion_callback"])
         print("[CameraPerformance] id=\(captureID?.uuidString ?? "disabled") source=\(source) effects=\(effects) " +
               "Capture=\(format(milliseconds(from: requested, to: captured)))ms " +
               "Processing=\(format(milliseconds(from: processingStarted, to: effectsEnded)))ms " +
               "Encoding=\(format(encoding))ms " +
-              "PhotoKit=\(format(milliseconds(from: saveStarted, to: end)))ms " +
+              "PhotoKit=\(format(photoKit))ms " +
+              "Authorization=\(format(authorization))ms " +
+              "SaveQueue=\(format(milliseconds(from: saveStarted, to: end)))ms " +
               "Total=\(format(milliseconds(from: requested, to: end)))ms")
     }
 
