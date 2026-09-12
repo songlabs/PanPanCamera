@@ -9,6 +9,7 @@ struct FaceGeometryDebugSnapshot: Equatable, Sendable {
     let extent: CGRect
     let faceDetected: Bool
     let faceBox: CGRect?
+    let beautyROIs: [CGRect]
     let contour: [CGPoint]
     let smallFaceWarps: [FaceCorrectionWarp]
     let warps: [FaceCorrectionWarp]
@@ -144,6 +145,7 @@ struct BeautyImageProcessor: Sendable {
             extent: target,
             faceDetected: !fittedFaces.isEmpty,
             faceBox: geometry.faceBox,
+            beautyROIs: Self.geometry(from: fittedFaces).regions.map { $0.imageRect(in: target) },
             contour: geometry.contour,
             smallFaceWarps: geometry.smallFaceWarps,
             warps: geometry.warps,
@@ -313,13 +315,21 @@ struct BeautyImageProcessor: Sendable {
         var regions: [FaceRegion] = []
         var landmarks: [FacialLandmarks] = []
         for face in faces {
-            guard let region = try? FaceRegion(boundingBox: clamped(face.boundingBox)) else { continue }
+            // Beauty deliberately owns geometry separate from face correction. Vision's
+            // face box often ends below the upper forehead, so extend it upward by 15%
+            // and sideways by 5%, then clamp it to the oriented image.
+            let box = face.boundingBox
+            let beautyBox = clamped(CGRect(x: box.minX - box.width * 0.05,
+                                           y: box.minY,
+                                           width: box.width * 1.10,
+                                           height: box.height * 1.15))
+            guard let region = try? FaceRegion(boundingBox: beautyBox) else { continue }
             regions.append(region)
             var local: [FacialLandmarkRegion: [CGPoint]] = [:]
             for (name, points) in face.landmarks {
                 local[name] = points.map {
-                    CGPoint(x: ($0.x - face.boundingBox.minX) / face.boundingBox.width,
-                            y: ($0.y - face.boundingBox.minY) / face.boundingBox.height)
+                    CGPoint(x: ($0.x - beautyBox.minX) / beautyBox.width,
+                            y: ($0.y - beautyBox.minY) / beautyBox.height)
                 }
             }
             landmarks.append(FacialLandmarks(region: region, features: local))

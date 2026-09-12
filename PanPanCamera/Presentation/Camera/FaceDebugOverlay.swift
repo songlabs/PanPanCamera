@@ -10,6 +10,7 @@ final class FaceGeometryDebugOverlay {
     private weak var previewLayer: AVCaptureVideoPreviewLayer?
     private let container = CALayer()
     private let boxes = CAShapeLayer()
+    private let beautyBoxes = CAShapeLayer()
     private let contourLines = CAShapeLayer()
     private let contourPoints = CAShapeLayer()
     private let radii = CAShapeLayer()
@@ -24,6 +25,8 @@ final class FaceGeometryDebugOverlay {
         container.masksToBounds = true
 
         configure(boxes, stroke: .systemGreen, fill: .clear, lineWidth: 2)
+        configure(beautyBoxes, stroke: .systemCyan, fill: .clear, lineWidth: 2)
+        beautyBoxes.lineDashPattern = [5, 3]
         configure(contourLines, stroke: .systemYellow, fill: .clear, lineWidth: 1)
         configure(contourPoints, stroke: .clear, fill: .systemYellow, lineWidth: 0)
         configure(radii, stroke: .systemCyan, fill: .clear, lineWidth: 1.5)
@@ -39,7 +42,7 @@ final class FaceGeometryDebugOverlay {
         text.isWrapped = true
         text.alignmentMode = .left
 
-        [boxes, contourLines, contourPoints, radii, centers, vectors, text]
+        [boxes, beautyBoxes, contourLines, contourPoints, radii, centers, vectors, text]
             .forEach { container.addSublayer($0) }
         previewLayer.addSublayer(container)
         redraw()
@@ -55,6 +58,7 @@ final class FaceGeometryDebugOverlay {
         guard let previewLayer else { return }
         let bounds = previewLayer.bounds
         let boxPath = UIBezierPath()
+        let beautyBoxPath = UIBezierPath()
         let contourLinePath = UIBezierPath()
         let contourPointPath = UIBezierPath()
         let radiusPath = UIBezierPath()
@@ -73,6 +77,16 @@ final class FaceGeometryDebugOverlay {
                     boxPath.move(to: first)
                     corners.dropFirst().forEach { boxPath.addLine(to: $0) }
                     boxPath.close()
+                }
+            }
+            for roi in snapshot.beautyROIs {
+                let corners = [CGPoint(x: roi.minX, y: roi.minY), CGPoint(x: roi.maxX, y: roi.minY),
+                               CGPoint(x: roi.maxX, y: roi.maxY), CGPoint(x: roi.minX, y: roi.maxY)]
+                    .map { displayPoint($0, from: snapshot.extent, in: bounds) }
+                if let first = corners.first {
+                    beautyBoxPath.move(to: first)
+                    corners.dropFirst().forEach { beautyBoxPath.addLine(to: $0) }
+                    beautyBoxPath.close()
                 }
             }
 
@@ -122,10 +136,11 @@ final class FaceGeometryDebugOverlay {
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         container.frame = bounds
-        for shape in [boxes, contourLines, contourPoints, radii, centers, vectors] {
+        for shape in [boxes, beautyBoxes, contourLines, contourPoints, radii, centers, vectors] {
             shape.frame = container.bounds
         }
         boxes.path = boxPath.cgPath
+        beautyBoxes.path = beautyBoxPath.cgPath
         contourLines.path = contourLinePath.cgPath
         contourPoints.path = contourPointPath.cgPath
         radii.path = radiusPath.cgPath
