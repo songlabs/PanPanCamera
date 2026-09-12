@@ -30,6 +30,7 @@ final class FinalBeautyProcessor: @unchecked Sendable {
         // Face Correction is intentionally Preview-only in this task.
         guard !configuration.isPhotoBypassed else {
             diagnostics.mark("bypass_original_data")
+            diagnostics.mark("encoding_bypassed")
             return data
         }
         let decoded = diagnostics.measure("decode") { () -> (CGImageSource, CGImage)? in
@@ -60,6 +61,7 @@ final class FinalBeautyProcessor: @unchecked Sendable {
             // the exact original bytes when Vision finds no face.
             guard !faces.isEmpty || !configuration.filter.isBypassed else {
                 diagnostics.mark("bypass_no_face")
+                diagnostics.mark("encoding_bypassed")
                 return data
             }
             var input = CIImage(cgImage: image).oriented(orientation)
@@ -81,7 +83,7 @@ final class FinalBeautyProcessor: @unchecked Sendable {
         // Face Correction is intentionally Preview-only in this task.
         guard !configuration.isPhotoBypassed else {
             diagnostics.mark("bypass_silent_beauty")
-            return silentEncoder.encode(frame, diagnostics: diagnostics)
+            return encodeSilentFrame(frame, diagnostics: diagnostics)
         }
         do {
             let detected: [DetectedFace]
@@ -96,7 +98,7 @@ final class FinalBeautyProcessor: @unchecked Sendable {
             }
             guard !detected.isEmpty || !configuration.filter.isBypassed else {
                 diagnostics.mark("bypass_no_face")
-                return silentEncoder.encode(frame, diagnostics: diagnostics)
+                return encodeSilentFrame(frame, diagnostics: diagnostics)
             }
             let faces = BeautyImageProcessor.reorientedFaces(detected, from: frame.orientation,
                 to: frame.orientation, mirrored: frame.mirrored)
@@ -116,6 +118,8 @@ final class FinalBeautyProcessor: @unchecked Sendable {
 
     private func encode(_ image: CIImage, metadata originalMetadata: [String: Any],
                         type: CFString, diagnostics: PhotoCaptureDiagnostics) -> Data? {
+        diagnostics.mark("encoding_start")
+        defer { diagnostics.mark("encoding_end") }
         let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
         guard let cgImage = diagnostics.measure("render", {
             renderImage(image, colorSpace, diagnostics)
@@ -123,6 +127,12 @@ final class FinalBeautyProcessor: @unchecked Sendable {
         let data = diagnostics.measure("encode") { encodeImage(cgImage, originalMetadata, type) }
         if data == nil { diagnostics.mark("encode_failed") }
         return data
+    }
+
+    private func encodeSilentFrame(_ frame: SilentFrame, diagnostics: PhotoCaptureDiagnostics) -> Data? {
+        diagnostics.mark("encoding_start")
+        defer { diagnostics.mark("encoding_end") }
+        return silentEncoder.encode(frame, diagnostics: diagnostics)
     }
 
     static func encodeImage(_ cgImage: CGImage, metadata originalMetadata: [String: Any], type: CFString) -> Data? {

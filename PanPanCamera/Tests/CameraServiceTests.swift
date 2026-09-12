@@ -202,43 +202,38 @@ final class CameraServiceTests: XCTestCase {
         XCTAssertEqual(commands.captures.count, 1)
     }
 
-    func testAdmissionRaceClearsBusyWithoutFailureOrSuccessFeedback() async {
+    func testAdmissionRaceClearsBusyWithoutFailure() async {
         let commands = SessionCommands()
         let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
         await camera.setActive(true)
         await deliver(.status(.running), to: commands)
-        camera.capture()
+        XCTAssertTrue(camera.capture())
         await deliver(.photoProcessingStateChanged(.init(saveQueued: 2, saveActive: 1,
             revision: 1, maximumPendingCount: 3)), to: commands)
         await deliver(.captureBacklogFull, to: commands)
         XCTAssertFalse(camera.state.isCapturing)
         XCTAssertFalse(camera.canCapture)
         XCTAssertNil(camera.failure)
-        XCTAssertEqual(camera.shutterFeedbackCount, 0)
+        XCTAssertFalse(camera.capture())
     }
 
-    func testOnlySuccessfulNativeAcquisitionEmitsOneFeedbackEvent() async {
+    func testCaptureReturnsAcceptedBeforeNativeAcquisitionCompletes() async {
         let commands = SessionCommands()
         let camera = service(permission: .init(current: { .authorized }, request: { .authorized }), commands: commands)
         await camera.setActive(true)
         await deliver(.status(.running), to: commands)
-        camera.capture()
+        XCTAssertTrue(camera.capture())
+        XCTAssertFalse(camera.capture(), "An acquisition already in flight rejects a second request")
         await deliver(.captureFinished(succeeded: true), to: commands)
-        XCTAssertEqual(camera.shutterFeedbackCount, 1)
-        await deliver(.captureFinished(succeeded: true), to: commands)
-        XCTAssertEqual(camera.shutterFeedbackCount, 1)
-        camera.capture()
+        XCTAssertTrue(camera.capture())
         await deliver(.photoProcessingFinished(.init(captureID: UUID(), result: .failure(.processingFailed))), to: commands)
         XCTAssertEqual(camera.failure, .processingFailed)
         XCTAssertTrue(camera.state.isCapturing)
-        XCTAssertEqual(camera.shutterFeedbackCount, 1)
         await deliver(.photoProcessingFinished(.init(captureID: UUID(), result: .failure(.saveFailed))), to: commands)
         XCTAssertEqual(camera.failure, .saveFailed)
         XCTAssertTrue(camera.state.isCapturing)
-        XCTAssertEqual(camera.shutterFeedbackCount, 1)
         await deliver(.captureFinished(succeeded: false), to: commands)
         XCTAssertEqual(camera.failure, .captureFailed)
-        XCTAssertEqual(camera.shutterFeedbackCount, 1)
         XCTAssertTrue(camera.canCapture)
     }
 

@@ -11,7 +11,6 @@ final class CameraService: ObservableObject {
     @Published private(set) var isFaceDetectionAvailable = false
     @Published private(set) var capturedPhoto: CapturedPhoto?
     @Published private(set) var photoProcessingState = PhotoProcessingState(maximumPendingCount: 3)
-    @Published private(set) var shutterFeedbackCount: UInt64 = 0
     @Published var failure: CameraFailure?
     @Published var beautyParameters = BeautyParameters() {
         didSet { captureSession.setBeautyConfiguration(beautyParameters.processingConfiguration) }
@@ -78,8 +77,9 @@ final class CameraService: ObservableObject {
         state.flash = state.flash.next(supported: state.supportedFlashModes)
     }
 
-    func capture() {
-        guard canCapture else { return }
+    @discardableResult
+    func capture() -> Bool {
+        guard canCapture else { return false }
         state.isCapturing = true
         failure = nil
         // Snapshot the value at the shutter boundary. Later slider changes cannot
@@ -88,6 +88,7 @@ final class CameraService: ObservableObject {
         let diagnostics = PhotoCaptureDiagnostics(configuration: beauty)
         captureDiagnostics = diagnostics
         captureSession.capture(flash: state.flash, beauty: beauty, diagnostics: diagnostics)
+        return true
     }
 
     func selectMode(_ mode: CameraMode) { state.selectMode(mode) }
@@ -107,7 +108,6 @@ final class CameraService: ObservableObject {
         case let .captureFinished(succeeded):
             guard state.isCapturing else { return }
             state.isCapturing = false
-            if succeeded { shutterFeedbackCount &+= 1 }
             if !succeeded { captureDiagnostics?.mark("capture_failed") }
             captureDiagnostics?.mark("shutter_ui_released")
             captureDiagnostics = nil

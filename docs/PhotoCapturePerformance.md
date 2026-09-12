@@ -23,7 +23,7 @@ Shutter: immutable BeautyConfiguration + capture UUID/diagnostics
   -> PhotoOutput: keep delegate until didFinishCaptureFor, then release registry
      Silent Frame: take the original native buffer, with its metadata/orientation
   -> Enqueue bounded processing job; publish capacity before releasing shutter
-  -> Main actor clears isCapturing and emits one successful-acquisition pulse
+  -> Main actor clears isCapturing when native acquisition finishes
 
 Processing worker (serial, utility): P1 -> P2 -> P3
                                     |     |     |
@@ -68,12 +68,16 @@ its slot while it is in flight; workers can only free capacity in that interval.
 application capacity. At 3, the shutter dims/disables and a light processing
 message appears. A count badge by the album button shows 1/2/3 outstanding photos.
 A race-window admission rejection clears acquisition busy state without a severe
-alert or a successful-acquisition pulse. Capacity returns on each terminal result.
+alert. Capacity returns on each terminal result.
 
-Successful acquisition triggers one 0.90-scale/opacity pulse on the existing
-80-point shutter. Reduce Motion keeps the opacity cue and omits scale. Processing
-and save results never emit this pulse or modify a newer acquisition's busy state.
-No sound, haptic system, preview flash or automatic result presentation is added.
+Touch-down immediately scales the existing 80-point shutter to 0.90 for 80 ms;
+release restores it in 140 ms. Reduce Motion keeps the opacity cue and omits scale.
+Once `CameraService.capture()` accepts the request, the camera view immediately
+starts a 120 ms white Preview-only overlay and light impact haptic. None of these
+wait for AVFoundation, processing, encoding or saving. Rejected taps emit neither
+flash nor haptic, and processing/save results never modify a newer acquisition's
+busy state. The overlay is above `CameraPreview` in SwiftUI and is never supplied
+to either native capture source or final processing.
 The thumbnail still represents only the newest successfully saved photo. Opening
 the album/result remains explicit and retains its own photo snapshot.
 
@@ -123,13 +127,14 @@ No photo pixels, EXIF contents, device identifiers or face coordinates are logge
 | Saving | `save_enqueue`, `save_start`, `save_end`, `photo_saved` / `save_failed` |
 | Waiting | `queue_wait_processing`, `queue_wait_save` |
 | Stages | `decode`, `vision`, `skin_graph`, `makeup_graph`, `filter_graph`, `render`, `encode`, `thumbnail` |
-| Totals | `shutter_to_capture`, `capture_to_processing`, `processing_total`, `save_total`, `shutter_to_saved` |
+| Totals | `shutter_to_capture`, `capture_to_processing`, `processing_total`, `save_total`, `shutter_to_saved`, plus one `[CameraPerformance]` Capture/Processing/Encoding/PhotoKit/Total summary |
 | PhotoKit | `authorization_start/end`, `authorization`, `performChanges_start`, `photokit_completion_callback`, `performChanges` |
 | Backpressure | `pending_total`, `pending_processing`, `pending_save`, `processingQueued/Active`, `saveQueued/Active`, `backlog_rejected` |
 
 Milestone `ms` values are elapsed from the shutter request; measured stage/interval
-values are their own durations. Bypassed or failed paths naturally omit stages
-that did not execute and emit bypass/failure markers. Silent Frame has no encoded
+values are their own durations. Successful saves and PhotoKit failures emit the
+same final summary (the failure marker remains explicit). Bypassed stages report
+zero encoding in that summary and retain their bypass marker. Silent Frame has no encoded
 acquisition Data, so `photo_data_bytes=0`; its actual native buffer dimensions and
 CV pixel format are logged. Compressed PhotoOutput may expose no pixel buffer;
 that case explicitly says `encoded_no_pixel_buffer`, not an invented CV format.
