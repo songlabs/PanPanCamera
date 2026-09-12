@@ -126,10 +126,14 @@ No photo pixels, EXIF contents, device identifiers or face coordinates are logge
 | Processing | `processing_enqueue`, `processing_start`, `processing_end` |
 | Saving | `save_enqueue`, `save_start`, `save_end`, `photo_saved` / `save_failed` |
 | Waiting | `queue_wait_processing`, `queue_wait_save` |
-| Stages | `decode`, `vision`, `skin_graph`, `makeup_graph`, `filter_graph`, `render`, `encode`, `thumbnail` |
+| Stages | `decode`, `vision`, `skin_graph`, `makeup_graph`, `face_graph`, `filter_graph`, `render`, `encode`, `thumbnail` |
 | Totals | `shutter_to_capture`, `capture_to_processing`, `processing_total`, `save_total`, `shutter_to_saved`, plus one `[CameraPerformance]` Capture/Processing/Encoding/PhotoKit/Authorization/SaveQueue/Total summary |
 | PhotoKit | `authorization_start/end`, `authorization`, `performChanges_start`, `photokit_completion_callback`, `performChanges` |
 | Backpressure | `pending_total`, `pending_processing`, `pending_save`, `processingQueued/Active`, `saveQueued/Active`, `backlog_rejected` |
+
+`face_graph` measures full-resolution Face Correction geometry and lazy Core Image graph
+construction only. Deferred GPU/CPU pixel execution remains primarily in `render`, so
+the graph event is not the total cost of the warp.
 
 Milestone `ms` values are elapsed from the shutter request; measured stage/interval
 values are their own durations. Successful saves and PhotoKit failures emit the
@@ -190,7 +194,7 @@ a claimed measured improvement.
   cleanup and source-specific gating need a dedicated Apple-tested lifecycle
   change. Current native state/slot checks remain, combined with backlog capacity.
 - Codec/quality, photo size, `.photoQualityPrioritization = .quality`, Filter recipes,
-  Preview-only Face Shape and capture orientation/mirroring remain unchanged.
+  Face Shape now enters both final capture paths; capture orientation/mirroring rules remain unchanged.
 
 ## Verification boundary and device worksheet
 

@@ -242,7 +242,7 @@ independent of the other enabled effects; diagnostics distinguish the two.
   sampling bounds, not strength attenuation.
 - Five geometry effects exist: Slim, Width, Chin, Forehead, Cheekbones. Eyes,
   eye spacing/height, nose and mouth controls have no processor. Face geometry
-  is intentionally Preview-only; Photo does not run a second, weaker warp.
+  is Preview-only smoothing; final capture uses fresh Vision landmarks and the same warp parameters.
 - Three skin effects exist: smoothing, brightening and tone. They share the
   shutter/live configuration semantics but Preview uses these lighter settings:
 

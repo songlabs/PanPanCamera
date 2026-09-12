@@ -94,11 +94,10 @@ struct BeautyParameters: Equatable, Sendable {
     }
 }
 
-/// Immutable renderer input. Preview and final capture share skin, makeup and filter semantics,
-/// while Face Correction is consumed only by Preview. Shutter capture still keeps
-/// one value snapshot rather than UI state.
+/// Immutable renderer input shared by Preview and final capture. Shutter capture
+/// keeps one value snapshot rather than reading mutable UI state.
 /// Eye, nose and mouth controls remain absent until reliable
-/// local processors for those controls exist. Face geometry is Preview-only.
+/// local processors for those controls exist.
 struct BeautyConfiguration: Equatable, Sendable {
     let enabled: Bool
     let overallStrength: Double
@@ -161,11 +160,12 @@ struct BeautyConfiguration: Equatable, Sendable {
     }
 
     var isPhotoBypassed: Bool {
-        !enabled || (isSkinBypassed && makeup.isBypassed && filter.isBypassed)
+        !enabled || (isSkinBypassed && isFaceCorrectionBypassed &&
+                     makeup.isBypassed && filter.isBypassed)
     }
 
     var requiresFaceDetection: Bool {
-        enabled && (!isSkinBypassed || !makeup.isBypassed)
+        enabled && (!isSkinBypassed || !isFaceCorrectionBypassed || !makeup.isBypassed)
     }
 
     var isFaceCorrectionBypassed: Bool {
@@ -175,7 +175,7 @@ struct BeautyConfiguration: Equatable, Sendable {
     }
 
     var isBypassed: Bool {
-        isPhotoBypassed && isFaceCorrectionBypassed
+        isPhotoBypassed
     }
 
     private static func unit(_ value: Double) -> Double {

@@ -149,13 +149,17 @@ struct DebugFaceMaskStep {}
         decode = final.index('CGImageSourceCreateWithData')
         self.assertLess(bypass, decode)
 
-    def test_face_correction_is_preview_only_bounded_and_local(self):
+    def test_face_correction_is_shared_bounded_and_local(self):
         geometry = (APP / 'Rendering/CoreImage/FaceCorrectionGeometry.swift').read_text(encoding='utf-8')
         geometry_code = '\n'.join(line.split('//')[0] for line in geometry.splitlines())
         preview = (APP / 'Rendering/CoreImage/BeautyImageProcessor.swift').read_text(encoding='utf-8')
         final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
         self.assertIn('faceCorrection.makeOutput', preview)
         self.assertNotIn('FaceCorrectionPreviewStep', final)
+        self.assertIn('processFaceCorrection(result', preview)
+        self.assertIn('diagnostics.measure("face_graph")', preview)
+        self.assertLess(preview.index('processFaceCorrection(result'),
+                        preview.index('diagnostics.measure("filter_graph")'))
         self.assertNotIn('"CIDisplacementDistortion"', geometry)
         self.assertIn('configuration.isFaceCorrectionBypassed', geometry)
         self.assertNotRegex(geometry_code, r'\b(?:UIImage|CIContext|DispatchQueue|Task|URLSession|Vision)\b')
@@ -219,6 +223,7 @@ struct DebugFaceMaskStep {}
         local = (APP / 'Rendering/CoreImage/LocalSkinCorrectionStep.swift').read_text(encoding='utf-8')
         processor = (APP / 'Rendering/CoreImage/BeautyImageProcessor.swift').read_text(encoding='utf-8')
         final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
+        config = (APP / 'Domain/BeautyParameters.swift').read_text(encoding='utf-8')
         code = '\n'.join(line.split('//')[0] for line in local.splitlines())
         self.assertNotRegex(code, r'\b(?:CIContext|CGContext|DispatchQueue|Task|URLSession|UIImage)\s*[(.{]')
         self.assertIn('quality == .preview ? 640 : 1280', local)
@@ -227,6 +232,8 @@ struct DebugFaceMaskStep {}
         self.assertIn('try processSkin(source', processor)
         self.assertEqual(final.count('try processor.process(input'), 2)
         self.assertEqual(final.count('quality: .final'), 2)
+        self.assertEqual(final.count('faces: faces, configuration: configuration'), 2)
+        self.assertIn('!isFaceCorrectionBypassed', config)
         self.assertIn('strength: configuration.effectiveBlemish', processor)
         self.assertIn('strength: configuration.effectiveDarkCircles', processor)
         self.assertLess(processor.index('NaturalSkinToneAdjustmentStep'), processor.index('BlemishAttenuationStep'))

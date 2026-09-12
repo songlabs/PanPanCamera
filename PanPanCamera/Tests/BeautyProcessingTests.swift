@@ -326,13 +326,21 @@ final class BeautyProcessingTests: XCTestCase {
         XCTAssertTrue(front.mirrored)
     }
 
-    func testFaceOnlyConfigurationDoesNotDecodeOrRewritePhotoData() throws {
-        let original = Data([0x50, 0x41, 0x4E, 0x50, 0x41, 0x4E])
-        let output = try runOffMain {
-            FinalBeautyProcessor().processPhotoData(original, configuration: BeautyConfiguration(
-                enabled: true, faceOverallStrength: 1, faceSlimStrength: 1))
+    func testFinalFaceCorrectionBypassesZeroAndRunsForDetectedFace() throws {
+        let extent = CGRect(x: 0, y: 0, width: 200, height: 300)
+        let source = CIImage(color: CIColor(red: 0.3, green: 0.4, blue: 0.5)).cropped(to: extent)
+        let zero = BeautyConfiguration(enabled: true, faceOverallStrength: 1)
+        let enabled = BeautyConfiguration(enabled: true, faceOverallStrength: 1, faceSlimStrength: 1)
+        try runOffMain {
+            XCTAssertTrue(try BeautyImageProcessor().process(source, faces: [completeFace()],
+                configuration: zero, quality: .final) === source)
+            XCTAssertTrue(try BeautyImageProcessor().process(source, faces: [],
+                configuration: enabled, quality: .final) === source)
+            let corrected = try BeautyImageProcessor().process(source, faces: [completeFace()],
+                configuration: enabled, quality: .final)
+            XCTAssertFalse(corrected === source)
+            XCTAssertEqual(corrected.extent, source.extent)
         }
-        XCTAssertEqual(try XCTUnwrap(output), original)
     }
 
     func testPrimaryFaceUsesLargestThenNearestCenter() {

@@ -2,7 +2,7 @@
 
 Product color effects now use shared MakeupConfiguration/FilterConfiguration. Preview
 composes skin -> landmark makeup -> existing face warp -> global filter. Final capture
-composes skin -> makeup -> filter; face warp stays Preview-only. Global filters work
+composes skin -> makeup -> face warp -> filter for Preview and final capture. Global filters work
 without faces. See [makeup/filter implementation and acceptance](../../docs/MakeupAndFilters.md)
 for current state, parameter rules, algorithms, tests and device limitations. Historical
 validation counts below describe their original development stages.

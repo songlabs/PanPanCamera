@@ -1,7 +1,7 @@
 import CoreImage
 import Foundation
 
-/// A small, local visible movement in the already oriented Preview image.
+/// A small, local visible movement in an already oriented image.
 /// The Core Image step converts this forward movement to an inverse sampling offset.
 struct FaceCorrectionWarp: Equatable, Sendable {
     enum Kind: Equatable, Sendable {
@@ -20,7 +20,7 @@ struct FaceCorrectionWarp: Equatable, Sendable {
     var isSlim: Bool { kind == .slimLeft || kind == .slimRight }
 }
 
-/// The exact fitted Preview geometry used to build the production displacement map.
+/// The exact image geometry used to build the production displacement map.
 /// Zero-strength small-face zones remain available for diagnostics, while only
 /// `warps` are admitted to Core Image rendering.
 struct FaceCorrectionGeometryResult: Equatable, Sendable {
@@ -33,8 +33,8 @@ struct FaceCorrectionGeometryResult: Equatable, Sendable {
 }
 
 /// Converts the main face's Vision landmarks into conservative, feathered local
-/// movements. It is pure geometry so zero/invalid/incomplete inputs are testable
-/// without running Core Image. Coordinates are image pixels with a bottom-left origin.
+/// movements. It accepts any finite image extent; normalized face coordinates are
+/// converted directly to that extent's bottom-left pixel coordinate space.
 enum FaceCorrectionGeometry {
     static let maximumSlimDisplacementRatio: CGFloat = 0.120
     static let maximumWidthDisplacementRatio: CGFloat = 0.044

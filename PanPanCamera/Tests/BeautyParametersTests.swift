@@ -150,7 +150,8 @@ final class BeautyParametersTests: XCTestCase {
         let faceOnly = BeautyConfiguration(enabled: true, faceOverallStrength: 1,
                                            faceSlimStrength: 1)
         XCTAssertFalse(faceOnly.isBypassed)
-        XCTAssertTrue(faceOnly.isPhotoBypassed)
+        XCTAssertFalse(faceOnly.isPhotoBypassed)
+        XCTAssertTrue(faceOnly.requiresFaceDetection)
     }
 
     func testEffectiveStrengthMultipliesOverallAndConcreteParameters() {

@@ -72,7 +72,7 @@ controls at 0/25/50/75/100, slider flicker, moving-face mask stability, front mi
 portrait/landscape orientation, Preview/photo semantics, eyes/brows/lips/nose/hair
 protection, FPS/CPU/memory and thermals. An exact-SHA Actions trigger is not CI success.
 
-## Preview-only Face Correction
+## Shared Face Correction
 
 `FaceCorrectionGeometry` selects the largest valid face, then the face nearest the
 image center on an area tie. It requires a usable face contour; Forehead additionally
@@ -96,7 +96,8 @@ The kernel samples at `destination + (RG - 0.5) * scale`, using
 `samplerTransform` for source coordinates and an expanded source ROI. The former
 `CIDisplacementDistortion` accepts a grayscale texture; its documented contract does
 not provide this RG vector decoding. The latest
-map is cached until landmarks, configuration or target extent changes. It creates no
+Preview map is cached until landmarks, configuration or target extent changes. Final
+creates a job-local map at the native oriented capture extent. The step creates no
 CIContext, UIImage, queue, task or pixel-buffer cache. The camera processor owns a
 Preview-only single-face contour EMA, applied only to Slim before the existing image
 transforms. Its time constant varies continuously from 60 ms for jitter to 18 ms for
@@ -109,8 +110,10 @@ eyebrows bypass the applicable geometry without crashing or retaining stale data
 
 The Preview processor applies orientation, residual rotation, one front-camera mirror
 and aspect-fill before geometry mapping, so landmarks and pixels share the same output
-coordinates. FinalBeautyProcessor checks the skin-only bypass and never calls the Face
-Correction step; captured-photo geometry remains outside this task. Eye/nose/mouth
+coordinates. PhotoOutput gives Vision the same EXIF orientation later applied to its
+CIImage. Silent capture applies the same optional mirror to its detected faces and CIImage.
+Both final paths therefore build geometry in the oriented full-resolution image extent,
+without reusing or upscaling a Preview map. Eye/nose/mouth
 controls and stable face tracking remain unimplemented. All behavior is on-device and
 no image or landmark data is uploaded or persisted. Naturalness, filter direction,
 frame rate, latency, thermals and device rotation still require real-iPhone acceptance.
