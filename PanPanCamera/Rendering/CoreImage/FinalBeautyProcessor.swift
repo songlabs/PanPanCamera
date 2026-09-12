@@ -46,12 +46,16 @@ final class FinalBeautyProcessor: @unchecked Sendable {
         let rawOrientation = (metadata[kCGImagePropertyOrientation as String] as? NSNumber)?.uint32Value ?? 1
         let orientation = CGImagePropertyOrientation(rawValue: rawOrientation) ?? .up
         do {
-            if !configuration.requiresFaceDetection { diagnostics.mark("vision_skipped") }
-            let faces = configuration.requiresFaceDetection
-                ? try diagnostics.measure("vision") {
+            let faces: [DetectedFace]
+            if configuration.requiresFaceDetection {
+                faces = try diagnostics.measure("vision") {
                     do { return try detectPhotoFaces(image, orientation) }
                     catch { diagnostics.mark("vision_failed"); throw error }
-                } : []
+                }
+            } else {
+                diagnostics.mark("vision_skipped")
+                faces = []
+            }
             // Global filters work on scenes without faces. Face-only jobs retain
             // the exact original bytes when Vision finds no face.
             guard !faces.isEmpty || !configuration.filter.isBypassed else {
@@ -80,12 +84,16 @@ final class FinalBeautyProcessor: @unchecked Sendable {
             return silentEncoder.encode(frame, diagnostics: diagnostics)
         }
         do {
-            if !configuration.requiresFaceDetection { diagnostics.mark("vision_skipped") }
-            let detected = configuration.requiresFaceDetection
-                ? try diagnostics.measure("vision") {
+            let detected: [DetectedFace]
+            if configuration.requiresFaceDetection {
+                detected = try diagnostics.measure("vision") {
                     do { return try detectFrameFaces(frame.pixelBuffer, frame.orientation) }
                     catch { diagnostics.mark("vision_failed"); throw error }
-                } : []
+                }
+            } else {
+                diagnostics.mark("vision_skipped")
+                detected = []
+            }
             guard !detected.isEmpty || !configuration.filter.isBypassed else {
                 diagnostics.mark("bypass_no_face")
                 return silentEncoder.encode(frame, diagnostics: diagnostics)
