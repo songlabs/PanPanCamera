@@ -331,12 +331,13 @@ final class BeautyProcessingTests: XCTestCase {
         let source = CIImage(color: CIColor(red: 0.3, green: 0.4, blue: 0.5)).cropped(to: extent)
         let zero = BeautyConfiguration(enabled: true, faceOverallStrength: 1)
         let enabled = BeautyConfiguration(enabled: true, faceOverallStrength: 1, faceSlimStrength: 1)
+        let face = completeFace()
         try runOffMain {
-            XCTAssertTrue(try BeautyImageProcessor().process(source, faces: [completeFace()],
+            XCTAssertTrue(try BeautyImageProcessor().process(source, faces: [face],
                 configuration: zero, quality: .final) === source)
             XCTAssertTrue(try BeautyImageProcessor().process(source, faces: [],
                 configuration: enabled, quality: .final) === source)
-            let corrected = try BeautyImageProcessor().process(source, faces: [completeFace()],
+            let corrected = try BeautyImageProcessor().process(source, faces: [face],
                 configuration: enabled, quality: .final)
             XCTAssertFalse(corrected === source)
             XCTAssertEqual(corrected.extent, source.extent)
