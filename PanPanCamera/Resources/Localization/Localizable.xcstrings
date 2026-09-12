@@ -1,6 +1,111 @@
 {
   "sourceLanguage": "ja",
   "strings": {
+    "camera.photosProcessing": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を処理中です。しばらくお待ちください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片处理中，请稍后"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片處理中，請稍候"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Processing photos. Please wait."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진 처리 중입니다. 잠시만 기다려 주세요."
+          }
+        }
+      }
+    },
+    "camera.processingFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を処理できませんでした。もう一度撮影してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片处理失败，请重新拍摄"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片處理失敗，請重新拍攝"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The photo could not be processed. Please take another photo."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진을 처리하지 못했습니다. 다시 촬영해 주세요."
+          }
+        }
+      }
+    },
+    "camera.saveFailed": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "写真を保存できませんでした。写真へのアクセス許可と空き容量を確認してください"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片保存失败，请检查照片访问权限和可用空间"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "照片儲存失敗，請檢查照片存取權限和可用空間"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "The photo could not be saved. Check Photos access and available storage."
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "사진을 저장하지 못했습니다. 사진 접근 권한과 저장 공간을 확인해 주세요."
+          }
+        }
+      }
+    },
     "action.backToCamera": {
       "extractionState": "manual",
       "localizations": {

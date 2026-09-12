@@ -27,7 +27,7 @@ final class FinalBeautyProcessor {
     func processSilentFrame(_ frame: SilentFrame, configuration: BeautyConfiguration,
                             diagnostics: PhotoCaptureDiagnostics) -> Data? { frame.data }
 }
-enum PhotoLibrarySaver { static func save(_ data: Data) async -> Bool { true } }
+enum PhotoLibrarySaver { static func save(_ data: Data, diagnostics: PhotoCaptureDiagnostics) async -> Bool { true } }
 #if !canImport(ObjectiveC)
 func autoreleasepool<T>(_ body: () -> T) -> T { body() }
 #endif
@@ -52,6 +52,7 @@ final class DelegateToken {}
         let started = DispatchSemaphore(value: 0)
         let release = DispatchSemaphore(value: 0)
         let saveStarted = DispatchSemaphore(value: 0)
+        let secondProcessed = DispatchSemaphore(value: 0)
         let done = DispatchSemaphore(value: 0)
         let seen = Box<[BeautyConfiguration]>([])
         let saveCount = Box(0)
@@ -61,22 +62,23 @@ final class DelegateToken {}
         let second = BeautyConfiguration(enabled: true, filter: .init(preset: .warm, intensity: 0.7))
         let trace = PhotoCaptureDiagnostics(configuration: first)
         trace.selectSource("photo_output")
-        trace.mark("capture_data")
+        trace.mark("capture_data_ready")
         let worker = PhotoProcessingQueue(maximumPendingCount: 2, process: { job in
             precondition(!Thread.isMainThread)
             let count = seen.withValue { $0.append(job.configuration); return $0.count }
             if count == 1 { started.signal(); wait(release) }
+            if count == 2 { secondProcessed.signal() }
             if case let .photoData(data) = job.source { return CapturedPhoto(data: data) }
             return nil
-        }, save: { _, completion in
+        }, save: { _, _, completion in
             precondition(!Thread.isMainThread)
             let count = saveCount.withValue { $0 += 1; return $0 }
             if count == 1 {
                 saveReply.withValue { $0 = completion }
                 saveStarted.signal()
             } else { completion(true) }
-        }, completion: { photo in
-            results.withValue { $0.append(photo != nil) }
+        }, completion: { outcome in
+            results.withValue { $0.append(outcome.photo != nil) }
             done.signal()
         })
         var registry = PhotoCaptureRegistry<DelegateToken>()
@@ -93,13 +95,15 @@ final class DelegateToken {}
         registry.register(DelegateToken(), id: 2)
         precondition(registry.activeID == 2 && worker.pendingCount == 1)
         precondition(worker.enqueue(PhotoProcessingJob(source: .photoData(Data([2])),
-            configuration: second, diagnostics: trace)))
+            configuration: second, diagnostics: PhotoCaptureDiagnostics(configuration: second))))
         precondition(!worker.enqueue(PhotoProcessingJob(source: .photoData(Data([3])),
             configuration: .disabled, diagnostics: trace)))
         precondition(worker.pendingCount == 2 && !worker.canAcceptJob)
         release.signal()
         wait(saveStarted)
-        precondition(seen.withValue { $0 } == [first])
+        wait(secondProcessed)
+        precondition(seen.withValue { $0 } == [first, second])
+        precondition(saveCount.withValue { $0 } == 1)
         precondition(results.withValue { $0.isEmpty })
         precondition(worker.pendingCount == 2)
         saveReply.withValue { $0 }?(false)
@@ -114,12 +118,12 @@ final class DelegateToken {}
         precondition(registry.finish(id: 3))
 
         let failed = DispatchSemaphore(value: 0)
-        let failureWorker = PhotoProcessingQueue(process: { _ in nil }, save: { _, _ in
+        let failureWorker = PhotoProcessingQueue(process: { _ in nil }, save: { _, _, _ in
             preconditionFailure("A failed image must never be saved")
-        }, completion: { photo in precondition(photo == nil); failed.signal() })
+        }, completion: { outcome in precondition(outcome.photo == nil); failed.signal() })
         for _ in 0..<2 {
             precondition(failureWorker.enqueue(PhotoProcessingJob(source: .photoData(Data()),
-                configuration: first, diagnostics: trace)))
+                configuration: first, diagnostics: PhotoCaptureDiagnostics(configuration: first))))
         }
         wait(failed); wait(failed)
         precondition(failureWorker.pendingCount == 0 && failureWorker.canAcceptJob)
@@ -162,8 +166,8 @@ class PhotoProcessingCoordinationTests(unittest.TestCase):
                     self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
                     self.assertIn('PASS host FIFO', run.stdout)
                     if debug:
-                        self.assertIn('stage=backlog_rejected_count=2', run.stdout)
-                        self.assertIn('stage=photokit_failed', run.stdout)
+                        self.assertIn('stage=backlog_rejected pending_total=2', run.stdout)
+                        self.assertIn('stage=save_failed', run.stdout)
                         self.assertIn('stage=processing_failed', run.stdout)
                     else:
                         self.assertNotIn('[PhotoPerformance]', run.stdout)

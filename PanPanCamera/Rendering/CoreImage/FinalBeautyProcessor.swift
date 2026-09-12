@@ -5,13 +5,23 @@ import ImageIO
 /// High-quality capture worker. It never receives a preview screenshot and never
 /// changes the native source dimensions; only orientation may swap width/height.
 final class FinalBeautyProcessor: @unchecked Sendable {
-    private let detector = VisionFaceDetector()
+    private let detectPhotoFaces: (CGImage, CGImagePropertyOrientation) throws -> [DetectedFace]
+    private let detectFrameFaces: (CVPixelBuffer, FaceImageOrientation) throws -> [DetectedFace]
     private let processor = BeautyImageProcessor()
     private let silentEncoder = SilentFrameEncoder()
     private let encodeImage: (CGImage, [String: Any], CFString) -> Data?
+    private let renderImage: (CIImage, CGColorSpace?, PhotoCaptureDiagnostics) -> CGImage?
 
-    init(encodeImage: @escaping (CGImage, [String: Any], CFString) -> Data? = FinalBeautyProcessor.encodeImage) {
+    init(encodeImage: @escaping (CGImage, [String: Any], CFString) -> Data? = FinalBeautyProcessor.encodeImage,
+         detectPhotoFaces: ((CGImage, CGImagePropertyOrientation) throws -> [DetectedFace])? = nil,
+         detectFrameFaces: ((CVPixelBuffer, FaceImageOrientation) throws -> [DetectedFace])? = nil,
+         renderImage: @escaping (CIImage, CGColorSpace?, PhotoCaptureDiagnostics) -> CGImage?
+            = CoreImageRendering.createFinalCGImage) {
         self.encodeImage = encodeImage
+        let detector = VisionFaceDetector()
+        self.detectPhotoFaces = detectPhotoFaces ?? { try detector.detect($0, orientation: $1) }
+        self.detectFrameFaces = detectFrameFaces ?? { try detector.detect($0, orientation: $1) }
+        self.renderImage = renderImage
     }
 
     func processPhotoData(_ data: Data, configuration: BeautyConfiguration,
@@ -30,14 +40,17 @@ final class FinalBeautyProcessor: @unchecked Sendable {
             return (source, image)
         }
         guard let (source, image) = decoded else { diagnostics.mark("decode_failed"); return nil }
+        diagnostics.value("decoded_width", image.width)
+        diagnostics.value("decoded_height", image.height)
         let metadata = (CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [String: Any]) ?? [:]
         let rawOrientation = (metadata[kCGImagePropertyOrientation as String] as? NSNumber)?.uint32Value ?? 1
         let orientation = CGImagePropertyOrientation(rawValue: rawOrientation) ?? .up
         do {
             if !configuration.requiresFaceDetection { diagnostics.mark("vision_skipped") }
             let faces = configuration.requiresFaceDetection
-                ? try diagnostics.measure("vision_face_detection") {
-                    try detector.detect(image, orientation: orientation)
+                ? try diagnostics.measure("vision") {
+                    do { return try detectPhotoFaces(image, orientation) }
+                    catch { diagnostics.mark("vision_failed"); throw error }
                 } : []
             // Global filters work on scenes without faces. Face-only jobs retain
             // the exact original bytes when Vision finds no face.
@@ -69,8 +82,9 @@ final class FinalBeautyProcessor: @unchecked Sendable {
         do {
             if !configuration.requiresFaceDetection { diagnostics.mark("vision_skipped") }
             let detected = configuration.requiresFaceDetection
-                ? try diagnostics.measure("vision_face_detection") {
-                    try detector.detect(frame.pixelBuffer, orientation: frame.orientation)
+                ? try diagnostics.measure("vision") {
+                    do { return try detectFrameFaces(frame.pixelBuffer, frame.orientation) }
+                    catch { diagnostics.mark("vision_failed"); throw error }
                 } : []
             guard !detected.isEmpty || !configuration.filter.isBypassed else {
                 diagnostics.mark("bypass_no_face")
@@ -95,10 +109,10 @@ final class FinalBeautyProcessor: @unchecked Sendable {
     private func encode(_ image: CIImage, metadata originalMetadata: [String: Any],
                         type: CFString, diagnostics: PhotoCaptureDiagnostics) -> Data? {
         let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let cgImage = diagnostics.measure("core_image_render", {
-            CoreImageRendering.createCGImage(image, colorSpace: colorSpace)
+        guard let cgImage = diagnostics.measure("render", {
+            renderImage(image, colorSpace, diagnostics)
         }) else { diagnostics.mark("render_failed"); return nil }
-        let data = diagnostics.measure("image_encode") { encodeImage(cgImage, originalMetadata, type) }
+        let data = diagnostics.measure("encode") { encodeImage(cgImage, originalMetadata, type) }
         if data == nil { diagnostics.mark("encode_failed") }
         return data
     }

@@ -39,6 +39,141 @@ final class ColorEffectPipelineTests: XCTestCase {
         }.value
     }
 
+    func testFinalGeometryReuseMatchesUncachedPixelsIncludingAllSkinStagesAndTransformations() async throws {
+        try await Task.detached {
+            let source = CIImage(cvPixelBuffer: try ColorPipelineFixture.buffer())
+            let face = ColorPipelineFixture.face()
+            let cached = BeautyImageProcessor()
+            let uncached = BeautyImageProcessor(reuseFinalGeometry: false)
+            let configuration = BeautyConfiguration(enabled: true, overallStrength: 0.8,
+                smoothingStrength: 0.6, brighteningStrength: 0.5, toneStrength: 0.5,
+                blemishStrength: 0.7, darkCirclesStrength: 0.7,
+                makeup: .init(lip: 0.7, blush: 0.4, eye: 0.3, brow: 0.5),
+                filter: .init(preset: .warm, intensity: 0.6))
+            let orientations: [(CGImagePropertyOrientation, FaceImageOrientation, Bool)] = [
+                (.up, .up, false), (.leftMirrored, .right, true), (.down, .down, false)
+            ]
+            for (exif, orientation, mirrored) in orientations {
+                var image = source.oriented(exif)
+                image = image.transformed(by: CGAffineTransform(translationX: 7 - image.extent.minX,
+                                                                 y: -5 - image.extent.minY))
+                let faces = BeautyImageProcessor.reorientedFaces([face], from: .up, to: orientation, mirrored: mirrored)
+                let actual = try cached.process(image, faces: faces, configuration: configuration, quality: .final)
+                let expected = try uncached.process(image, faces: faces, configuration: configuration, quality: .final)
+                XCTAssertEqual(actual.extent, image.extent)
+                XCTAssertEqual(actual.extent, expected.extent)
+                let a = try ColorPipelineFixture.pixels(actual), b = try ColorPipelineFixture.pixels(expected)
+                XCTAssertEqual(a.count, b.count)
+                let difference = zip(a, b).map { abs(Int($0.0) - Int($0.1)) }.max() ?? 0
+                XCTAssertLessThanOrEqual(difference, 1, "Job-local geometry reuse must preserve rendered pixels")
+            }
+        }.value
+    }
+
+    func testGeometryCacheReusesOnlyMatchingOriginalDetailAndNeverEffectiveIntensityMask() async throws {
+        try await Task.detached {
+            let source = CIImage(cvPixelBuffer: try ColorPipelineFixture.buffer())
+            let region = try FaceRegion(boundingBox: CGRect(x: 0.15, y: 0.1, width: 0.7, height: 0.8))
+            let landmarks = FacialLandmarks(region: region, features: [
+                .leftEye: [CGPoint(x: 0.2, y: 0.6), CGPoint(x: 0.3, y: 0.7), CGPoint(x: 0.4, y: 0.6)]
+            ])
+            let cache = SkinGeometryCache(source: source, regions: [region], landmarks: [landmarks])
+            let scale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: source.extent))
+            let face = try XCTUnwrap(cache.makeMask(regions: [region], in: source.extent))
+            XCTAssertTrue(face === (try cache.makeMask(regions: [region], in: source.extent)))
+            let feature = try XCTUnwrap(cache.featureProtection())
+            XCTAssertTrue(feature === (try cache.featureProtection()))
+            let originalDetail = try cache.detail(source: source, scale: scale)
+            XCTAssertTrue(originalDetail === (try cache.detail(source: source, scale: scale)))
+            let changed = try CoreImageRendering.filter("CIColorControls", parameters: [
+                kCIInputImageKey: source, kCIInputBrightnessKey: 0.02
+            ], in: source.extent)
+            let changedDetail = try cache.detail(source: changed, scale: scale)
+            XCTAssertFalse(originalDetail === changedDetail)
+            XCTAssertEqual(try ColorPipelineFixture.pixels(changedDetail),
+                try ColorPipelineFixture.pixels(DetailProtectionMaskGenerator().makeMask(source: changed, scale: scale)))
+            XCTAssertTrue(originalDetail === (try cache.detail(source: source, scale: scale)))
+            let a = TexturePreservingSkinSmoothingStep(configuration: try .init(intensity: SkinRetouchIntensity(0.2)))
+            let b = TexturePreservingSkinSmoothingStep(configuration: try .init(intensity: SkinRetouchIntensity(0.8)))
+            let first = try XCTUnwrap(a.makeMasks(source: source, regions: [region], landmarks: [landmarks], geometryCache: cache))
+            let second = try XCTUnwrap(b.makeMasks(source: source, regions: [region], landmarks: [landmarks], geometryCache: cache))
+            XCTAssertTrue(first.featureProtectionMask === second.featureProtectionMask)
+            XCTAssertTrue(first.detailProtectionMask === second.detailProtectionMask)
+            XCTAssertNotEqual(try ColorPipelineFixture.pixels(first.effectiveSkinMask),
+                              try ColorPipelineFixture.pixels(second.effectiveSkinMask))
+            let otherJob = SkinGeometryCache(source: source, regions: [region], landmarks: [landmarks])
+            XCTAssertFalse(feature === (try otherJob.featureProtection()))
+            let otherScale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: CGRect(x: 0, y: 0, width: 4096, height: 4096)))
+            XCTAssertNotEqual(scale, otherScale)
+            XCTAssertFalse(originalDetail === (try cache.detail(source: source, scale: otherScale)))
+            XCTAssertFalse(cache.matches(regions: [region], landmarks: [], extent: source.extent))
+            let shifted = source.transformed(by: CGAffineTransform(translationX: 13, y: -7))
+            XCTAssertFalse(cache.matches(regions: [region], landmarks: [landmarks], extent: shifted.extent))
+            let shiftedCached = try XCTUnwrap(a.makeMasks(source: shifted, regions: [region], landmarks: [landmarks], geometryCache: cache))
+            let shiftedOriginal = try XCTUnwrap(a.makeMasks(source: shifted, regions: [region], landmarks: [landmarks]))
+            XCTAssertEqual(try ColorPipelineFixture.pixels(shiftedCached.effectiveSkinMask),
+                           try ColorPipelineFixture.pixels(shiftedOriginal.effectiveSkinMask))
+        }.value
+    }
+
+    func testFinalMetalUnavailableFallsBackWithSameDimensionsAndPixels() async throws {
+        try await Task.detached {
+            let source = CIImage(cvPixelBuffer: try ColorPipelineFixture.buffer())
+            let automatic = CoreImageRendering.FinalRenderer(preferMetal: false, device: nil)
+            let fallback = CoreImageRendering.FinalRenderer(preferMetal: true, device: nil)
+            XCTAssertEqual(automatic.backend, "automatic")
+            XCTAssertEqual(fallback.backend, "automatic_fallback")
+            let a = try XCTUnwrap(automatic.createCGImage(source, colorSpace: ColorPipelineFixture.colorSpace))
+            let b = try XCTUnwrap(fallback.createCGImage(source, colorSpace: ColorPipelineFixture.colorSpace))
+            XCTAssertEqual(a.width, b.width)
+            XCTAssertEqual(a.height, b.height)
+            XCTAssertEqual(try ColorPipelineFixture.pixels(CIImage(cgImage: a)),
+                           try ColorPipelineFixture.pixels(CIImage(cgImage: b)))
+        }.value
+    }
+
+    func testFinalPhotoPreservesMetadataCodecAndOrientedDimensions() async throws {
+        try await Task.detached {
+            let source = CIImage(cvPixelBuffer: try ColorPipelineFixture.buffer())
+            let rendered = try XCTUnwrap(CoreImageRendering.createCGImage(source, colorSpace: ColorPipelineFixture.colorSpace))
+            let orientation = CGImagePropertyOrientation.leftMirrored
+            let encoded = NSMutableData()
+            let destination = try XCTUnwrap(CGImageDestinationCreateWithData(encoded, "public.jpeg" as CFString, 1, nil))
+            let metadata: [String: Any] = [
+                kCGImagePropertyOrientation as String: orientation.rawValue,
+                kCGImageDestinationLossyCompressionQuality as String: 1.0,
+                kCGImagePropertyExifDictionary as String: [kCGImagePropertyExifDateTimeOriginal as String: "2026:09:12 12:34:56"],
+                kCGImagePropertyTIFFDictionary as String: [kCGImagePropertyTIFFMake as String: "PanPan fixture"]
+            ]
+            CGImageDestinationAddImage(destination, rendered, metadata as CFDictionary)
+            XCTAssertTrue(CGImageDestinationFinalize(destination))
+            let data = encoded as Data
+            let configuration = BeautyConfiguration(enabled: true, filter: .init(preset: .warm, intensity: 0.6))
+            let output = try XCTUnwrap(FinalBeautyProcessor().processPhotoData(data, configuration: configuration))
+            let resultSource = try XCTUnwrap(CGImageSourceCreateWithData(output as CFData, nil))
+            let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(resultSource, 0, nil) as? [String: Any])
+            XCTAssertEqual(try XCTUnwrap(CGImageSourceGetType(resultSource)) as String, "public.jpeg")
+            XCTAssertEqual((properties[kCGImagePropertyOrientation as String] as? NSNumber)?.uint32Value, 1)
+            XCTAssertEqual((properties[kCGImagePropertyPixelWidth as String] as? NSNumber)?.intValue, rendered.height)
+            XCTAssertEqual((properties[kCGImagePropertyPixelHeight as String] as? NSNumber)?.intValue, rendered.width)
+            let exif = properties[kCGImagePropertyExifDictionary as String] as? [String: Any]
+            let tiff = properties[kCGImagePropertyTIFFDictionary as String] as? [String: Any]
+            XCTAssertEqual(exif?[kCGImagePropertyExifDateTimeOriginal as String] as? String, "2026:09:12 12:34:56")
+            XCTAssertEqual(tiff?[kCGImagePropertyTIFFMake as String] as? String, "PanPan fixture")
+            XCTAssertEqual(FinalBeautyProcessor().processPhotoData(data, configuration: .disabled), data)
+            // Compare to the unchanged full-resolution orientation/filter/encoder
+            // path; this catches a second mirror or an accidental output resize.
+            let decoded = try ColorPipelineFixture.decode(data).oriented(orientation)
+            let normalized = decoded.transformed(by: CGAffineTransform(translationX: -decoded.extent.minX, y: -decoded.extent.minY))
+            let expected = try BeautyImageProcessor(reuseFinalGeometry: false).process(normalized, faces: [],
+                configuration: configuration, quality: .final)
+            let expectedCG = try XCTUnwrap(CoreImageRendering.createCGImage(expected, colorSpace: expected.colorSpace ?? ColorPipelineFixture.colorSpace))
+            let reference = try XCTUnwrap(FinalBeautyProcessor.encodeImage(expectedCG, metadata: metadata, type: "public.jpeg" as CFString))
+            XCTAssertEqual(try ColorPipelineFixture.pixels(ColorPipelineFixture.decode(output)),
+                           try ColorPipelineFixture.pixels(ColorPipelineFixture.decode(reference)))
+        }.value
+    }
+
     func testEveryFilterReachesPreviewAndFinalWithoutFaceDetection() async throws {
         try await Task.detached {
             let buffer = try ColorPipelineFixture.buffer()
@@ -98,6 +233,10 @@ final class ColorEffectPipelineTests: XCTestCase {
             let frame = SilentFrame(pixelBuffer: buffer, timestamp: .zero, orientation: .right,
                 position: .front, mirrored: true, metadata: [:])
             let processor = FinalBeautyProcessor()
+            enum InjectedFailure: Error { case vision }
+            let failedVision = FinalBeautyProcessor(detectFrameFaces: { _, _ in throw InjectedFailure.vision })
+            XCTAssertNil(failedVision.processSilentFrame(frame, configuration: .init(enabled: true,
+                overallStrength: 1, smoothingStrength: 1)))
             let bypass = BeautyConfiguration(enabled: true)
             let originalData = try XCTUnwrap(processor.processSilentFrame(frame, configuration: bypass))
             let original = try ColorPipelineFixture.decode(originalData)

@@ -5,7 +5,9 @@ enum CameraSessionEvent {
     case status(CameraStatus)
     case switching(Bool)
     case captureFinished(succeeded: Bool)
-    case photoProcessingFinished(CapturedPhoto?)
+    case photoProcessingFinished(PhotoProcessingResult)
+    case photoProcessingStateChanged(PhotoProcessingState)
+    case captureBacklogFull
     case switchFailed
     case faceDetection(FaceDetectionDelivery?)
     case faceDetectionAvailability(Bool)
@@ -33,7 +35,9 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     private let frameStore = SilentFrameStore()
     let beautyPreviewFrames = BeautyPreviewFrameStore()
     private let beautyConfiguration = BeautyConfigurationStore()
-    private lazy var photoProcessing = PhotoProcessingQueue { [weak self] photo in
+    private lazy var photoProcessing = PhotoProcessingQueue(stateChanged: { [weak self] state in
+        self?.queue.async { [weak self] in self?.onEvent(.photoProcessingStateChanged(state)) }
+    }) { [weak self] photo in
         self?.queue.async { [weak self] in self?.onEvent(.photoProcessingFinished(photo)) }
     }
     private var faceProcessor: CameraFaceFrameProcessor?
@@ -126,8 +130,9 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             // Reject before obtaining another native image, never after silently
             // accumulating an unbounded set of full-resolution frames.
             guard photoProcessing.canAcceptJob else {
-                diagnostics.backlog(photoProcessing.pendingCount, rejected: true)
-                onEvent(.captureFinished(succeeded: false))
+                diagnostics.backlog(photoProcessing.snapshot, rejected: true)
+                onEvent(.photoProcessingStateChanged(photoProcessing.snapshot))
+                onEvent(.captureBacklogFull)
                 return
             }
             if strategy == .silentVideoFrame {
@@ -163,10 +168,10 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
                 self?.queue.async { [weak self] in
                     guard let self, self.captures.finish(id: captureID) else { return }
                     diagnostics.mark("capture_slot_released")
-                    self.onEvent(.captureFinished(succeeded: data != nil))
                     if let data {
                         self.submitPhoto(.photoData(data), beauty: beauty, diagnostics: diagnostics)
                     }
+                    self.onEvent(.captureFinished(succeeded: data != nil))
                 }
             }
             captures.register(processor, id: captureID)
@@ -190,19 +195,30 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         }
         // Taking the native buffer completes acquisition; no AV delegate/slot is
         // needed for the independent job that now owns that immutable frame.
-        diagnostics.mark("capture_data")
+        #if DEBUG
+        diagnostics.input(width: CVPixelBufferGetWidth(frame.pixelBuffer),
+                          height: CVPixelBufferGetHeight(frame.pixelBuffer),
+                          pixelFormat: String(CVPixelBufferGetPixelFormatType(frame.pixelBuffer)))
+        #endif
+        diagnostics.mark("capture_data_ready")
+        diagnostics.value("photo_data_bytes", 0) // Native buffer source, no encoded acquisition data.
         diagnostics.mark("capture_slot_released")
-        onEvent(.captureFinished(succeeded: true))
         submitPhoto(.silentFrame(frame), beauty: beauty, diagnostics: diagnostics)
+        onEvent(.captureFinished(succeeded: true))
     }
 
     private func submitPhoto(_ source: PhotoProcessingJob.Source, beauty: BeautyConfiguration,
                              diagnostics: PhotoCaptureDiagnostics) {
         dispatchPrecondition(condition: .onQueue(queue))
-        if !photoProcessing.enqueue(PhotoProcessingJob(source: source, configuration: beauty,
-                                                       diagnostics: diagnostics)) {
-            onEvent(.photoProcessingFinished(nil))
-        }
+        // Only this session queue admits jobs; an in-flight acquisition prevents
+        // another submitter, and workers can only release capacity in between.
+        let accepted = photoProcessing.enqueue(PhotoProcessingJob(source: source, configuration: beauty,
+                                                                  diagnostics: diagnostics))
+        assert(accepted, "Capacity checked before the sole native acquisition")
+        if !accepted { onEvent(.captureBacklogFull) }
+        // Publish capacity before releasing the shutter. Revision rejects older
+        // queued worker snapshots that arrive after this synchronous snapshot.
+        onEvent(.photoProcessingStateChanged(photoProcessing.snapshot))
     }
 
     private func startIfNeeded() {

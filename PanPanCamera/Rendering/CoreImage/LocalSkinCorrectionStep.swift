@@ -27,11 +27,13 @@ enum LocalSkinCorrection {
 
     static func effectiveMask(source: CIImage, regions: [FaceRegion],
                               landmarks: [FacialLandmarks],
-                              skinMasks: [SkinMaskResult] = []) throws -> CIImage? {
+                              skinMasks: [SkinMaskResult] = [],
+                              geometryCache: SkinGeometryCache? = nil) throws -> CIImage? {
         dispatchPrecondition(condition: .notOnQueue(.main))
         let config = try SkinRetouchConfiguration(intensity: SkinRetouchIntensity(1))
         guard let masks = try TexturePreservingSkinSmoothingStep(configuration: config)
-            .makeMasks(source: source, regions: regions, landmarks: landmarks, skinMasks: skinMasks)
+            .makeMasks(source: source, regions: regions, landmarks: landmarks,
+                       skinMasks: skinMasks, geometryCache: geometryCache)
         else { return nil }
         // Existing nose protection is intentionally partial for smoothing. These
         // local corrections fully exclude that same nose plateau (strength 0.55),

@@ -131,9 +131,9 @@ struct DebugFaceMaskStep {}
         self.assertLess(native.index('captures.finish(id:'), native.index('submitPhoto(.photoData(data)'))
         silent = session.split('private func captureSilentFrame(')[1].split('private func submitPhoto(')[0]
         self.assertNotIn('captures.register', silent)
-        self.assertLess(silent.index('onEvent(.captureFinished(succeeded: true))'),
-                        silent.index('submitPhoto(.silentFrame(frame)'))
-        saved = service.split('case let .photoProcessingFinished(photo):')[1].split('case .switchFailed:')[0]
+        self.assertLess(silent.index('submitPhoto(.silentFrame(frame)'),
+                        silent.index('onEvent(.captureFinished(succeeded: true))'))
+        saved = service.split('case let .photoProcessingFinished(outcome):')[1].split('case .switchFailed:')[0]
         self.assertNotIn('isCapturing =', saved)
         self.assertNotIn('PhotoLibrarySaver.save', service)
         self.assertIn('.fullScreenCover(item: $presentedPhoto)', view)
@@ -245,7 +245,7 @@ struct DebugFaceMaskStep {}
         self.assertLess(preview.index('try processFaceEffects(image'), preview.index('try faceCorrection.makeOutput'))
         self.assertLess(preview.index('try faceCorrection.makeOutput'), preview.index('try filter.makeOutput'))
         self.assertIn('configuration: configuration.makeup', processor)
-        self.assertEqual(final.count('? try diagnostics.measure("vision_face_detection")'), 2)
+        self.assertEqual(final.count('? try diagnostics.measure("vision")'), 2)
         self.assertEqual(final.count('|| !configuration.filter.isBypassed'), 2)
         self.assertEqual(final.count('try processor.process(input'), 2)
         self.assertIn('makeupFaces: makeupFaces', frame)

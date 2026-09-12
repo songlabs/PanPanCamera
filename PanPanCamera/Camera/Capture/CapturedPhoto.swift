@@ -23,16 +23,29 @@ struct CapturedPhoto: Identifiable, @unchecked Sendable {
 }
 
 enum PhotoLibrarySaver {
-    static func save(_ data: Data) async -> Bool {
-        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
-        guard status == .authorized || status == .limited else { return false }
-        do {
-            try await PHPhotoLibrary.shared().performChanges {
-                PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
-            }
-            return true
-        } catch {
+    static func save(_ data: Data, diagnostics: PhotoCaptureDiagnostics = .disabled,
+                     requestAuthorization: () async -> PHAuthorizationStatus = {
+                         await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+                     }, saveAuthorizedPhoto: (Data, PhotoCaptureDiagnostics) async -> Bool = performChanges) async -> Bool {
+        diagnostics.mark("authorization_start")
+        let status = await requestAuthorization()
+        diagnostics.mark("authorization_end")
+        guard status == .authorized || status == .limited else {
+            diagnostics.mark("authorization_failed")
             return false
+        }
+        return await saveAuthorizedPhoto(data, diagnostics)
+    }
+
+    private static func performChanges(_ data: Data, diagnostics: PhotoCaptureDiagnostics) async -> Bool {
+        return await withCheckedContinuation { continuation in
+            diagnostics.mark("performChanges_start")
+            PHPhotoLibrary.shared().performChanges {
+                PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
+            } completionHandler: { saved, _ in
+                diagnostics.mark("photokit_completion_callback")
+                continuation.resume(returning: saved)
+            }
         }
     }
 }

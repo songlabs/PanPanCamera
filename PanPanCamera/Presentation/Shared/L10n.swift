@@ -8,6 +8,9 @@ enum L10n: String, CaseIterable {
     case portrait = "mode.portrait"
     case album = "camera.album"
     case shutter = "camera.shutter"
+    case photosProcessing = "camera.photosProcessing"
+    case processingFailed = "camera.processingFailed"
+    case saveFailed = "camera.saveFailed"
     case livePreview = "camera.livePreview"
     case flash = "camera.flash"
     case flashOff = "camera.flash.off"
@@ -163,6 +166,8 @@ extension CameraFailure {
     var localizedKey: L10n {
         switch self {
         case .captureFailed: return .captureFailed
+        case .processingFailed: return .processingFailed
+        case .saveFailed: return .saveFailed
         case .switchFailed: return .switchFailed
         }
     }

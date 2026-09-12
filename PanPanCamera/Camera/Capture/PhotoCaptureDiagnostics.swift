@@ -4,10 +4,10 @@ import Foundation
 /// are logged. Release builds retain the call surface but no timing/logging work.
 final class PhotoCaptureDiagnostics: @unchecked Sendable {
     static let disabled = PhotoCaptureDiagnostics()
+    let captureID: UUID?
 
     #if DEBUG
     private let enabled: Bool
-    private let id = UUID()
     private let effects: String
     private let lock = NSLock()
     private var source = "unselected"
@@ -15,6 +15,7 @@ final class PhotoCaptureDiagnostics: @unchecked Sendable {
     #endif
 
     private init() {
+        captureID = nil
         #if DEBUG
         enabled = false
         effects = "none"
@@ -22,6 +23,7 @@ final class PhotoCaptureDiagnostics: @unchecked Sendable {
     }
 
     init(configuration: BeautyConfiguration) {
+        captureID = UUID()
         #if DEBUG
         enabled = ProcessInfo.processInfo.arguments.contains("-PanPanPhotoPerformanceDiagnostics")
         var active: [String] = []
@@ -30,7 +32,7 @@ final class PhotoCaptureDiagnostics: @unchecked Sendable {
         if configuration.enabled && !configuration.filter.isBypassed { active.append("filter") }
         effects = active.isEmpty ? "none" : active.joined(separator: "+")
         #endif
-        mark("shutter_requested")
+        mark("capture_requested")
     }
 
     func selectSource(_ value: String) {
@@ -48,27 +50,49 @@ final class PhotoCaptureDiagnostics: @unchecked Sendable {
         let now = ContinuousClock.now
         lock.lock(); defer { lock.unlock() }
         milestones[stage] = now
-        log(stage, milliseconds: milliseconds(from: milestones["shutter_requested"] ?? now, to: now))
-        let interval: (String, String)?
+        log(stage, milliseconds: milliseconds(from: milestones["capture_requested"] ?? now, to: now))
+        let intervals: [(String, String)]
         switch stage {
-        case "capture_data": interval = ("shutter_requested", "total_shutter_to_capture_data")
-        case "final_encoded": interval = ("capture_data", "total_capture_data_to_final_encoded")
-        case "final_beauty_start": interval = ("job_enqueued", "queue_wait")
-        case "photo_saved": interval = ("shutter_requested", "total_shutter_to_photo_saved")
-        case "photokit_complete", "photokit_failed": interval = ("photokit_start", "photokit_latency")
-        default: interval = nil
+        case "capture_data_ready": intervals = [("capture_requested", "shutter_to_capture")]
+        case "processing_start": intervals = [("processing_enqueue", "queue_wait_processing"),
+                                                ("capture_data_ready", "capture_to_processing")]
+        case "processing_end": intervals = [("processing_start", "processing_total")]
+        case "save_start": intervals = [("save_enqueue", "queue_wait_save")]
+        case "save_end": intervals = [("save_start", "save_total")]
+        case "photo_saved": intervals = [("capture_requested", "shutter_to_saved")]
+        case "authorization_end": intervals = [("authorization_start", "authorization")]
+        case "photokit_completion_callback": intervals = [("performChanges_start", "performChanges")]
+        default: intervals = []
         }
-        if let (start, name) = interval, let instant = milestones[start] {
-            log(name, milliseconds: milliseconds(from: instant, to: now))
+        for (start, name) in intervals {
+            if let instant = milestones[start] {
+                log(name, milliseconds: milliseconds(from: instant, to: now))
+            }
         }
         #endif
     }
 
-    func backlog(_ count: Int, rejected: Bool = false) {
+    func backlog(_ state: PhotoProcessingState, rejected: Bool = false) {
         #if DEBUG
         guard enabled else { return }
         lock.lock(); defer { lock.unlock() }
-        log(rejected ? "backlog_rejected_count=\(count)" : "pending_count=\(count)", milliseconds: 0)
+        log("\(rejected ? "backlog_rejected" : "backlog") pending_total=\(state.pendingTotal) pending_processing=\(state.pendingProcessing) pending_save=\(state.pendingSave) processingQueued=\(state.processingQueued) processingActive=\(state.processingActive) saveQueued=\(state.saveQueued) saveActive=\(state.saveActive)", milliseconds: 0)
+        #endif
+    }
+
+    func value(_ name: String, _ value: @autoclosure () -> Int) {
+        #if DEBUG
+        guard enabled else { return }
+        lock.lock(); defer { lock.unlock() }
+        log("\(name)=\(value())", milliseconds: 0)
+        #endif
+    }
+
+    func input(width: Int, height: Int, pixelFormat: String) {
+        #if DEBUG
+        guard enabled else { return }
+        lock.lock(); defer { lock.unlock() }
+        log("input_width=\(width) input_height=\(height) input_pixel_format=\(pixelFormat)", milliseconds: 0)
         #endif
     }
 
@@ -94,7 +118,7 @@ final class PhotoCaptureDiagnostics: @unchecked Sendable {
 
     // Call only while holding lock; each log line has the same shutter identity.
     private func log(_ stage: String, milliseconds: Double) {
-        print("[PhotoPerformance] id=\(id) source=\(source) effects=\(effects) stage=\(stage) ms=\(String(format: "%.2f", milliseconds))")
+        print("[PhotoPerformance] id=\(captureID?.uuidString ?? "disabled") source=\(source) effects=\(effects) stage=\(stage) ms=\(String(format: "%.2f", milliseconds))")
     }
     #endif
 }

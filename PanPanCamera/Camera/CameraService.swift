@@ -10,6 +10,8 @@ final class CameraService: ObservableObject {
     @Published private(set) var faceDetection: FaceDetectionFrame?
     @Published private(set) var isFaceDetectionAvailable = false
     @Published private(set) var capturedPhoto: CapturedPhoto?
+    @Published private(set) var photoProcessingState = PhotoProcessingState(maximumPendingCount: 3)
+    @Published private(set) var shutterFeedbackCount: UInt64 = 0
     @Published var failure: CameraFailure?
     @Published var beautyParameters = BeautyParameters() {
         didSet { captureSession.setBeautyConfiguration(beautyParameters.processingConfiguration) }
@@ -39,6 +41,9 @@ final class CameraService: ObservableObject {
         return captureSession.session
     }
     var beautyPreviewFrames: BeautyPreviewFrameStore { captureSession.beautyPreviewFrames }
+    var pendingPhotoCount: Int { photoProcessingState.pendingTotal }
+    var isProcessingCapacityAvailable: Bool { photoProcessingState.hasCapacity }
+    var canCapture: Bool { state.canCapture && isProcessingCapacityAvailable }
 
     func setActive(_ active: Bool) async {
         isActive = active
@@ -74,7 +79,7 @@ final class CameraService: ObservableObject {
     }
 
     func capture() {
-        guard state.canCapture else { return }
+        guard canCapture else { return }
         state.isCapturing = true
         failure = nil
         // Snapshot the value at the shutter boundary. Later slider changes cannot
@@ -100,16 +105,28 @@ final class CameraService: ObservableObject {
         case let .switching(value):
             state.isSwitching = value
         case let .captureFinished(succeeded):
+            guard state.isCapturing else { return }
             state.isCapturing = false
+            if succeeded { shutterFeedbackCount &+= 1 }
             if !succeeded { captureDiagnostics?.mark("capture_failed") }
             captureDiagnostics?.mark("shutter_ui_released")
             captureDiagnostics = nil
             if !succeeded { failure = .captureFailed }
-        case let .photoProcessingFinished(photo):
+        case .captureBacklogFull:
+            state.isCapturing = false
+            captureDiagnostics?.mark("shutter_ui_released")
+            captureDiagnostics = nil
+        case let .photoProcessingStateChanged(value):
+            guard value.revision >= photoProcessingState.revision else { return }
+            photoProcessingState = value
+        case let .photoProcessingFinished(outcome):
             // The serial worker publishes only after saving, in shutter order.
             // An older job must never change a newer capture's busy state.
-            if let photo { capturedPhoto = photo }
-            else { failure = .captureFailed }
+            switch outcome.result {
+            case let .success(photo): capturedPhoto = photo
+            case .failure(.processingFailed): failure = .processingFailed
+            case .failure(.saveFailed): failure = .saveFailed
+            }
         case .switchFailed:
             state.isSwitching = false
             failure = .switchFailed

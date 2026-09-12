@@ -6,6 +6,7 @@ struct CameraView: View {
     @StateObject private var tools = CameraToolState()
     @State private var presentedPhoto: CapturedPhoto?
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let screenshot = ScreenshotConfiguration(arguments: ProcessInfo.processInfo.arguments)
 
     private var shouldRunCamera: Bool {
@@ -130,15 +131,25 @@ struct CameraView: View {
                         if camera.state.isCapturing { ProgressView().tint(.white) }
                     }
                     .frame(width: 80, height: 80)
+                    .phaseAnimator([false, true, false], trigger: camera.shutterFeedbackCount) { content, pulse in
+                        content.scaleEffect(pulse && !reduceMotion ? 0.90 : 1)
+                            .opacity(pulse ? 0.65 : 1)
+                    } animation: { pulse in
+                        .easeOut(duration: pulse ? 0.10 : 0.16)
+                    }
                     .padding(4)
                 }
                 .buttonStyle(.plain)
-                .disabled(!camera.state.canCapture)
-                .opacity(camera.state.canCapture || camera.state.isCapturing ? 1 : 0.45)
+                .disabled(!camera.canCapture)
+                .opacity(camera.canCapture || camera.state.isCapturing ? 1 : 0.45)
                 .accessibilityLabel(Text(L10n.shutter))
+                .accessibilityValue(camera.isProcessingCapacityAvailable ? Text(verbatim: String()) : Text(L10n.photosProcessing))
                 .accessibilityIdentifier("camera.shutter")
                 bottomTool(.filters, symbol: "camera.filters", panel: .filters)
                 bottomTool(.makeup, symbol: "paintbrush.pointed", panel: .makeup)
+            }
+            if !camera.isProcessingCapacityAvailable {
+                Text(L10n.photosProcessing).font(.caption).foregroundStyle(.secondary)
             }
             HStack(alignment: .top, spacing: 12) {
                 ForEach(CameraMode.allCases) { mode in
@@ -186,6 +197,17 @@ struct CameraView: View {
                 Text(label).font(.caption).multilineTextAlignment(.center)
             }
             .frame(maxWidth: .infinity, minHeight: 60)
+            .overlay(alignment: .topTrailing) {
+                if panel == .album && camera.pendingPhotoCount > 0 {
+                    Text(camera.pendingPhotoCount, format: .number)
+                        .font(.caption2.bold()).monospacedDigit()
+                        .foregroundStyle(.white)
+                        .padding(4)
+                        .background(PanPanTheme.accent, in: Circle())
+                        .accessibilityLabel(Text(L10n.photosProcessing))
+                        .accessibilityValue(Text(camera.pendingPhotoCount, format: .number))
+                }
+            }
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

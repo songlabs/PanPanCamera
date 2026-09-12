@@ -45,6 +45,11 @@ struct BeautyImageProcessor: Sendable {
     private let faceCorrection = FaceCorrectionPreviewStep()
     private let makeup = MakeupProcessingStep()
     private let filter = FilterProcessingStep()
+    private let reuseFinalGeometry: Bool
+
+    init(reuseFinalGeometry: Bool = true) {
+        self.reuseFinalGeometry = reuseFinalGeometry
+    }
 
     func previewImage(for frame: BeautyPreviewFrame, displayRotationAngle: CGFloat,
                       targetSize: CGSize) throws -> CIImage? {
@@ -191,8 +196,11 @@ struct BeautyImageProcessor: Sendable {
             try processSkin(source, faces: faces, configuration: configuration, quality: quality)
         }
         return try diagnostics.measure("makeup_graph") {
-            try makeup.makeOutput(source: result, faces: makeupFaces ?? faces,
-                                  configuration: configuration.makeup) ?? result
+            // Preview keeps its existing exact-geometry cache. Final jobs release
+            // all Makeup masks/landmarks at the end of this invocation.
+            let step = quality == .final ? MakeupProcessingStep() : makeup
+            return try step.makeOutput(source: result, faces: makeupFaces ?? faces,
+                                       configuration: configuration.makeup) ?? result
         }
     }
 
@@ -205,6 +213,8 @@ struct BeautyImageProcessor: Sendable {
         }
         let geometry = Self.geometry(from: faces)
         guard !geometry.regions.isEmpty else { return source }
+        let cache = quality == .final && reuseFinalGeometry
+            ? SkinGeometryCache(source: source, regions: geometry.regions, landmarks: geometry.landmarks) : nil
         var image = source
 
         if configuration.effectiveSmoothing > 0 {
@@ -216,7 +226,7 @@ struct BeautyImageProcessor: Sendable {
                 toneStrength: 0, luminanceCorrection: 0)
             let step = TexturePreservingSkinSmoothingStep(configuration: config)
             if let output = try step.makeOutput(source: image, regions: geometry.regions,
-                                                landmarks: geometry.landmarks) {
+                                                landmarks: geometry.landmarks, geometryCache: cache) {
                 image = output
             }
         }
@@ -226,7 +236,7 @@ struct BeautyImageProcessor: Sendable {
                 detailRetention: 0.94, noiseReduction: 0, toneStrength: 0, luminanceCorrection: 0)
             let masks = TexturePreservingSkinSmoothingStep(configuration: config)
             if let effective = try masks.makeMasks(source: image, regions: geometry.regions,
-                                                   landmarks: geometry.landmarks)?.effectiveSkinMask {
+                                                   landmarks: geometry.landmarks, geometryCache: cache)?.effectiveSkinMask {
                 let adjusted = try CoreImageRendering.filter("CIColorControls", parameters: [
                     kCIInputImageKey: image,
                     kCIInputBrightnessKey: BeautyEffectAmplitude.brightening,
@@ -246,7 +256,7 @@ struct BeautyImageProcessor: Sendable {
                 luminanceCorrection: quality == .preview ? 0.004 : 0.006)
             let masks = TexturePreservingSkinSmoothingStep(configuration: config)
             if let effective = try masks.makeMasks(source: image, regions: geometry.regions,
-                                                   landmarks: geometry.landmarks)?.effectiveSkinMask,
+                                                   landmarks: geometry.landmarks, geometryCache: cache)?.effectiveSkinMask,
                let output = try NaturalSkinToneAdjustmentStep(configuration: config).makeOutput(
                     source: image, regions: geometry.regions, effectiveSkinMask: effective) {
                 image = output
@@ -256,7 +266,7 @@ struct BeautyImageProcessor: Sendable {
         // edges that these local corrections must preserve. Share it between both.
         if configuration.effectiveBlemish > 0 || configuration.effectiveDarkCircles > 0,
            let mask = try LocalSkinCorrection.effectiveMask(source: source,
-                regions: geometry.regions, landmarks: geometry.landmarks) {
+                regions: geometry.regions, landmarks: geometry.landmarks, geometryCache: cache) {
             if let output = try BlemishAttenuationStep().makeOutput(source: image,
                 regions: geometry.regions, landmarks: geometry.landmarks, effectiveSkinMask: mask,
                 strength: configuration.effectiveBlemish, quality: quality) {

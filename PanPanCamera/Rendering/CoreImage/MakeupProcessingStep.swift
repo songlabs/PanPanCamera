@@ -85,11 +85,16 @@ final class MakeupProcessingStep: @unchecked Sendable {
             cachedComponents = []
             cachedBrows = []
         }
-        for component in components where !cachedComponents.contains(component) {
+        let missing = components.filter { !cachedComponents.contains($0) }
+        // Same arithmetic and validity rules as faceMask; convert each landmark
+        // once for all active components. Shapes/feathers stay component-specific.
+        var converted: [[FacialLandmarkRegion: [CGPoint]]] = missing.isEmpty ? [] : faces.map { _ in [:] }
+        for component in missing {
             var combined: CIImage?
             var brows: [(mask: CIImage, side: CGFloat)] = []
-            for face in faces {
-                guard let mask = try faceMask(face, component: component, extent: extent) else { continue }
+            for (index, face) in faces.enumerated() {
+                guard let mask = try faceMask(face, component: component, extent: extent,
+                                              convertedPoints: &converted[index]) else { continue }
                 combined = try maximum(combined, mask, in: extent)
                 if component == .brow {
                     brows.append((mask, min(face.boundingBox.width * extent.width,
@@ -103,15 +108,19 @@ final class MakeupProcessingStep: @unchecked Sendable {
         return (cachedMasks, cachedBrows)
     }
 
-    private func faceMask(_ face: DetectedFace, component: Component, extent: CGRect) throws -> CIImage? {
+    private func faceMask(_ face: DetectedFace, component: Component, extent: CGRect,
+                          convertedPoints: inout [FacialLandmarkRegion: [CGPoint]]) throws -> CIImage? {
         let side = min(face.boundingBox.width * extent.width, face.boundingBox.height * extent.height)
         guard side.isFinite, side >= 12, face.confidence.isFinite, face.confidence >= 0.5 else { return nil }
         func points(_ feature: FacialLandmarkRegion, minimum: Int = 3) -> [CGPoint]? {
             guard let values = face.landmarks[feature], values.count >= minimum,
                   values.allSatisfy({ $0.x.isFinite && $0.y.isFinite &&
                       (0...1).contains($0.x) && (0...1).contains($0.y) }) else { return nil }
-            return values.map { CGPoint(x: extent.minX + $0.x * extent.width,
-                                        y: extent.minY + $0.y * extent.height) }
+            if let converted = convertedPoints[feature] { return converted }
+            let converted = values.map { CGPoint(x: extent.minX + $0.x * extent.width,
+                                                y: extent.minY + $0.y * extent.height) }
+            convertedPoints[feature] = converted
+            return converted
         }
         func shape(_ values: [CGPoint], filled: Bool = true, expansion: CGFloat = 0) -> Shape {
             let path = CGMutablePath()

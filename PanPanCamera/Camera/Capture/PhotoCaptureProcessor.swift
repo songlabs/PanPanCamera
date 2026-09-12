@@ -15,11 +15,20 @@ final class PhotoCaptureProcessor: NSObject, AVCapturePhotoCaptureDelegate {
     func photoOutput(_ output: AVCapturePhotoOutput,
                      willBeginCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings) {
         diagnostics.mark("avcapture_start")
+        diagnostics.value("resolved_photo_width", Int(resolvedSettings.photoDimensions.width))
+        diagnostics.value("resolved_photo_height", Int(resolvedSettings.photoDimensions.height))
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,
                      didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
         diagnostics.mark("avcapture_didFinishProcessingPhoto")
+        #if DEBUG
+        // Compressed PhotoOutput may expose no pixel buffer. Report this explicitly
+        // instead of inventing a CV pixel format for encoded JPEG/HEIF bytes.
+        let format = photo.pixelBuffer.map { String(CVPixelBufferGetPixelFormatType($0)) } ?? "encoded_no_pixel_buffer"
+        diagnostics.input(width: Int(photo.resolvedSettings.photoDimensions.width),
+                          height: Int(photo.resolvedSettings.photoDimensions.height), pixelFormat: format)
+        #endif
         let data = diagnostics.measure("capture_file_data") {
             error == nil ? photo.fileDataRepresentation() : nil
         }
@@ -33,7 +42,10 @@ final class PhotoCaptureProcessor: NSObject, AVCapturePhotoCaptureDelegate {
             return
         }
         photoData = data
-        if data != nil { diagnostics.mark("capture_data") }
+        if let data {
+            diagnostics.value("photo_data_bytes", data.count)
+            diagnostics.mark("capture_data_ready")
+        }
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput,

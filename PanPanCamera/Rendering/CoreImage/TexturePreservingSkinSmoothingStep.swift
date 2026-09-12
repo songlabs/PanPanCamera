@@ -34,11 +34,12 @@ struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
     /// Job-local graph also exposes the nonzero-extent contract to Apple tests.
     /// No CIImage graph escapes the public ProcessingImage step or DEBUG entry.
     func makeOutput(source: CIImage, regions: [FaceRegion], landmarks: [FacialLandmarks] = [],
-                    skinMasks: [SkinMaskResult] = []) throws -> CIImage? {
+                    skinMasks: [SkinMaskResult] = [], geometryCache: SkinGeometryCache? = nil) throws -> CIImage? {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard configuration.intensity.value > 0, !regions.isEmpty else { return nil }
         guard let scale = SkinRetouchScale(regions: regions, in: source.extent),
-              let masks = try makeMasks(source: source, regions: regions, landmarks: landmarks, skinMasks: skinMasks) else { return nil }
+              let masks = try makeMasks(source: source, regions: regions, landmarks: landmarks,
+                                        skinMasks: skinMasks, geometryCache: geometryCache) else { return nil }
         let effectiveMask = masks.effectiveSkinMask
         let small = try lowPass(source, radius: scale.smallRadius)
         let large = try lowPass(source, radius: scale.largeRadius)
@@ -67,12 +68,25 @@ struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
     /// Shared with explicit DEBUG diagnostics. These may inspect masks at zero
     /// intensity, while process() still bypasses every provider/graph at zero.
     func makeMasks(source: CIImage, regions: [FaceRegion], landmarks: [FacialLandmarks] = [],
-                   skinMasks: [SkinMaskResult] = []) throws -> EffectiveSkinMaskComposer.Masks? {
+                   skinMasks: [SkinMaskResult] = [], geometryCache: SkinGeometryCache? = nil) throws -> EffectiveSkinMaskComposer.Masks? {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard let scale = SkinRetouchScale(regions: regions, in: source.extent) else { return nil }
-        let detail = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
-        let feature = try FeatureProtectionMaskGenerator().makeMask(landmarks: landmarks, regions: regions, in: source.extent)
-        return try EffectiveSkinMaskComposer(faceMaskGenerator: maskGenerator).compose(
+        let cache = geometryCache.flatMap {
+            $0.matches(regions: regions, landmarks: landmarks, extent: source.extent) ? $0 : nil
+        }
+        let detail: CIImage
+        let feature: CIImage?
+        let generator: any FaceMaskGenerating
+        if let cache {
+            detail = try cache.detail(source: source, scale: scale)
+            feature = try cache.featureProtection()
+            generator = cache
+        } else {
+            detail = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
+            feature = try FeatureProtectionMaskGenerator().makeMask(landmarks: landmarks, regions: regions, in: source.extent)
+            generator = maskGenerator
+        }
+        return try EffectiveSkinMaskComposer(faceMaskGenerator: generator).compose(
             regions: regions, skinMasks: skinMasks, feature: feature, detail: detail, configuration: configuration)
     }
 
@@ -130,4 +144,57 @@ struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
             return premultiply(vec4(o + change, original.a));
         }
         """)
+}
+
+/// Confined to one synchronous Skin invocation within a photo job. Only geometry
+/// and detail from the identical original CIImage/scale/policy are reused. Never
+/// store an effective/intensity, semantic or tone mask, or a later stage's pixels.
+final class SkinGeometryCache: FaceMaskGenerating, @unchecked Sendable {
+    let regions: [FaceRegion]
+    let landmarks: [FacialLandmarks]
+    let extent: CGRect
+    private let original: CIImage
+    private var faceMasks: [(regions: [FaceRegion], mask: CIImage?)] = []
+    private var featureWasBuilt = false
+    private var featureMask: CIImage?
+    private var originalDetail: (scale: SkinRetouchScale, mask: CIImage)?
+
+    init(source: CIImage, regions: [FaceRegion], landmarks: [FacialLandmarks]) {
+        original = source
+        extent = source.extent
+        self.regions = regions
+        self.landmarks = landmarks
+    }
+
+    func matches(regions: [FaceRegion], landmarks: [FacialLandmarks], extent: CGRect) -> Bool {
+        self.regions == regions && self.landmarks == landmarks && self.extent == extent
+    }
+
+    func makeMask(regions: [FaceRegion], in extent: CGRect) throws -> CIImage? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        guard self.extent == extent, regions.allSatisfy({ self.regions.contains($0) }) else {
+            return try SoftFaceMaskGenerator().makeMask(regions: regions, in: extent)
+        }
+        if let cached = faceMasks.first(where: { $0.regions == regions }) { return cached.mask }
+        let mask = try SoftFaceMaskGenerator().makeMask(regions: regions, in: extent)
+        faceMasks.append((regions, mask))
+        return mask
+    }
+
+    func featureProtection() throws -> CIImage? {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        if !featureWasBuilt {
+            featureMask = try FeatureProtectionMaskGenerator().makeMask(landmarks: landmarks, regions: regions, in: extent)
+            featureWasBuilt = true
+        }
+        return featureMask
+    }
+
+    func detail(source: CIImage, scale: SkinRetouchScale) throws -> CIImage {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        if source === original, let cached = originalDetail, cached.scale == scale { return cached.mask }
+        let mask = try DetailProtectionMaskGenerator().makeMask(source: source, scale: scale)
+        if source === original { originalDetail = (scale, mask) }
+        return mask
+    }
 }

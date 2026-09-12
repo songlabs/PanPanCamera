@@ -11,10 +11,10 @@ final class SilentFrameEncoder: @unchecked Sendable {
                                                       mirrored: frame.mirrored)
         let image = CIImage(cvPixelBuffer: frame.pixelBuffer).oriented(orientation)
         let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB)!
-        guard let cgImage = diagnostics.measure("core_image_render", {
-            CoreImageRendering.createCGImage(image, colorSpace: colorSpace)
+        guard let cgImage = diagnostics.measure("render", {
+            CoreImageRendering.createFinalCGImage(image, colorSpace: colorSpace, diagnostics: diagnostics)
         }) else { diagnostics.mark("render_failed"); return nil }
-        return diagnostics.measure("image_encode") {
+        return diagnostics.measure("encode") {
             let result = encodeImage(cgImage, metadata: frame.metadata)
             if result == nil { diagnostics.mark("encode_failed") }
             return result
@@ -43,6 +43,47 @@ enum CoreImageRendering {
     // Preserve it: TonePolicy uses linear sRGB luminance, while render() retains
     // the input CGImage's output color space. Do not disable color management.
     private static let context = CIContext(options: [.cacheIntermediates: false])
+
+    private static let finalRenderer: FinalRenderer = {
+        #if DEBUG
+        let preferMetal = ProcessInfo.processInfo.arguments.contains("-PanPanFinalMetalContext")
+        return FinalRenderer(preferMetal: preferMetal, device: preferMetal ? MTLCreateSystemDefaultDevice() : nil)
+        #else
+        return FinalRenderer(preferMetal: false, device: nil)
+        #endif
+    }()
+
+    /// A/B foundation only. The default remains the original shared context;
+    /// explicit Metal uses identical options, format, color space and extent.
+    final class FinalRenderer {
+        private let context: CIContext
+        let backend: String
+
+        init(preferMetal: Bool, device: MTLDevice?) {
+            dispatchPrecondition(condition: .notOnQueue(.main))
+            if preferMetal, let device {
+                context = CIContext(mtlDevice: device, options: [.cacheIntermediates: false])
+                backend = "explicit_metal"
+            } else {
+                context = CoreImageRendering.context
+                backend = preferMetal ? "automatic_fallback" : "automatic"
+            }
+        }
+
+        func createCGImage(_ image: CIImage, colorSpace: CGColorSpace?) -> CGImage? {
+            dispatchPrecondition(condition: .notOnQueue(.main))
+            return context.createCGImage(image, from: image.extent, format: .RGBA8,
+                                         colorSpace: colorSpace, deferred: false)
+        }
+    }
+
+    static func createFinalCGImage(_ image: CIImage, colorSpace: CGColorSpace?,
+                                   diagnostics: PhotoCaptureDiagnostics) -> CGImage? {
+        diagnostics.mark("final_context_\(finalRenderer.backend)")
+        diagnostics.value("final_width", Int(image.extent.width))
+        diagnostics.value("final_height", Int(image.extent.height))
+        return finalRenderer.createCGImage(image, colorSpace: colorSpace)
+    }
 
     #if DEBUG
     /// One working-space map sample for opt-in strength diagnostics. Reuses the
