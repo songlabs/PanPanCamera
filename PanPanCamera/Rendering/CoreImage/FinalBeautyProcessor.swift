@@ -27,7 +27,6 @@ final class FinalBeautyProcessor: @unchecked Sendable {
     func processPhotoData(_ data: Data, configuration: BeautyConfiguration,
                           diagnostics: PhotoCaptureDiagnostics = .disabled) -> Data? {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        // Face Correction is intentionally Preview-only in this task.
         guard !configuration.isPhotoBypassed else {
             diagnostics.mark("bypass_original_data")
             diagnostics.mark("encoding_bypassed")
@@ -80,7 +79,6 @@ final class FinalBeautyProcessor: @unchecked Sendable {
     func processSilentFrame(_ frame: SilentFrame, configuration: BeautyConfiguration,
                             diagnostics: PhotoCaptureDiagnostics = .disabled) -> Data? {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        // Face Correction is intentionally Preview-only in this task.
         guard !configuration.isPhotoBypassed else {
             diagnostics.mark("bypass_silent_beauty")
             return encodeSilentFrame(frame, diagnostics: diagnostics)

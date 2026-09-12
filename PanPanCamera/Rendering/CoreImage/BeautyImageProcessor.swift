@@ -37,7 +37,7 @@ enum BeautyEffectAmplitude {
     static let finalToneConsistency = 0.50
 }
 
-/// Shared skin, makeup and global color effects plus Preview-only face geometry.
+/// Shared skin, makeup, face geometry and global color effects.
 /// Makeup is composited in landmark space before warping the combined pixels;
 /// the global filter always consumes the final result of the preceding steps.
 struct BeautyImageProcessor: Sendable {
@@ -178,8 +178,26 @@ struct BeautyImageProcessor: Sendable {
         guard !configuration.isPhotoBypassed else { return source }
         let result = try processFaceEffects(source, faces: faces, configuration: configuration,
                                             quality: quality, diagnostics: diagnostics)
+        let corrected = try processFaceCorrection(result, faces: faces,
+            configuration: configuration, quality: quality, diagnostics: diagnostics)
         return try diagnostics.measure("filter_graph") {
-            try filter.makeOutput(source: result, configuration: configuration.filter) ?? result
+            try filter.makeOutput(source: corrected, configuration: configuration.filter) ?? corrected
+        }
+    }
+
+    private func processFaceCorrection(_ source: CIImage, faces: [DetectedFace],
+                                       configuration: BeautyConfiguration,
+                                       quality: BeautyProcessingQuality,
+                                       diagnostics: PhotoCaptureDiagnostics) throws -> CIImage {
+        guard !configuration.isFaceCorrectionBypassed, !faces.isEmpty else { return source }
+        return try diagnostics.measure("face_graph") {
+            let geometry = FaceCorrectionGeometry.result(faces: faces,
+                configuration: configuration, extent: source.extent)
+            guard !geometry.warps.isEmpty else { return source }
+            // Final capture builds a full-resolution map for this job and does not
+            // retain it in the Preview cache.
+            let step = quality == .final ? FaceCorrectionPreviewStep() : faceCorrection
+            return try step.makeOutput(source: source, warps: geometry.warps) ?? source
         }
     }
 

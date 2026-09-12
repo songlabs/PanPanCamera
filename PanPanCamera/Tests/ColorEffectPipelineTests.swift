@@ -280,12 +280,12 @@ final class ColorEffectPipelineTests: XCTestCase {
                 XCTAssertNotEqual(combined, try ColorPipelineFixture.pixels(preview(isolatedRemoval)),
                     "Every enabled stage must contribute to the combined Preview")
             }
-            // Brightening, makeup and filter use the same parameters and direction
-            // at both qualities. Existing face geometry remains Preview-only.
-            let withoutShape = ColorPipelineFixture.configuration(shape: false)
+            // Every stage uses the same parameters and direction at both qualities.
             let final = try processor.process(source, faces: [face], configuration: all, quality: .final)
             XCTAssertEqual(try ColorPipelineFixture.pixels(final),
-                try ColorPipelineFixture.pixels(preview(withoutShape)))
+                try ColorPipelineFixture.pixels(preview(all)))
+            let finalWithoutShape = try processor.process(source, faces: [face],
+                configuration: ColorPipelineFixture.configuration(shape: false), quality: .final)
             let finalWithoutMakeup = try processor.process(source, faces: [face],
                 configuration: ColorPipelineFixture.configuration(makeup: false), quality: .final)
             let finalWithoutFilter = try processor.process(source, faces: [face],
@@ -294,6 +294,32 @@ final class ColorEffectPipelineTests: XCTestCase {
                 try ColorPipelineFixture.pixels(finalWithoutMakeup))
             XCTAssertNotEqual(try ColorPipelineFixture.pixels(final),
                 try ColorPipelineFixture.pixels(finalWithoutFilter))
+            XCTAssertNotEqual(try ColorPipelineFixture.pixels(final),
+                try ColorPipelineFixture.pixels(finalWithoutShape))
+        }.value
+    }
+
+    func testPhotoOutputAndSilentFrameApplyFinalFaceCorrection() async throws {
+        try await Task.detached {
+            let buffer = try ColorPipelineFixture.buffer()
+            let source = CIImage(cvPixelBuffer: buffer)
+            let data = try ColorPipelineFixture.png(source)
+            let face = ColorPipelineFixture.face()
+            let configuration = BeautyConfiguration(enabled: true, faceOverallStrength: 1,
+                                                      faceWidthStrength: 1)
+            let photo = FinalBeautyProcessor(detectPhotoFaces: { _, _ in [face] })
+            let photoOutput = try ColorPipelineFixture.decode(XCTUnwrap(
+                photo.processPhotoData(data, configuration: configuration)))
+            XCTAssertNotEqual(try ColorPipelineFixture.pixels(photoOutput),
+                              try ColorPipelineFixture.pixels(source))
+
+            let frame = SilentFrame(pixelBuffer: buffer, timestamp: .zero, orientation: .up,
+                                    position: .back, mirrored: false, metadata: [:])
+            let silent = FinalBeautyProcessor(detectFrameFaces: { _, _ in [face] })
+            let silentOutput = try ColorPipelineFixture.decode(XCTUnwrap(
+                silent.processSilentFrame(frame, configuration: configuration)))
+            XCTAssertNotEqual(try ColorPipelineFixture.pixels(silentOutput),
+                              try ColorPipelineFixture.pixels(source))
         }.value
     }
 }

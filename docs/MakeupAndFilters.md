@@ -48,7 +48,7 @@ Filter-only captures skip Vision entirely; no-face scenes still receive the filt
 Disabled/zero PhotoOutput jobs return original bytes before decode. Missing face data
 only skips face effects. Existing final failures continue to report capture failure.
 
-**Existing face geometry remains Preview-only.** This task does not extend the five
+**Face geometry is shared by Preview and final capture.** The five
 reshape operations to saved photos or implement the separate eye/nose/mouth reshape
 controls. Four groups can compose in Preview; photos contain skin, makeup and filters.
 The makeup and filter parameter meanings are identical between Preview and Capture.

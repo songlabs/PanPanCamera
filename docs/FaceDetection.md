@@ -105,6 +105,11 @@ the design does not establish a measured FPS or CPU target.
    `FaceGeometryDebugSnapshot`. Its only display conversion scales drawable pixels to
    the Preview layer bounds and flips bottom-left Core Image Y to top-left UIKit Y. Safe
    area, screen size, `layerPointConverted` and a second mirror do not enter that step.
+6. PhotoOutput passes the encoded CGImage and its EXIF orientation to Vision, then applies
+   the same orientation to `CIImage`; Vision's normalized oriented coordinates therefore
+   map directly into that extent. Silent capture detects in capture orientation, applies
+   `reorientedFaces(... mirrored:)`, and uses the matching mirrored EXIF orientation for
+   `CIImage`, so its final faces and pixels also share one coordinate space.
 
 The capture and preview coordinator angles may differ because preview includes view
 orientation. Conversion returns to unrotated camera space before applying the actual
