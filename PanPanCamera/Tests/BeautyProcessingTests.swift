@@ -141,6 +141,45 @@ final class BeautyProcessingTests: XCTestCase {
         }
     }
 
+    #if DEBUG
+    func testProductSkinOnlySmoothingPreservesNonSkinWhileProcessingSkinInBothQualities() throws {
+        let input = try SkinRetouchTestImage.make { x, y in
+            var seed = UInt32(x + y * 256 + 1) &* 747796405 &+ 2891336453
+            seed = ((seed >> ((seed >> 28) + 4)) ^ seed) &* 277803737
+            let noise = Int(((seed >> 22) ^ seed) % 21) - 10
+            let tone = x < 128 ? [70, 110, 180] : [180, 130, 110]
+            return tone.map { UInt8($0 + noise) } + [255]
+        }
+        let source = CIImage(cgImage: input.cgImage)
+        let face = DetectedFace(boundingBox: CGRect(x: 0, y: 0, width: 1, height: 1),
+                                confidence: 1, landmarks: [:])
+        let configuration = BeautyConfiguration(enabled: true, overallStrength: 1,
+            smoothingStrength: 1, brighteningStrength: 0, toneStrength: 0)
+        let nonSkin = CGRect(x: 60, y: 112, width: 24, height: 24)
+        let skin = CGRect(x: 172, y: 112, width: 24, height: 24)
+        try runOffMain(timeout: 15) {
+            let beforeNonSkin = ProcessingTestPixels.floats(source, bounds: nonSkin)
+            let beforeSkin = ProcessingTestPixels.floats(source, bounds: skin)
+            for quality in [BeautyProcessingQuality.preview, .final] {
+                let output = try BeautyImageProcessor().process(source, faces: [face],
+                    configuration: configuration, quality: quality)
+                let afterNonSkin = ProcessingTestPixels.floats(output, bounds: nonSkin)
+                for (before, after) in zip(beforeNonSkin, afterNonSkin) {
+                    XCTAssertEqual(before, after, accuracy: 0.0001,
+                                   "Product skin-only selection must protect non-skin texture")
+                }
+                XCTAssertNotEqual(beforeSkin, ProcessingTestPixels.floats(output, bounds: skin),
+                                  "Product smoothing must still process eligible skin")
+            }
+            let region = try FaceRegion(boundingBox: face.boundingBox)
+            let generic = try XCTUnwrap(TexturePreservingSkinSmoothingStep().makeOutput(
+                source: source, regions: [region]))
+            XCTAssertNotEqual(beforeNonSkin, ProcessingTestPixels.floats(generic, bounds: nonSkin),
+                              "The fixture must distinguish generic fallback from product skin-only selection")
+        }
+    }
+    #endif
+
     func testLocalBrighteningChangesFaceCenterButPreservesFarCorner() throws {
         let extent = CGRect(x: 0, y: 0, width: 64, height: 64)
         let source = CIImage(color: CIColor(red: 0.4, green: 0.4, blue: 0.4)).cropped(to: extent)

@@ -67,11 +67,29 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
 
     private func process(_ image: ProcessingImage, boxes: [CGRect]? = nil,
                          configuration: SkinRetouchConfiguration = .naturalDefault,
-                         mask: any FaceMaskGenerating = SoftFaceMaskGenerator()) async throws -> ProcessingImage {
+                         mask: any FaceMaskGenerating = SoftFaceMaskGenerator(),
+                         provider: (any SkinMaskProviding)? = nil) async throws -> ProcessingImage {
         let regions = try (boxes ?? [fullBox]).map { try FaceRegion(boundingBox: $0) }
         let pipeline = ImageProcessingPipeline<ProcessingImage>(detector: MockFaceDetector(regions: regions),
-            steps: [TexturePreservingSkinSmoothingStep(configuration: configuration, maskGenerator: mask)])
+            steps: [TexturePreservingSkinSmoothingStep(configuration: configuration,
+                maskGenerator: mask, skinMaskProvider: provider)])
         return try await pipeline.process(image).image
+    }
+
+    func testMissingAndExplicitUnavailableSemanticsHaveIdenticalRenderedFallback() async throws {
+        let input = try SkinRetouchTestImage.texture()
+        let unavailable = MockSkinMaskProvider(configuration: .init(mode: .unavailable))
+        for intensity in [SkinRetouchConfiguration.naturalDefault.intensity, try SkinRetouchIntensity(1)] {
+            let configuration = SkinRetouchConfiguration.naturalDefault.withIntensity(intensity)
+            for boxes in [[fullBox], [CGRect(x: 0, y: 0, width: 0.45, height: 1),
+                                      CGRect(x: 0.55, y: 0, width: 0.45, height: 1)]] {
+                let missing = try await process(input, boxes: boxes, configuration: configuration)
+                let explicit = try await process(input, boxes: boxes, configuration: configuration, provider: unavailable)
+                XCTAssertEqual(ProcessingTestPixels.rgba(missing), ProcessingTestPixels.rgba(explicit))
+                XCTAssertNotEqual(ProcessingTestPixels.rgba(missing), ProcessingTestPixels.rgba(input),
+                                  "Equal fallback outputs must still perform smoothing")
+            }
+        }
     }
 
     func testZeroIntensityIsExactOriginalWithoutCallingMaskGenerator() async throws {

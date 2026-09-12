@@ -86,13 +86,10 @@ struct TexturePreservingSkinSmoothingStep: ImageProcessingStep {
             feature = try FeatureProtectionMaskGenerator().makeMask(landmarks: landmarks, regions: regions, in: source.extent)
             generator = maskGenerator
         }
-        // Product call sites have no external segmentation provider. Generate the
-        // same image-aware semantic mask here for Preview, PhotoOutput and Silent.
-        let semantics = skinMasks.isEmpty
-            ? try BeautySkinMaskGenerator().makeMasks(source: source, regions: regions)
-            : skinMasks
+        // Missing and unavailable semantics share the composer's white fallback.
+        // Skin-only selection is an explicit caller policy.
         return try EffectiveSkinMaskComposer(faceMaskGenerator: generator).compose(
-            regions: regions, skinMasks: semantics, feature: feature, detail: detail, configuration: configuration)
+            regions: regions, skinMasks: skinMasks, feature: feature, detail: detail, configuration: configuration)
     }
 
     func skinMasks(in image: ProcessingImage, regions: [FaceRegion],
