@@ -1,10 +1,12 @@
 import SwiftUI
+import UIKit
 
 @MainActor
 struct CameraView: View {
     @ObservedObject var camera: CameraService
     @StateObject private var tools = CameraToolState()
     @State private var presentedPhoto: CapturedPhoto?
+    @State private var shutterFlashTrigger: UInt64 = 0
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let screenshot = ScreenshotConfiguration(arguments: ProcessInfo.processInfo.arguments)
@@ -17,6 +19,14 @@ struct CameraView: View {
         ZStack {
             Color.black.ignoresSafeArea()
             preview
+            Color.white
+                .ignoresSafeArea()
+                .allowsHitTesting(false)
+                .phaseAnimator([false, true, false], trigger: shutterFlashTrigger) { content, visible in
+                    content.opacity(visible ? 0.82 : 0)
+                } animation: { visible in
+                    .easeOut(duration: visible ? 0.02 : 0.10)
+                }
             if !screenshot.isEnabled && (camera.state.status != .running || camera.state.access != .authorized) {
                 CameraStatusView(state: camera.state) {
                     Task { await camera.setActive(shouldRunCamera) }
@@ -124,22 +134,16 @@ struct CameraView: View {
             HStack(alignment: .center, spacing: 4) {
                 bottomTool(.album, symbol: "photo.on.rectangle", panel: .album)
                 bottomTool(.skin, symbol: "sparkles", panel: .beauty)
-                Button(action: camera.capture) {
+                Button(action: capture) {
                     ZStack {
                         Circle().stroke(PanPanTheme.accent, lineWidth: 3)
                         Circle().fill(PanPanTheme.accent).padding(7)
                         if camera.state.isCapturing { ProgressView().tint(.white) }
                     }
                     .frame(width: 80, height: 80)
-                    .phaseAnimator([false, true, false], trigger: camera.shutterFeedbackCount) { content, pulse in
-                        content.scaleEffect(pulse && !reduceMotion ? 0.90 : 1)
-                            .opacity(pulse ? 0.65 : 1)
-                    } animation: { pulse in
-                        .easeOut(duration: pulse ? 0.10 : 0.16)
-                    }
                     .padding(4)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ShutterButtonStyle(reduceMotion: reduceMotion))
                 .disabled(!camera.canCapture)
                 .opacity(camera.canCapture || camera.state.isCapturing ? 1 : 0.45)
                 .accessibilityLabel(Text(L10n.shutter))
@@ -179,6 +183,14 @@ struct CameraView: View {
                 .fill(.regularMaterial)
                 .ignoresSafeArea(edges: .bottom)
         }
+    }
+
+    private func capture() {
+        guard camera.capture() else { return }
+        shutterFlashTrigger &+= 1
+        let feedback = UIImpactFeedbackGenerator(style: .light)
+        feedback.prepare()
+        feedback.impactOccurred()
     }
 
     private func bottomTool(_ label: L10n, symbol: String, panel: CameraPanel) -> some View {
@@ -226,5 +238,17 @@ struct CameraView: View {
         case .aspectRatio: FeaturePlaceholderView(title: .aspectRatio, detail: .aspectRatioDetail, current: .nativeSensor)
         case .timer: FeaturePlaceholderView(title: .timer, detail: .timerDetail, current: .timerOff)
         }
+    }
+}
+
+private struct ShutterButtonStyle: ButtonStyle {
+    let reduceMotion: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed && !reduceMotion ? 0.90 : 1)
+            .opacity(configuration.isPressed ? 0.72 : 1)
+            .animation(.easeOut(duration: configuration.isPressed ? 0.08 : 0.14),
+                       value: configuration.isPressed)
     }
 }

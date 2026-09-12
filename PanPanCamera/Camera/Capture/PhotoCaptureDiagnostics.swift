@@ -69,6 +69,7 @@ final class PhotoCaptureDiagnostics: @unchecked Sendable {
                 log(name, milliseconds: milliseconds(from: instant, to: now))
             }
         }
+        if stage == "photo_saved" || stage == "save_failed" { logSummary(endingAt: now) }
         #endif
     }
 
@@ -119,6 +120,31 @@ final class PhotoCaptureDiagnostics: @unchecked Sendable {
     // Call only while holding lock; each log line has the same shutter identity.
     private func log(_ stage: String, milliseconds: Double) {
         print("[PhotoPerformance] id=\(captureID?.uuidString ?? "disabled") source=\(source) effects=\(effects) stage=\(stage) ms=\(String(format: "%.2f", milliseconds))")
+    }
+
+    private func logSummary(endingAt end: ContinuousClock.Instant) {
+        guard let requested = milestones["capture_requested"],
+              let captured = milestones["capture_data_ready"],
+              let processingStarted = milestones["processing_start"],
+              let processingEnded = milestones["processing_end"],
+              let saveStarted = milestones["save_start"] else { return }
+        let effectsEnded = milestones["encoding_start"] ?? processingEnded
+        let encoding = duration(from: milestones["encoding_start"], to: milestones["encoding_end"])
+        print("[CameraPerformance] id=\(captureID?.uuidString ?? "disabled") source=\(source) effects=\(effects) " +
+              "Capture=\(format(milliseconds(from: requested, to: captured)))ms " +
+              "Processing=\(format(milliseconds(from: processingStarted, to: effectsEnded)))ms " +
+              "Encoding=\(format(encoding))ms " +
+              "PhotoKit=\(format(milliseconds(from: saveStarted, to: end)))ms " +
+              "Total=\(format(milliseconds(from: requested, to: end)))ms")
+    }
+
+    private func duration(from start: ContinuousClock.Instant?, to end: ContinuousClock.Instant?) -> Double {
+        guard let start, let end else { return 0 }
+        return milliseconds(from: start, to: end)
+    }
+
+    private func format(_ milliseconds: Double) -> String {
+        String(format: "%.2f", milliseconds)
     }
     #endif
 }
