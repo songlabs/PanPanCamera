@@ -47,16 +47,20 @@ final class SemanticSkinProcessingTests: XCTestCase {
         XCTAssertTrue(calls.values.isEmpty)
     }
 
-    func testUnavailableProviderMatchesNoProviderAndStillSmoothsUnprotectedSkin() async throws {
+    func testMissingAndUnavailableProvidersStillSmoothUnprotectedSkin() async throws {
         let input = try SkinRetouchTestImage.texture(), region = try SemanticMaskTestPixels.fullFace()
         let configuration = SkinRetouchConfiguration.naturalDefault.withIntensity(try SkinRetouchIntensity(1))
-        let baseline = try await process(input, regions: [region], provider: nil, configuration: configuration)
-        let result = try await process(input, regions: [region],
+        let missing = try await process(input, regions: [region], provider: nil, configuration: configuration)
+        let unavailable = try await process(input, regions: [region],
             provider: MockSkinMaskProvider(configuration: .init(mode: .unavailable)), configuration: configuration)
-        XCTAssertEqual(ProcessingTestPixels.rgba(result), ProcessingTestPixels.rgba(baseline))
+        // Composer tests verify fallback equivalence against the independent mask
+        // formula. Here each provider case must smooth the unprotected texture.
         let patch = CGRect(x: 60, y: 106, width: 24, height: 24)
-        XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(result, in: patch)),
-                          SkinRetouchTestImage.variance(SkinRetouchTestImage.values(input, in: patch)))
+        let originalVariance = SkinRetouchTestImage.variance(SkinRetouchTestImage.values(input, in: patch))
+        for (name, output) in [("missing", missing), ("unavailable", unavailable)] {
+            XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(output, in: patch)),
+                              originalVariance, "\(name) semantics must still smooth unprotected skin")
+        }
     }
 
     func testProviderReceivesMatchingLandmarksOncePerUniqueFaceWithPartialReorderedResults() async throws {
