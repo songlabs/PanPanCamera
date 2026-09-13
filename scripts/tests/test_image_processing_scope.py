@@ -1,4 +1,4 @@
-"""Static architecture gates, not Apple/ML/image runtime validation."""
+"""Static architecture gates, not Apple/image runtime validation."""
 from pathlib import Path
 import re
 import sys
@@ -16,7 +16,7 @@ def code(path):
 
 class ImageProcessingScopeTests(unittest.TestCase):
     def test_production_has_no_retired_analysis_or_network_pipeline(self):
-        retired = r'\b(?:Vision|VNFace\w*|VNDetect\w*|visionFailed|VisionFaceDetector|DetectedFace|SoftFaceMaskGenerator|BeautySkinMaskGenerator|MockFaceDetector|DebugPhotoProcessing)\b'
+        retired = r'\b(?:CoreML|MLModel|CoreMLFace\w*|FaceParser|DenseLandmark\w*|FaceSemantic\w*|MediaPipe|TensorFlow|Banuba|BytePlus|FaceUnity|DetectedFace|SoftFaceMaskGenerator|BeautySkinMaskGenerator|MockFaceDetector|DebugPhotoProcessing)\b'
         for path in APP.rglob('*.swift'):
             if 'Tests' in path.parts:
                 continue
@@ -26,28 +26,33 @@ class ImageProcessingScopeTests(unittest.TestCase):
 
     def test_contract_is_framework_independent_and_identity_bound(self):
         paths = ['FaceAnalysis/FaceAnalysisResult.swift', 'FaceAnalysis/FaceAnalysisCoordinates.swift',
-                 'FaceAnalysis/Parsing/FaceSemanticMask.swift', 'FaceAnalysis/Tracking/FaceAnalysisSmoother.swift']
+                 'BeautyEngine/Skin/AdaptiveSkinColor.swift', 'FaceAnalysis/Tracking/FaceAnalysisSmoother.swift']
         for path in paths:
             self.assertNotRegex(code(path), r'\b(?:CoreML|CoreImage|AVFoundation|CoreVideo|MLModel|CIImage|CVPixelBuffer)\b')
         contract = source(paths[0])
         self.assertIn('let trackingID: UUID', contract)
-        self.assertIn('let semanticMasks: FaceSemanticMasks?', contract)
-        self.assertIn('let landmarks: DenseFaceLandmarks', contract)
+        self.assertNotIn('semanticMasks', contract)
+        self.assertIn('let landmarks: FaceLandmarks', contract)
 
-    def test_models_are_explicitly_blocked_without_unapproved_binary(self):
+    def test_models_are_absent_and_production_uses_stable_vision(self):
         for suffix in ('*.mlmodel', '*.mlpackage', '*.mlmodelc', '*.tflite', '*.onnx'):
             self.assertFalse(list(APP.rglob(suffix)), suffix)
-        self.assertIn('static let bundled: Self? = nil', source('FaceAnalysis/CoreMLFaceAnalyzer.swift'))
+        self.assertIn('VisionFaceAnalyzer()', source('FaceAnalysis/FaceAnalyzer.swift'))
+        self.assertIn('VNDetectFaceLandmarksRequestRevision3', source('FaceAnalysis/VisionFaceAnalyzer.swift'))
         for path in (APP / 'BeautyEngine').rglob('*.swift'):
             self.assertNotRegex(path.read_text(encoding='utf-8'), r'^import CoreML$', str(path))
 
-    def test_skin_never_uses_geometry_as_coverage_or_missing_semantic_fallback(self):
-        text = code('BeautyEngine/Skin/SemanticSkinMaskComposer.swift')
-        self.assertIn('masks.skinFoundation()', text)
-        self.assertNotRegex(text, r'faceContour|jawline|1\.15|makeMask\(regions:|semantic\s*\?\?\s*white')
+    def test_skin_classifies_original_pixels_once_and_preserves_feature_protection(self):
+        generator = code('BeautyEngine/Skin/AdaptiveSkinMaskGenerator.swift')
+        self.assertIn('AdaptiveSkinColor(samples: samples)', generator)
+        self.assertIn('classified.cropped(to: box)', generator)
+        self.assertIn('FeatureProtectionMaskGenerator()', generator)
+        self.assertNotIn('createCGImage', generator)
+        beauty = source('BeautyEngine/BeautyProcessor.swift')
+        self.assertEqual(beauty.count('try makeSkinMask(source, faces, quality)'), 1)
         skin = source('BeautyEngine/Skin/SkinBeautyProcessor.swift')
-        self.assertEqual(skin.count('SemanticSkinMaskComposer().makeMask'), 1)
-        self.assertNotIn('BeautySkinMaskGenerator', skin)
+        self.assertNotIn('makeMask(', skin)
+        self.assertIn('result.instances[face.trackingID]', skin)
         self.assertIn('strength: configuration.effectiveBlemish', skin)
         self.assertIn('strength: configuration.effectiveDarkCircles', skin)
 
@@ -89,7 +94,7 @@ class ImageProcessingScopeTests(unittest.TestCase):
     def test_debug_modes_are_off_in_release_and_have_no_persistence(self):
         mode = source('BeautyEngine/BeautyFrame.swift')
         self.assertRegex(mode, r'#if DEBUG[\s\S]*arguments.contains\(flag\)[\s\S]*#else\s+false')
-        for flag in ('FaceBoxes', 'DenseLandmarks', 'SkinMask', 'HairMask', 'FaceParsing'):
+        for flag in ('FaceBoxes', 'VisionLandmarks', 'SkinMask', 'FaceROI'):
             self.assertIn('-PanPan' + flag, mode)
         for path in ['Presentation/Camera/FaceDebugOverlay.swift', 'BeautyEngine/BeautyPreviewProcessor.swift']:
             self.assertNotRegex(code(path), r'\.write\(|FileManager|URLSession|print\(')
@@ -102,12 +107,12 @@ class ImageProcessingScopeTests(unittest.TestCase):
             for key in ('SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'OTHER_SWIFT_FLAGS'):
                 self.assertNotRegex(str(item['buildSettings'].get(key, '')), r'\bDEBUG\b')
 
-    def test_contexts_models_and_camera_session_are_long_lived(self):
+    def test_contexts_requests_and_camera_session_are_long_lived(self):
         beauty = '\n'.join(p.read_text(encoding='utf-8') for p in (APP / 'BeautyEngine').rglob('*.swift'))
         self.assertNotRegex(beauty, r'\b(?:CIContext|MLModel|MTLCreateSystemDefaultDevice|DispatchQueue)\s*\(')
-        adapter = source('FaceAnalysis/CoreMLFaceAnalyzer.swift')
-        self.assertIn('private lazy var model:', adapter)
-        self.assertIn('private lazy var context = CIContext', adapter)
+        adapter = source('FaceAnalysis/VisionFaceAnalyzer.swift')
+        self.assertIn('private let request: VNDetectFaceLandmarksRequest', adapter)
+        self.assertIn('private static let context = CIContext', source('Rendering/CoreImage/CoreImageRendering.swift'))
         all_source = '\n'.join(p.read_text(encoding='utf-8') for p in APP.rglob('*.swift') if 'Tests' not in p.parts)
         self.assertEqual(all_source.count('AVCaptureSession()'), 1)
 

@@ -19,16 +19,16 @@ enum FaceAnalysisDebugMode {
         #endif
     }
     static var boxes: Bool { enabled("-PanPanFaceBoxes") }
-    static var landmarks: Bool { enabled("-PanPanDenseLandmarks") }
+    static var landmarks: Bool { enabled("-PanPanVisionLandmarks") }
     static var skin: Bool { enabled("-PanPanSkinMask") }
-    static var hair: Bool { enabled("-PanPanHairMask") }
-    static var parsing: Bool { enabled("-PanPanFaceParsing") }
-    static var isEnabled: Bool { boxes || landmarks || skin || hair || parsing }
+    static var roi: Bool { enabled("-PanPanFaceROI") }
+    static var isEnabled: Bool { boxes || landmarks || skin || roi }
 }
 
 struct FaceAnalysisDebugSnapshot: Equatable, Sendable {
     let extent: CGRect
     let boxes: [CGRect]
+    let rois: [CGRect]
     let points: [CGPoint]
 }
 

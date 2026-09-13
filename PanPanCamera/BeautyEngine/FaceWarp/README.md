@@ -1,3 +1,3 @@
 # Face Shape
 
-The implementation now lives in [FaceShape/FaceCorrectionGeometry.swift](../FaceShape/FaceCorrectionGeometry.swift). It consumes dense typed regions for all supported faces. Preview and Final share geometry policy; Rendering builds vector displacement maps. Remaining eye/nose/mouth shape controls were parameter-only at baseline. See [architecture and model blocker](../../../docs/FaceAnalysisArchitecture.md).
+[FaceShape/FaceCorrectionGeometry.swift](../FaceShape/FaceCorrectionGeometry.swift) consumes Vision semantic regions. Slim/width/chin reuse contour geometry; gentle eyes uses eye contours and a bounded Core Image bump effect. Preview smoothing stays in FaceAnalysisSmoother; Final uses fresh analysis. Forehead/cheekbone shaping bypasses, and eye spacing/height, nose and mouth shaping remain parameter-only. See [architecture](../../../docs/FaceAnalysisArchitecture.md).

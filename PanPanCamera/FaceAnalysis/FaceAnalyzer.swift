@@ -7,21 +7,21 @@ protocol FaceAnalyzer: AnyObject {
     func faces(in normalizedImage: CIImage) throws -> [AnalyzedFace]
 }
 
-enum FaceAnalysisFailure: Error { case modelsUnavailable, invalidModel, invalidOutput, invalidImage }
+enum FaceAnalysisFailure: Error { case invalidOutput, invalidImage }
 
 final class FaceAnalysisEngine: @unchecked Sendable {
     private let queue = DispatchQueue(label: "camera.panpan.face-analysis", qos: .userInitiated)
-    // Lazy initialization is confined to queue; MLModel/CIContext never initialize on main.
+    // The reusable Vision request is initialized and used only on this worker.
     private lazy var analyzer: any FaceAnalyzer = makeAnalyzer()
     private let makeAnalyzer: () -> any FaceAnalyzer
     private let previewAdmission = NSLock()
 
-    init(makeAnalyzer: @escaping () -> any FaceAnalyzer = { CoreMLFaceAnalyzer() }) {
+    init(makeAnalyzer: @escaping () -> any FaceAnalyzer = { VisionFaceAnalyzer() }) {
         self.makeAnalyzer = makeAnalyzer
     }
 
     /// Shared across camera generations, so rapid rotation/switching cannot leave
-    /// one retained input per obsolete scheduler waiting behind the same model.
+    /// one retained input per obsolete scheduler waiting behind the same analyzer.
     func analyzePreviewIfIdle(_ image: CIImage, timestamp: TimeInterval,
                               orientation: FaceImageOrientation, mirrored: Bool) -> FaceAnalysisResult? {
         guard previewAdmission.try() else { return nil }
@@ -41,8 +41,6 @@ final class FaceAnalysisEngine: @unchecked Sendable {
                           !image.extent.isInfinite, !image.extent.isNull,
                           timestamp.isFinite else { throw FaceAnalysisFailure.invalidImage }
                     faces = try analyzer.faces(in: image)
-                } catch FaceAnalysisFailure.modelsUnavailable {
-                    outcome = .unavailable
                 } catch {
                     outcome = .failed
                 }

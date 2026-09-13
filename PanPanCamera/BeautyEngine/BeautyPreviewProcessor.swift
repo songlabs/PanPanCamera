@@ -1,7 +1,7 @@
 import CoreImage
 import Foundation
 
-/// One transform is applied to dense points and semantic rasters. Final capture
+/// One transform is applied to all semantic landmark regions. Final capture
 /// already has normalized pixels and therefore never uses preview aspect-fill.
 struct BeautyPreviewProcessor {
     private let processor = BeautyProcessor()
@@ -60,30 +60,9 @@ struct BeautyPreviewProcessor {
         let mapped = analysis.map { FaceAnalysisResult(timestamp: $0.timestamp, imageSize: targetSize,
             orientation: display, mirrored: frame.mirrored, faces: faces, outcome: $0.outcome) }
         let debug = FaceAnalysisDebugMode.isEnabled ? FaceAnalysisDebugSnapshot(extent: target,
-            boxes: faces.map(\.boundingBox), points: faces.flatMap { $0.landmarks.points }) : nil
-        var output = try processor.process(image, analysis: mapped, configuration: frame.configuration, quality: .preview)
-        #if DEBUG
-        output = try debugMasks(output, faces: faces)
-        #endif
+            boxes: faces.map(\.boundingBox), rois: faces.compactMap { SkinFaceROI(face: $0)?.bounds }, points: faces.flatMap { $0.landmarks.points }) : nil
+        let output = try processor.process(image, analysis: mapped, configuration: frame.configuration, quality: .preview)
         return BeautyPreviewProcessingResult(image: output === image ? nil : output, analysisDebug: debug)
     }
 
-    #if DEBUG
-    private func debugMasks(_ source: CIImage, faces: [AnalyzedFace]) throws -> CIImage {
-        var image = source
-        let selected: [(FaceSemanticClass, CIColor)] = FaceAnalysisDebugMode.parsing
-            ? [(.skin, .green), (.hair, .blue), (.leftEye, .red), (.rightEye, .red),
-               (.leftEyebrow, .yellow), (.rightEyebrow, .yellow), (.lips, .magenta), (.glasses, .cyan)]
-            : (FaceAnalysisDebugMode.skin ? [(.skin, CIColor.green)] : []) +
-              (FaceAnalysisDebugMode.hair ? [(.hair, CIColor.blue)] : [])
-        for face in faces {
-            for (name, color) in selected {
-                guard let plane = face.semanticMasks?.planes[name] else { continue }
-                let mask = try CoreImageRendering.grayMask(FaceSemanticRaster.image(plane, in: source.extent), scale: 0.6)
-                image = try CoreImageRendering.blend(CIImage(color: color).cropped(to: source.extent), over: image, mask: mask)
-            }
-        }
-        return image
-    }
-    #endif
 }

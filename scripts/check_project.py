@@ -96,8 +96,8 @@ def check_catalogs():
 def check_sources():
     sources = [p for p in (ROOT / 'PanPanCamera').rglob('*.swift') if 'Tests' not in p.parts]
     hardcoded = re.compile(r'\b(?:Text|Button|Label|Toggle|Picker|Slider|ProgressView|Section)\s*\(\s*"|\.(?:navigationTitle|accessibilityLabel|accessibilityHint|accessibilityValue|alert)\s*\(\s*"')
-    forbidden_import = re.compile(r'^(?:@preconcurrency )?import\s+(?:Vision|PhotosUI)\b', re.M)
-    allowed_imports = {'Foundation', 'SwiftUI', 'AVFoundation', 'Combine', 'UIKit', 'ImageIO', 'CoreML', 'CoreVideo', 'CoreImage', 'Photos', 'Metal', 'QuartzCore'}
+    forbidden_import = re.compile(r'^(?:@preconcurrency )?import\s+(?:CoreML|PhotosUI)\b', re.M)
+    allowed_imports = {'Foundation', 'SwiftUI', 'AVFoundation', 'Combine', 'UIKit', 'ImageIO', 'Vision', 'CoreVideo', 'CoreImage', 'Photos', 'Metal', 'QuartzCore'}
     for path in sources:
         text = path.read_text(encoding='utf-8')
         require(not hardcoded.search(text), f'UI literal outside localization adapter: {path.name}')
@@ -108,9 +108,9 @@ def check_sources():
         if module in {'Camera', 'FaceAnalysis'}:
             require('SwiftUI' not in imports and not re.search(r'\b(?:L10n|Presentation)\b', text),
                     f'Camera/FaceAnalysis must not depend on UI/localization types: {path.name}')
-        require(not re.search(r'\b(?:VNFace\w*|VNDetect\w*|VisionFaceDetector|visionFailed)\b', text),
-                f'Retired analysis dependency: {path.name}')
-        require('CoreML' not in imports or module == 'FaceAnalysis', f'Core ML must stay in FaceAnalysis: {path.name}')
+        require(not re.search(r'\b(?:VNFace\w*|VNDetect\w*|VNImage\w*)\b', text) or path.name == 'VisionFaceAnalyzer.swift',
+                f'Vision observations must stop at the analysis implementation: {path.name}')
+        require('Vision' not in imports or path.name == 'VisionFaceAnalyzer.swift', f'Vision must stay in the analyzer: {path.name}')
         require('CoreImage' not in imports or module in {'Rendering', 'BeautyEngine', 'FaceAnalysis'}
                 or path.name == 'CameraFaceFrameProcessor.swift', f'Unexpected Core Image integration: {path.name}')
         require('Metal' not in imports or path.name in {'CoreImageRendering.swift', 'BeautyPreviewRenderer.swift', 'CameraPreview.swift'},

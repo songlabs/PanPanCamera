@@ -8,8 +8,6 @@ struct FaceCorrectionWarp: Equatable, Sendable {
         case slimLeft, slimRight
         case widthLeft, widthRight
         case chinLeft, chinCenter, chinRight
-        case foreheadLeft, foreheadRight
-        case cheekbonesLeft, cheekbonesRight
     }
 
     let kind: Kind
@@ -32,7 +30,7 @@ struct FaceCorrectionGeometryResult: Equatable, Sendable {
     static let empty = Self(faceBox: nil, contour: [], smallFaceWarps: [], warps: [])
 }
 
-/// Converts dense semantic landmarks into conservative, feathered local
+/// Converts Vision semantic landmarks into conservative, feathered local
 /// movements. It accepts any finite image extent; normalized face coordinates are
 /// converted directly to that extent's bottom-left pixel coordinate space.
 enum FaceCorrectionGeometry {
@@ -40,8 +38,6 @@ enum FaceCorrectionGeometry {
     static let maximumWidthDisplacementRatio: CGFloat = 0.044
     static let maximumChinSideDisplacementRatio: CGFloat = 0.020
     static let maximumChinCenterDisplacementRatio: CGFloat = 0.036
-    static let maximumForeheadDisplacementRatio: CGFloat = 0.024
-    static let maximumCheekbonesDisplacementRatio: CGFloat = 0.030
 
     static func warps(faces: [AnalyzedFace], configuration: BeautyConfiguration,
                       extent: CGRect) -> [FaceCorrectionWarp] {
@@ -61,7 +57,7 @@ enum FaceCorrectionGeometry {
     private static func singleResult(face: AnalyzedFace, configuration: BeautyConfiguration,
                                      extent: CGRect) -> FaceCorrectionGeometryResult {
         guard isValid(extent), face.confidence >= 0.5 else { return .empty }
-        let contour = validLandmarks(.jawline, in: face)
+        let contour = validLandmarks(.faceContour, in: face)
         let box = pixelRect(face.boundingBox, in: extent)
         let pixelContour = contour.map { pixelPoint($0, in: extent) }
         guard contour.count >= 5, box.width >= 8, box.height >= 8 else {
@@ -73,8 +69,6 @@ enum FaceCorrectionGeometry {
         let rightLower = closest(contour, to: CGPoint(x: 0.88, y: 0.30), in: face.boundingBox)
         let leftWidth = closest(contour, to: CGPoint(x: 0.08, y: 0.52), in: face.boundingBox)
         let rightWidth = closest(contour, to: CGPoint(x: 0.92, y: 0.52), in: face.boundingBox)
-        let leftCheekbone = closest(contour, to: CGPoint(x: 0.10, y: 0.64), in: face.boundingBox)
-        let rightCheekbone = closest(contour, to: CGPoint(x: 0.90, y: 0.64), in: face.boundingBox)
         let chin = closest(contour, to: CGPoint(x: 0.50, y: 0.04), in: face.boundingBox)
 
         var result: [FaceCorrectionWarp] = []
@@ -111,42 +105,29 @@ enum FaceCorrectionGeometry {
                        visibleOffset: CGVector(
                         dx: 0, dy: box.height * maximumChinCenterDisplacementRatio * chinStrength))
             }
-
-            let forehead = CGFloat(configuration.effectiveForehead)
-            if forehead > 0,
-               let leftBrow = average(validLandmarks(.leftEyebrow, in: face)),
-               let rightBrow = average(validLandmarks(.rightEyebrow, in: face)) {
-                let browTop = max(leftBrow.y, rightBrow.y)
-                let gap = face.boundingBox.maxY - browTop
-                if gap >= face.boundingBox.height * 0.10,
-                   gap <= face.boundingBox.height * 0.50 {
-                    let y = browTop + gap * 0.62
-                    let movement = box.height * maximumForeheadDisplacementRatio * forehead
-                    let radius = box.width * 0.19
-                    let horizontal = box.width * 0.15
-                    let centerX = (leftBrow.x + rightBrow.x) / 2
-                    append(&result, kind: .foreheadLeft,
-                           point: CGPoint(x: centerX, y: y), extent: extent,
-                           centerOffset: CGVector(dx: -horizontal, dy: 0), radius: radius,
-                           visibleOffset: CGVector(dx: 0, dy: -movement))
-                    append(&result, kind: .foreheadRight,
-                           point: CGPoint(x: centerX, y: y), extent: extent,
-                           centerOffset: CGVector(dx: horizontal, dy: 0), radius: radius,
-                           visibleOffset: CGVector(dx: 0, dy: -movement))
-                }
-            }
-
-            let cheekbones = CGFloat(configuration.effectiveCheekbones)
-            if cheekbones > 0 {
-                let movement = box.width * maximumCheekbonesDisplacementRatio * cheekbones
-                appendSidePair(to: &result, left: leftCheekbone, right: rightCheekbone,
-                               extent: extent, inset: box.width * 0.020,
-                               radius: box.width * 0.16, movement: movement,
-                               leftKind: .cheekbonesLeft, rightKind: .cheekbonesRight)
-            }
         }
         return FaceCorrectionGeometryResult(faceBox: box, contour: pixelContour,
                                             smallFaceWarps: smallFaceWarps, warps: result)
+    }
+
+    struct EyeAdjustment: Equatable, Sendable {
+        let center: CGPoint
+        let radius: CGFloat
+        let scale: CGFloat
+    }
+
+    static func eyes(faces: [AnalyzedFace], configuration: BeautyConfiguration, extent: CGRect) -> [EyeAdjustment] {
+        guard configuration.enabled, configuration.effectiveEyes > 0, isValid(extent) else { return [] }
+        return faces.filter { $0.confidence >= 0.5 }.flatMap { face -> [EyeAdjustment] in
+            [FacialLandmarkRegion.leftEye, .rightEye].compactMap { name -> EyeAdjustment? in
+                let points = validLandmarks(name, in: face).map { pixelPoint($0, in: extent) }
+                guard points.count >= 4, let center = average(points) else { return nil }
+                let bounds = FaceAnalysisCoordinates.bounds(points)
+                let radius = max(bounds.width, bounds.height) * 0.9
+                guard radius >= 2, radius < pixelRect(face.boundingBox, in: extent).width * 0.30 else { return nil }
+                return EyeAdjustment(center: center, radius: radius, scale: CGFloat(configuration.effectiveEyes) * 0.06)
+            }
+        }
     }
 
     // Fixed anatomical targets, with soft contour sampling rather than nearest-point
@@ -161,7 +142,7 @@ enum FaceCorrectionGeometry {
     private static func slimControls(face: AnalyzedFace?, strength: CGFloat,
                                      extent: CGRect) -> [FaceCorrectionWarp] {
         guard let face else { return [] }
-        let contour = validLandmarks(.jawline, in: face)
+        let contour = validLandmarks(.faceContour, in: face)
         let box = pixelRect(face.boundingBox, in: extent)
         guard contour.count >= 5, box.width >= 8, box.height >= 8 else { return [] }
         var controls: [FaceCorrectionWarp] = []

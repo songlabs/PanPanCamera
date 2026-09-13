@@ -47,10 +47,6 @@ final class BeautyProcessingTests: XCTestCase {
                        0.010 * 2, accuracy: 0.000_001)
         XCTAssertEqual(FaceCorrectionGeometry.maximumChinCenterDisplacementRatio,
                        0.018 * 2, accuracy: 0.000_001)
-        XCTAssertEqual(FaceCorrectionGeometry.maximumForeheadDisplacementRatio,
-                       0.012 * 2, accuracy: 0.000_001)
-        XCTAssertEqual(FaceCorrectionGeometry.maximumCheekbonesDisplacementRatio,
-                       0.015 * 2, accuracy: 0.000_001)
     }
 
     func testPreviewFrameStoreKeepsOnlyNewestFrameAndConsumesOnce() throws {
@@ -117,18 +113,18 @@ final class BeautyProcessingTests: XCTestCase {
         let incomplete = AnalyzedFace(
             boundingBox: CGRect(x: 0.2, y: 0.1, width: 0.6, height: 0.8),
             confidence: 1,
-            landmarks: [.jawline: [CGPoint(x: .nan, y: 0.3), CGPoint(x: 0.5, y: 0.1)]]
+            landmarks: [.faceContour: [CGPoint(x: .nan, y: 0.3), CGPoint(x: 0.5, y: 0.1)]]
         )
         XCTAssertTrue(FaceCorrectionGeometry.warps(faces: [incomplete], configuration: active,
                                                     extent: extent).isEmpty)
     }
 
-    func testLandmarksProduceDeterministicBoundedWarpsForFiveControls() throws {
+    func testLandmarksProduceDeterministicBoundedWarpsForSupportedContourControls() throws {
         let extent = CGRect(x: 0, y: 0, width: 200, height: 300)
         let warps = FaceCorrectionGeometry.warps(faces: [completeFace()],
             configuration: faceConfiguration(), extent: extent)
 
-        XCTAssertEqual(warps.count, 21)
+        XCTAssertEqual(warps.count, 17)
         XCTAssertTrue(warps.allSatisfy { extent.insetBy(dx: -1, dy: -1).contains($0.center) })
         XCTAssertTrue(warps.allSatisfy { $0.radius >= 1 && $0.radius < 40 })
         XCTAssertGreaterThan(try warp(.slimLeft, in: warps).visibleOffset.dx, 0)
@@ -136,9 +132,6 @@ final class BeautyProcessingTests: XCTestCase {
         XCTAssertGreaterThan(try warp(.widthLeft, in: warps).visibleOffset.dx, 0)
         XCTAssertLessThan(try warp(.widthRight, in: warps).visibleOffset.dx, 0)
         XCTAssertGreaterThan(try warp(.chinCenter, in: warps).visibleOffset.dy, 0)
-        XCTAssertLessThan(try warp(.foreheadLeft, in: warps).visibleOffset.dy, 0)
-        XCTAssertGreaterThan(try warp(.cheekbonesLeft, in: warps).visibleOffset.dx, 0)
-        XCTAssertLessThan(try warp(.cheekbonesRight, in: warps).visibleOffset.dx, 0)
     }
 
     func testFaceCorrectionPreviewBuildsLocalDisplacementGraphOffMain() throws {
@@ -157,7 +150,7 @@ final class BeautyProcessingTests: XCTestCase {
         let extent = CGRect(x: 0, y: 0, width: 200, height: 300)
         var parameters = BeautyParameters()
         parameters.setValue(50, for: FaceTool.auto)
-        for tool in [FaceTool.width, .chin, .forehead, .cheekbones] {
+        for tool in [FaceTool.width, .chin, .forehead, .cheekbones, .eyes] {
             parameters.setValue(0, for: tool)
         }
 
@@ -191,7 +184,7 @@ final class BeautyProcessingTests: XCTestCase {
         let extent = CGRect(x: 0, y: 0, width: 200, height: 300)
         var parameters = BeautyParameters()
         parameters.setValue(50, for: FaceTool.auto)
-        for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones] {
+        for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones, .eyes] {
             parameters.setValue(0, for: tool)
         }
 
@@ -229,7 +222,7 @@ final class BeautyProcessingTests: XCTestCase {
             boundingBox: box,
             confidence: 1,
             landmarks: [
-                .jawline: [
+                .faceContour: [
                     point(0.08, 0.58), point(0.10, 0.42), point(0.18, 0.24),
                     point(0.34, 0.08), point(0.50, 0.03), point(0.66, 0.08),
                     point(0.82, 0.24), point(0.90, 0.42), point(0.92, 0.58)

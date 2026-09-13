@@ -2,7 +2,7 @@ import CoreImage
 import Foundation
 
 /// One in-flight input, no pending buffer queue. Rendering reads the last completed
-/// result independently of main-thread debug delivery. Models live in the engine.
+/// result independently of main-thread debug delivery. Vision requests live in the engine.
 final class FaceAnalysisScheduler: @unchecked Sendable {
     private let queue = DispatchQueue(label: "camera.panpan.analysis-admission", qos: .userInitiated)
     private let lock = NSLock()
@@ -13,7 +13,17 @@ final class FaceAnalysisScheduler: @unchecked Sendable {
     private var latest: FaceAnalysisResult?
     private var smoother = FaceAnalysisSmoother() // queue only
 
-    init(engine: FaceAnalysisEngine) { self.engine = engine }
+    struct Policy: Sendable {
+        // Initial tuning values, not measured device performance promises.
+        var analysisInterval: TimeInterval = 1.0 / 12.0
+        var staleInterval: TimeInterval = 0.5
+    }
+    private let policy: Policy
+
+    init(engine: FaceAnalysisEngine, policy: Policy = Policy()) {
+        precondition(policy.analysisInterval > 0 && policy.staleInterval > 0)
+        self.engine = engine; self.policy = policy
+    }
 
     @discardableResult
     func submit(_ image: CIImage, timestamp: TimeInterval, orientation: FaceImageOrientation,
@@ -32,7 +42,7 @@ final class FaceAnalysisScheduler: @unchecked Sendable {
                 guard let raw = engine.analyzePreviewIfIdle(image, timestamp: timestamp,
                     orientation: orientation, mirrored: mirrored) else {
                     lock.lock()
-                    busy = false; nextStart = timestamp + 1.0 / 12.0
+                    busy = false; nextStart = timestamp + policy.analysisInterval
                     lock.unlock()
                     return
                 }
@@ -46,8 +56,8 @@ final class FaceAnalysisScheduler: @unchecked Sendable {
                 #endif
                 lock.lock()
                 busy = false
-                // Target 12 Hz; slow devices get a cooldown rather than a backlog.
-                nextStart = timestamp + max(1.0 / 12.0, duration * 1.15)
+                // Slow analysis gets a cooldown rather than a backlog.
+                nextStart = timestamp + max(policy.analysisInterval, duration * 1.15)
                 let publish = active
                 if publish { latest = result }
                 lock.unlock()
@@ -59,7 +69,7 @@ final class FaceAnalysisScheduler: @unchecked Sendable {
 
     func snapshot(at time: TimeInterval) -> FaceAnalysisResult? {
         lock.lock(); defer { lock.unlock() }
-        guard active, let latest, time >= latest.timestamp, time - latest.timestamp <= 0.5 else { return nil }
+        guard active, let latest, time >= latest.timestamp, time - latest.timestamp <= policy.staleInterval else { return nil }
         return latest
     }
 

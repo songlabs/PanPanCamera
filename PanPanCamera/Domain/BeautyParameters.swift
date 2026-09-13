@@ -83,6 +83,7 @@ struct BeautyParameters: Equatable, Sendable {
             chinStrength: value(for: FaceTool.chin) / Self.range.upperBound,
             foreheadStrength: value(for: FaceTool.forehead) / Self.range.upperBound,
             cheekbonesStrength: value(for: FaceTool.cheekbones) / Self.range.upperBound,
+            eyeStrength: value(for: FaceTool.eyes) / Self.range.upperBound,
             makeup: MakeupConfiguration(
                 lip: value(for: MakeupTool.lip) / Self.range.upperBound,
                 blush: value(for: MakeupTool.blush) / Self.range.upperBound,
@@ -96,8 +97,8 @@ struct BeautyParameters: Equatable, Sendable {
 
 /// Immutable renderer input shared by Preview and final capture. Shutter capture
 /// keeps one value snapshot rather than reading mutable UI state.
-/// Eye, nose and mouth controls remain absent until reliable
-/// local processors for those controls exist.
+/// Eye spacing/height, nose and mouth shaping remain parameter-only.
+/// Hairline and cheekbone controls retain stored values but bypass processing.
 struct BeautyConfiguration: Equatable, Sendable {
     let enabled: Bool
     let overallStrength: Double
@@ -112,6 +113,7 @@ struct BeautyConfiguration: Equatable, Sendable {
     let chinStrength: Double
     let foreheadStrength: Double
     let cheekbonesStrength: Double
+    let eyeStrength: Double
     let makeup: MakeupConfiguration
     let filter: FilterConfiguration
 
@@ -121,7 +123,7 @@ struct BeautyConfiguration: Equatable, Sendable {
           darkCirclesStrength: Double = 0, faceOverallStrength: Double = 0,
           faceSlimStrength: Double = 0, faceWidthStrength: Double = 0,
           chinStrength: Double = 0, foreheadStrength: Double = 0,
-          cheekbonesStrength: Double = 0, makeup: MakeupConfiguration = .disabled,
+          cheekbonesStrength: Double = 0, eyeStrength: Double = 0, makeup: MakeupConfiguration = .disabled,
           filter: FilterConfiguration = .original) {
         self.enabled = enabled
         self.overallStrength = Self.unit(overallStrength)
@@ -136,6 +138,7 @@ struct BeautyConfiguration: Equatable, Sendable {
         self.chinStrength = Self.unit(chinStrength)
         self.foreheadStrength = Self.unit(foreheadStrength)
         self.cheekbonesStrength = Self.unit(cheekbonesStrength)
+        self.eyeStrength = Self.unit(eyeStrength)
         self.makeup = makeup
         self.filter = filter
     }
@@ -150,8 +153,10 @@ struct BeautyConfiguration: Equatable, Sendable {
     var effectiveFaceSlim: Double { faceOverallStrength * faceSlimStrength }
     var effectiveFaceWidth: Double { faceOverallStrength * faceWidthStrength }
     var effectiveChin: Double { faceOverallStrength * chinStrength }
-    var effectiveForehead: Double { faceOverallStrength * foreheadStrength }
-    var effectiveCheekbones: Double { faceOverallStrength * cheekbonesStrength }
+    // Stored UI values remain compatible, but sparse landmarks do not locate a hairline/cheekbone.
+    var effectiveForehead: Double { 0 }
+    var effectiveCheekbones: Double { 0 }
+    var effectiveEyes: Double { faceOverallStrength * eyeStrength }
 
     var isSkinBypassed: Bool {
         !enabled ||
@@ -171,7 +176,7 @@ struct BeautyConfiguration: Equatable, Sendable {
     var isFaceCorrectionBypassed: Bool {
         !enabled ||
             (effectiveFaceSlim == 0 && effectiveFaceWidth == 0 && effectiveChin == 0 &&
-                effectiveForehead == 0 && effectiveCheekbones == 0)
+                effectiveEyes == 0)
     }
 
     var isBypassed: Bool {

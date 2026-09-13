@@ -16,7 +16,7 @@ final class MakeupProcessingStep: @unchecked Sendable {
         let id: UUID
         let box: CGRect
         let confidence: Float
-        let landmarks: DenseFaceLandmarks
+        let landmarks: FaceLandmarks
         init(_ face: AnalyzedFace) {
             id = face.trackingID; box = face.boundingBox
             confidence = face.confidence; landmarks = face.landmarks

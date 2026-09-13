@@ -10,13 +10,14 @@ enum BeautyEffectAmplitude {
 }
 
 struct SkinBeautyProcessor {
-    func process(_ source: CIImage, faces: [AnalyzedFace], configuration: BeautyConfiguration,
+    func process(_ source: CIImage, faces: [AnalyzedFace], foundation result: SkinMaskResult?, configuration: BeautyConfiguration,
                  quality: BeautyProcessingQuality) throws -> CIImage {
         guard !configuration.isSkinBypassed,
-              let foundation = try SemanticSkinMaskComposer().makeMask(source: source, faces: faces)
+              let result
         else { return source }
-        let parsed = faces.filter { $0.semanticMasks != nil && $0.confidence >= 0.5 }
-        let regions = parsed.compactMap {
+        let foundation = result.mask
+        let supported = faces.filter { result.instances[$0.trackingID] != nil }
+        let regions = supported.compactMap {
             try? FaceRegion(boundingBox: $0.boundingBox.intersection(CGRect(x: 0, y: 0, width: 1, height: 1)))
         }
         var image = source
@@ -48,16 +49,13 @@ struct SkinBeautyProcessor {
         }
         if configuration.effectiveBlemish > 0 {
             image = try BlemishAttenuationStep().makeOutput(source: image, regions: regions,
-                landmarks: parsed.map(\.landmarks), effectiveSkinMask: foundation,
+                landmarks: supported.map(\.landmarks), effectiveSkinMask: foundation,
                 strength: configuration.effectiveBlemish, quality: quality) ?? image
         }
         if configuration.effectiveDarkCircles > 0 {
-            // Per-instance foundation and landmarks travel together. An eye from a
-            // different face never uses another track's semantic support/reference.
-            for face in parsed where face.landmarks.isAvailable {
-                guard let instance = try face.semanticMasks?.skinFoundation() else { continue }
-                let mask = try LocalSkinCorrection.multiply(foundation,
-                    FaceSemanticRaster.image(instance, in: source.extent))
+            // Reuse each face's already-built mask; never reclassify adjusted pixels.
+            for face in supported where face.landmarks.isAvailable {
+                guard let mask = result.instances[face.trackingID] else { continue }
                 image = try DarkCircleCorrectionStep().makeOutput(source: image, regions: regions,
                     landmarks: [face.landmarks], effectiveSkinMask: mask,
                     strength: configuration.effectiveDarkCircles, quality: quality) ?? image

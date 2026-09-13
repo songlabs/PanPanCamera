@@ -1961,6 +1961,41 @@
         }
       }
     },
+    "face.eyes.detail": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "目の位置に合わせて、自然に少しだけ大きくします。"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gently enlarges the eyes using their detected positions."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "根据检测到的眼睛位置，轻微自然地放大双眼。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "依偵測到的眼睛位置，輕微自然地放大雙眼。"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "감지된 눈 위치에 맞춰 눈을 자연스럽게 조금 키웁니다."
+          }
+        }
+      }
+    },
     "face.eyes": {
       "extractionState": "manual",
       "localizations": {

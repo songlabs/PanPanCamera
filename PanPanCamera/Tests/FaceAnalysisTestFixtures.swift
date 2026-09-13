@@ -7,8 +7,7 @@ import Foundation
 extension AnalyzedFace {
     init(boundingBox: CGRect, confidence: Float, landmarks: [FacialLandmarkRegion: [CGPoint]]) {
         self.init(boundingBox: boundingBox, confidence: confidence,
-            landmarks: DenseFaceLandmarks(topologyID: "synthetic-typed-regions",
-                points: FacialLandmarkRegion.allCases.flatMap { landmarks[$0] ?? [] }, regions: landmarks))
+            landmarks: FaceLandmarks(regions: landmarks))
     }
 }
 
@@ -55,17 +54,7 @@ final class FixtureFaceAnalyzer: FaceAnalyzer {
     }
 }
 
-enum SemanticFixture {
-    static func masks(width: Int = 16, height: Int = 16,
-                      label: (Int, Int) -> FaceSemanticClass) throws -> FaceSemanticMasks {
-        var planes: [FaceSemanticClass: FaceSemanticPlane] = [:]
-        for name in FaceSemanticClass.required {
-            var values: [Float] = []
-            for y in 0..<height { for x in 0..<width { values.append(label(x, y) == name ? 1 : 0) } }
-            planes[name] = try FaceSemanticPlane(width: width, height: height, values: values)
-        }
-        return try FaceSemanticMasks(confidence: 1, planes: planes)
-    }
+enum AnalysisFixture {
     static func result(_ faces: [AnalyzedFace], size: CGSize) -> FaceAnalysisResult {
         FaceAnalysisResult(timestamp: 1, imageSize: size, orientation: .up, mirrored: false, faces: faces, outcome: .analyzed)
     }

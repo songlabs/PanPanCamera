@@ -149,7 +149,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
             let processor = BeautyTestHarness()
             let original = try pixels(source).bytes
             let topLeftRows = rowsStartAtTop(try pixels(coordinateRamp()).bytes)
-            for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones] {
+            for tool in [FaceTool.slim, .width, .chin] {
                 var outputs: [[UInt8]] = []
                 var changes: [Double] = []
                 for strength in [0.0, 0.5, 1.0] {
@@ -190,8 +190,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
             let face = fixtureFace()
             let step = FaceCorrectionPreviewStep()
             let controls: [(FaceTool, FaceCorrectionWarp.Kind)] = [
-                (.slim, .slimLeft), (.width, .widthLeft), (.chin, .chinCenter),
-                (.forehead, .foreheadLeft), (.cheekbones, .cheekbonesLeft)
+                (.slim, .slimLeft), (.width, .widthLeft), (.chin, .chinCenter)
             ]
             for (tool, kind) in controls {
                 var samples: [[Float]] = []
@@ -216,8 +215,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
                     case .slim: toolKinds = [.slimLeft, .slimRight]
                     case .width: toolKinds = [.widthLeft, .widthRight]
                     case .chin: toolKinds = [.chinLeft, .chinCenter, .chinRight]
-                    case .forehead: toolKinds = [.foreheadLeft, .foreheadRight]
-                    default: toolKinds = [.cheekbonesLeft, .cheekbonesRight]
+                    default: toolKinds = []
                     }
                     let selected = fullWarps.filter { toolKinds.contains($0.kind) }
                     expected = selected.reduce(CGVector.zero) { total, warp in
@@ -585,7 +583,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
             CGPoint(x: box.minX + x * box.width, y: box.minY + y * box.height)
         }
         return AnalyzedFace(boundingBox: box, confidence: 1, landmarks: [
-            .jawline: points.map { point($0.x, $0.y) },
+            .faceContour: points.map { point($0.x, $0.y) },
             .leftEyebrow: [point(0.24, 0.70), point(0.36, 0.72)],
             .rightEyebrow: [point(0.64, 0.72), point(0.76, 0.70)]
         ])

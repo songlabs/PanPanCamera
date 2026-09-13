@@ -43,7 +43,7 @@ enum ColorPipelineFixture {
     static func face() -> AnalyzedFace {
         AnalyzedFace(boundingBox: CGRect(x: 0.15, y: 0.1, width: 0.7, height: 0.8), confidence: 1,
             landmarks: [
-                .jawline: [CGPoint(x: 0.2, y: 0.6), CGPoint(x: 0.22, y: 0.4),
+                .faceContour: [CGPoint(x: 0.2, y: 0.6), CGPoint(x: 0.22, y: 0.4),
                     CGPoint(x: 0.3, y: 0.2), CGPoint(x: 0.5, y: 0.12),
                     CGPoint(x: 0.7, y: 0.2), CGPoint(x: 0.78, y: 0.4), CGPoint(x: 0.8, y: 0.6)],
                 .leftEye: [CGPoint(x: 0.29, y: 0.66), CGPoint(x: 0.35, y: 0.69),

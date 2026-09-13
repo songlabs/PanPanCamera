@@ -1,6 +1,6 @@
 # Makeup and filters: implementation and acceptance boundary
 
-> Historical implementation/performance record. The analysis and Beauty architecture below was superseded on 2026-09-13 by [FaceAnalysisArchitecture.md](FaceAnalysisArchitecture.md). Prior Vision/model/geometry descriptions and measurements do not describe the new pipeline. Current model assets and Apple/device acceptance remain blocked.
+> Historical implementation/performance record. The analysis and Beauty architecture below was superseded on 2026-09-13 by [FaceAnalysisArchitecture.md](FaceAnalysisArchitecture.md). Prior Vision/model/geometry descriptions and measurements do not describe the new pipeline. Custom models have been removed; current Apple/device acceptance remains pending.
 
 
 Investigated baseline: `main` at `f7ed3398382e784ed91e4df2e2f7f49ad29ef594`, clean and equal to fetched `origin/main`.

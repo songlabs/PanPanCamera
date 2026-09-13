@@ -1,7 +1,7 @@
 import CoreImage
 import Foundation
 
-/// Frequency reconstruction only. Coverage comes exclusively from semantic parsing.
+/// Frequency reconstruction only. Coverage comes exclusively from the shared adaptive skin mask.
 struct TexturePreservingSkinSmoothingStep: Sendable {
     let configuration: SkinRetouchConfiguration
 

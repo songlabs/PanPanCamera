@@ -1,6 +1,6 @@
 # BeautyEngine
 
-One product pipeline consumes FaceAnalysisResult: Skin -> Makeup -> Face Shape -> Filter.
-BeautyPreviewProcessor owns preview fitting; FinalBeautyProcessor shares one fresh-analysis path for PhotoOutput and Silent Frame. Parameters retain existing semantics. Skin uses only semantic parsing; Makeup/Shape use typed dense landmarks. No model is bundled: face effects bypass until licensed model integration.
+One product pipeline consumes FaceAnalysisResult: Skin -> Makeup -> simple Shape -> Filter.
+BeautyPreviewProcessor fits Preview; FinalBeautyProcessor shares fresh native-image analysis for PhotoOutput and Silent Frame. Adaptive Skin uses the original source once per frame; Makeup/Shape consume semantic Vision landmarks. No custom models or third-party SDKs.
 
-See [FaceAnalysisArchitecture](../../docs/FaceAnalysisArchitecture.md) for licensing, contracts, fallback and Apple/device validation limits.
+See [FaceAnalysisArchitecture](../../docs/FaceAnalysisArchitecture.md) for contracts, sampling, fail-closed behavior, supported controls and pending Apple/device acceptance.

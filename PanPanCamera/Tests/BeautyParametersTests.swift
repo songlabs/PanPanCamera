@@ -14,7 +14,7 @@ final class BeautyParametersTests: XCTestCase {
             blemishStrength: 0.5, darkCirclesStrength: 0.5,
             faceOverallStrength: 0.5, faceSlimStrength: 0.5,
             faceWidthStrength: 0.5, chinStrength: 0.5,
-            foreheadStrength: 0.5, cheekbonesStrength: 0.5,
+            foreheadStrength: 0.5, cheekbonesStrength: 0.5, eyeStrength: 0.5,
             makeup: MakeupConfiguration(lip: 0.5, blush: 0.5, eye: 0.5, brow: 0.5)))
     }
 
@@ -165,8 +165,8 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(values.effectiveFaceSlim, 0.3, accuracy: 0.000_001)
         XCTAssertEqual(values.effectiveFaceWidth, 0.15, accuracy: 0.000_001)
         XCTAssertEqual(values.effectiveChin, 0.6, accuracy: 0.000_001)
-        XCTAssertEqual(values.effectiveForehead, 0.45, accuracy: 0.000_001)
-        XCTAssertEqual(values.effectiveCheekbones, 0.06, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveForehead, 0, accuracy: 0.000_001)
+        XCTAssertEqual(values.effectiveCheekbones, 0, accuracy: 0.000_001)
     }
 
     func testFaceAutoBatchSetsEveryChildAtZeroFiftyAndOneHundred() {
@@ -231,8 +231,9 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(configuration.effectiveFaceSlim, 0.09, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveFaceWidth, 0.09, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveChin, 0.09, accuracy: 0.000_001)
-        XCTAssertEqual(configuration.effectiveForehead, 0.09, accuracy: 0.000_001)
-        XCTAssertEqual(configuration.effectiveCheekbones, 0.09, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveForehead, 0)
+        XCTAssertEqual(configuration.effectiveCheekbones, 0)
+        XCTAssertEqual(configuration.effectiveEyes, 0.09, accuracy: 0.000_001)
     }
 
     func testBothParameterGroupsClampToSliderRange() {
@@ -305,8 +306,9 @@ final class BeautyParametersTests: XCTestCase {
         XCTAssertEqual(configuration.effectiveFaceSlim, 0.2, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveFaceWidth, 0.32, accuracy: 0.000_001)
         XCTAssertEqual(configuration.effectiveChin, 0.48, accuracy: 0.000_001)
-        XCTAssertEqual(configuration.effectiveForehead, 0.6, accuracy: 0.000_001)
-        XCTAssertEqual(configuration.effectiveCheekbones, 0.08, accuracy: 0.000_001)
+        XCTAssertEqual(configuration.effectiveForehead, 0)
+        XCTAssertEqual(configuration.effectiveCheekbones, 0)
+        XCTAssertEqual(configuration.effectiveEyes, 0.8, accuracy: 0.000_001)
     }
 
     func testProcessingConfigurationMultipliesBatchAndConcreteStrengths() {
@@ -315,7 +317,7 @@ final class BeautyParametersTests: XCTestCase {
             values.setValue(auto * 100, for: FaceTool.auto)
             values.setValue(auto * 100, for: SkinTool.auto)
             for strength in [0.0, 0.25, 0.5, 0.75, 1.0] {
-                for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones] {
+                for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones, .eyes] {
                     values.setValue(strength * 100, for: tool)
                 }
                 for tool in [SkinTool.smooth, .brighten, .tone, .blemish, .darkCircles] {
@@ -323,17 +325,19 @@ final class BeautyParametersTests: XCTestCase {
                 }
                 let config = values.processingConfiguration
                 for actual in [config.faceSlimStrength, config.faceWidthStrength, config.chinStrength,
-                               config.foreheadStrength, config.cheekbonesStrength,
+                               config.foreheadStrength, config.cheekbonesStrength, config.eyeStrength,
                                config.smoothingStrength, config.brighteningStrength, config.toneStrength,
                                config.blemishStrength, config.darkCirclesStrength] {
                     XCTAssertEqual(actual, strength, accuracy: 0.000_001)
                 }
                 for actual in [config.effectiveFaceSlim, config.effectiveFaceWidth, config.effectiveChin,
-                               config.effectiveForehead, config.effectiveCheekbones,
+                               config.effectiveEyes,
                                config.effectiveSmoothing, config.effectiveBrightening, config.effectiveTone,
                                config.effectiveBlemish, config.effectiveDarkCircles] {
                     XCTAssertEqual(actual, auto * strength, accuracy: 0.000_001)
                 }
+                XCTAssertEqual(config.effectiveForehead, 0)
+                XCTAssertEqual(config.effectiveCheekbones, 0)
             }
         }
     }

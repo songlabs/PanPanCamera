@@ -44,6 +44,37 @@ enum CoreImageRendering {
     // the input CGImage's output color space. Do not disable color management.
     private static let context = CIContext(options: [.cacheIntermediates: false])
 
+    /// One tiny readback per face, independent of photo resolution. Build an atlas
+    /// so three sample patches do not require three GPU synchronization points.
+    static func skinSamples(_ image: CIImage, centers: [CGPoint], side: CGFloat) -> [AdaptiveSkinColor.Sample] {
+        dispatchPrecondition(condition: .notOnQueue(.main))
+        let edge = 6
+        guard centers.count == 3, side > 0 else { return [] }
+        let atlasExtent = CGRect(x: 0, y: 0, width: edge * centers.count, height: edge)
+        var atlas = CIImage(color: .clear).cropped(to: atlasExtent)
+        for (index, center) in centers.enumerated() {
+            let rect = CGRect(x: image.extent.minX + (center.x - side / 2) * image.extent.width,
+                              y: image.extent.minY + (center.y - side / 2) * image.extent.height,
+                              width: side * image.extent.width, height: side * image.extent.height)
+            guard image.extent.contains(rect), rect.width >= 1, rect.height >= 1 else { return [] }
+            let transform = CGAffineTransform(a: CGFloat(edge) / rect.width, b: 0, c: 0,
+                d: CGFloat(edge) / rect.height,
+                tx: CGFloat(index * edge) - rect.minX * CGFloat(edge) / rect.width,
+                ty: -rect.minY * CGFloat(edge) / rect.height)
+            atlas = image.cropped(to: rect).transformed(by: transform).composited(over: atlas)
+        }
+        var rgba = [Float](repeating: 0, count: edge * edge * centers.count * 4)
+        rgba.withUnsafeMutableBytes {
+            context.render(atlas, toBitmap: $0.baseAddress!, rowBytes: edge * centers.count * 16,
+                bounds: atlasExtent, format: .RGBAf,
+                colorSpace: CGColorSpace(name: CGColorSpace.extendedLinearSRGB))
+        }
+        return stride(from: 0, to: rgba.count, by: 4).compactMap { index in
+            guard rgba[index + 3] > 0.98 else { return nil }
+            return AdaptiveSkinColor.Sample(linearRGB: (0..<3).map { Double(rgba[index + $0]) })
+        }
+    }
+
     private static let finalRenderer: FinalRenderer = {
         #if DEBUG
         let preferMetal = ProcessInfo.processInfo.arguments.contains("-PanPanFinalMetalContext")

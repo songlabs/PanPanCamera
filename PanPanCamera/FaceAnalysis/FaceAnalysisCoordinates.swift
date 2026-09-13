@@ -61,8 +61,7 @@ enum FaceAnalysisCoordinates {
         faces.map { face in
             AnalyzedFace(trackingID: face.trackingID,
                 boundingBox: bounds(corners(face.boundingBox).map(transform.point)),
-                confidence: face.confidence, landmarks: face.landmarks.map(transform.point),
-                semanticMasks: face.semanticMasks?.transformed(by: transform))
+                confidence: face.confidence, landmarks: face.landmarks.map(transform.point))
         }
     }
 }

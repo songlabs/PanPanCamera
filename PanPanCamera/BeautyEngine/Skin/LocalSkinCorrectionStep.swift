@@ -28,7 +28,7 @@ enum LocalSkinCorrection {
 }
 
 struct BlemishAttenuationStep: Sendable {
-    func makeOutput(source: CIImage, regions: [FaceRegion], landmarks: [DenseFaceLandmarks],
+    func makeOutput(source: CIImage, regions: [FaceRegion], landmarks: [FaceLandmarks],
                     effectiveSkinMask: CIImage, strength: Double,
                     quality: BeautyProcessingQuality) throws -> CIImage? {
         dispatchPrecondition(condition: .notOnQueue(.main))
@@ -103,7 +103,7 @@ struct UnderEyeRegion: Equatable, Sendable {
     var radiusY: CGFloat { width * 0.22 }
     var referenceOffset: CGVector { CGVector(dx: down.dx * width * 0.55, dy: down.dy * width * 0.55) }
 
-    static func make(landmarks: DenseFaceLandmarks, eye: FacialLandmarkRegion,
+    static func make(landmarks: FaceLandmarks, eye: FacialLandmarkRegion,
                      in extent: CGRect) -> Self? {
         let points = landmarks.imagePoints(for: eye, in: extent)
         guard points.count >= 3 else { return nil }
@@ -149,7 +149,7 @@ struct UnderEyeRegion: Equatable, Sendable {
 }
 
 struct DarkCircleCorrectionStep: Sendable {
-    func makeOutput(source: CIImage, regions: [FaceRegion], landmarks: [DenseFaceLandmarks],
+    func makeOutput(source: CIImage, regions: [FaceRegion], landmarks: [FaceLandmarks],
                     effectiveSkinMask: CIImage, strength: Double,
                     quality: BeautyProcessingQuality) throws -> CIImage? {
         dispatchPrecondition(condition: .notOnQueue(.main))

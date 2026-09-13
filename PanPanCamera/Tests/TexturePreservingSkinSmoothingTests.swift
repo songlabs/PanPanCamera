@@ -60,9 +60,9 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
         try await Task.detached {
             let source = CIImage(cgImage: image.cgImage)
             let box = CGRect(x: 0, y: 0, width: 1, height: 1)
-            let face = try AnalyzedFace(boundingBox: box, confidence: 1,
-                semanticMasks: SemanticFixture.masks { _, _ in .skin })
-            let foundation = try XCTUnwrap(SemanticSkinMaskComposer().makeMask(source: source, faces: [face]))
+            let scale = try XCTUnwrap(SkinRetouchScale(regions: [FaceRegion(boundingBox: box)], in: source.extent))
+            let foundation = try CoreImageRendering.grayMask(
+                DetailProtectionMaskGenerator().makeMask(source: source, scale: scale), scale: -1, bias: 1)
             let mask = try CoreImageRendering.grayMask(foundation, scale: configuration.intensity.value)
             let output = try XCTUnwrap(TexturePreservingSkinSmoothingStep(configuration: configuration).makeOutput(
                 source: source, regions: [FaceRegion(boundingBox: box)], effectiveMask: mask))
@@ -105,9 +105,8 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
                 XCTAssertEqual(supportPixels[i], 1, "Opaque source support must remain eligible at default precision")
             }
             let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region],
-                effectiveMask: SemanticSkinMaskComposer().makeMask(source: source, faces: [
-                    AnalyzedFace(boundingBox: CGRect(x: 0, y: 0, width: 1, height: 1), confidence: 1, semanticMasks: SemanticFixture.masks { _, _ in .skin })
-                ])!))
+                effectiveMask: CoreImageRendering.grayMask(
+                    DetailProtectionMaskGenerator().makeMask(source: source, scale: scale), scale: -1, bias: 1)))
             let before = ProcessingTestPixels.floats(source, bounds: patch)
             let after = ProcessingTestPixels.floats(output, bounds: patch)
             let changes = stride(from: 0, to: before.count, by: 4).map { abs(after[$0] - before[$0]) }
@@ -136,9 +135,8 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
             XCTAssertLessThan(ProcessingTestPixels.floats(support,
                 bounds: CGRect(x: 66, y: 128, width: 1, height: 1))[3], 0.6)
             let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region],
-                effectiveMask: SemanticSkinMaskComposer().makeMask(source: source, faces: [
-                    AnalyzedFace(boundingBox: CGRect(x: 0, y: 0, width: 1, height: 1), confidence: 1, semanticMasks: SemanticFixture.masks { _, _ in .skin })
-                ])!))
+                effectiveMask: CoreImageRendering.grayMask(
+                    DetailProtectionMaskGenerator().makeMask(source: source, scale: scale), scale: -1, bias: 1)))
             let protected = CGRect(x: 60, y: 112, width: 8, height: 16)
             let before = ProcessingTestPixels.floats(source, bounds: protected)
             let after = ProcessingTestPixels.floats(output, bounds: protected)

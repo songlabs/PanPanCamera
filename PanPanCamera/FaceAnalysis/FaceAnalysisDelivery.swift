@@ -1,6 +1,6 @@
 import Foundation
 
-/// Main-actor observation mailbox; never controls ML admission or preview cadence.
+/// Main-actor observation mailbox; never controls analysis admission or preview cadence.
 final class FaceAnalysisDelivery: @unchecked Sendable {
     private let lock = NSLock()
     private var active = true

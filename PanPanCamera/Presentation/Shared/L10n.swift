@@ -69,6 +69,7 @@ enum L10n: String, CaseIterable {
     case faceSlimDetail = "face.slim.detail"
     case faceWidthDetail = "face.width.detail"
     case faceChinDetail = "face.chin.detail"
+    case faceEyesDetail = "face.eyes.detail"
     case faceForeheadDetail = "face.forehead.detail"
     case faceCheekbonesDetail = "face.cheekbones.detail"
     case smooth = "skin.smooth"
@@ -243,9 +244,8 @@ extension FaceTool {
         case .slim: return .faceSlimDetail
         case .width: return .faceWidthDetail
         case .chin: return .faceChinDetail
-        case .forehead: return .faceForeheadDetail
-        case .cheekbones: return .faceCheekbonesDetail
-        case .eyes, .eyeSpacing, .eyeHeight, .noseWidth, .noseLength, .mouthShape, .mouthWidth:
+        case .eyes: return .faceEyesDetail
+        case .forehead, .cheekbones, .eyeSpacing, .eyeHeight, .noseWidth, .noseLength, .mouthShape, .mouthWidth:
             return .faceUnavailableDetail
         }
     }
@@ -253,8 +253,8 @@ extension FaceTool {
     var strengthRangeDetail: L10n? {
         switch self {
         case .auto: return .faceOverallRange
-        case .slim, .width, .chin, .forehead, .cheekbones: return .faceStrengthRange
-        case .eyes, .eyeSpacing, .eyeHeight, .noseWidth, .noseLength, .mouthShape, .mouthWidth:
+        case .slim, .width, .chin, .eyes: return .faceStrengthRange
+        case .forehead, .cheekbones, .eyeSpacing, .eyeHeight, .noseWidth, .noseLength, .mouthShape, .mouthWidth:
             return nil
         }
     }

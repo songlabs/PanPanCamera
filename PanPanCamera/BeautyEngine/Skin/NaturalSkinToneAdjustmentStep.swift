@@ -15,8 +15,8 @@ struct NaturalSkinToneAdjustmentStep: Sendable {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard isEnabled, !regions.isEmpty else { return nil }
         let extent = source.extent
-        try SemanticSkinMaskComposer.validate(extent)
-        guard effectiveSkinMask.extent == extent else { throw SemanticSkinMaskComposer.Failure.invalidExtent }
+        try AdaptiveSkinMaskGenerator.validate(extent)
+        guard effectiveSkinMask.extent == extent else { throw AdaptiveSkinMaskGenerator.Failure.invalidExtent }
         guard let scale = SkinToneScale(regions: regions, in: extent) else { return nil }
         let policy = SkinRetouchConfiguration.TonePolicy.self
         let luminance = try scalar(source, vector: CIVector(x: CGFloat(policy.luminanceRed),

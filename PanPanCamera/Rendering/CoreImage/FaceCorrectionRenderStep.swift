@@ -35,7 +35,7 @@ final class FaceCorrectionPreviewStep: @unchecked Sendable {
            let cachedMap, cachedScale > 0 { return (cachedMap, cachedScale) }
 
         let largest = warps.map { hypot($0.visibleOffset.dx, $0.visibleOffset.dy) }.max() ?? 0
-        guard largest > 0 else { throw SemanticSkinMaskComposer.Failure.invalidExtent }
+        guard largest > 0 else { throw AdaptiveSkinMaskGenerator.Failure.invalidExtent }
 
         // Encode inverse sampling offsets: R = X, G = Y, 0.5 = zero.
         // The matching kernel decodes these values into CI pixels exactly once.
