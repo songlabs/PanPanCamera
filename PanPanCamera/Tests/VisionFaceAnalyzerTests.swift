@@ -16,7 +16,7 @@ final class VisionFaceAnalyzerTests: XCTestCase {
 
     func testFaceLocalMappingUsesBottomOriginWithoutExtraMirror() {
         let box = CGRect(x: 0.1, y: 0.2, width: 0.5, height: 0.4)
-        let mapped = VisionFaceAnalyzer.imagePoints([CGPoint(x: 0.2, y: 0.75), CGPoint(x: .nan, y: 0)], boundingBox: box)
+        let mapped = VisionFaceAnalyzer.imagePoints([CGPoint(x: 0.2, y: 0.75), CGPoint(x: CGFloat.nan, y: CGFloat.zero)], boundingBox: box)
         XCTAssertEqual(mapped.count, 1)
         XCTAssertEqual(mapped[0].x, 0.2, accuracy: 1e-9)
         XCTAssertEqual(mapped[0].y, 0.5, accuracy: 1e-9)

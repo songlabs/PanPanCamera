@@ -113,7 +113,7 @@ final class BeautyProcessingTests: XCTestCase {
         let incomplete = AnalyzedFace(
             boundingBox: CGRect(x: 0.2, y: 0.1, width: 0.6, height: 0.8),
             confidence: 1,
-            landmarks: [.faceContour: [CGPoint(x: .nan, y: 0.3), CGPoint(x: 0.5, y: 0.1)]]
+            landmarks: [.faceContour: [CGPoint(x: CGFloat.nan, y: 0.3), CGPoint(x: 0.5, y: 0.1)]]
         )
         XCTAssertTrue(FaceCorrectionGeometry.warps(faces: [incomplete], configuration: active,
                                                     extent: extent).isEmpty)
