@@ -107,6 +107,31 @@ class ImageProcessingScopeTests(unittest.TestCase):
             for key in ('SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'OTHER_SWIFT_FLAGS'):
                 self.assertNotRegex(str(item['buildSettings'].get(key, '')), r'\bDEBUG\b')
 
+    def test_restored_guides_observe_preview_without_changing_beauty_or_capture(self):
+        beauty = code('BeautyEngine/BeautyProcessor.swift')
+        self.assertIn('quality == .preview ? previewDebug : nil', beauty)
+        self.assertNotIn('FaceAnalysisDebugMode', beauty)
+        self.assertNotIn('CIImage(color: .green)', beauty)
+        self.assertIn('debug?(foundation?.mask, geometry, eyes)', beauty)
+        preview = code('BeautyEngine/BeautyPreviewProcessor.swift')
+        self.assertIn('previewDebug: observe', preview)
+        self.assertIn('160 / max(mask.extent.width, mask.extent.height)', preview)
+        self.assertNotRegex(preview, r'VN\w*Request|VisionFaceAnalyzer|\.makeMask\(')
+        overlay = code('Presentation/Camera/FaceDebugOverlay.swift')
+        self.assertIn('skin.contents = snapshot?.skinImage', overlay)
+        self.assertIn('container.removeFromSuperlayer()', overlay)
+        self.assertNotRegex(overlay, r'VN\w*Request|\.makeMask\(|layer\.render|\.blend\(')
+        settings = source('Presentation/Settings/SettingsView.swift')
+        self.assertRegex(settings, r'#if DEBUG\s+Divider\(\)\s+Toggle\(')
+        camera = source('Presentation/Camera/CameraView.swift')
+        self.assertIn('SettingsView(debugOverlayEnabled: $debugOverlayEnabled)', camera)
+        preview_view = source('Presentation/Camera/CameraPreview.swift')
+        self.assertIn('faceOverlay?.detach()', preview_view)
+        self.assertIn('faceOverlay = nil', preview_view)
+        self.assertIn('FaceAnalysisDebugMode.setEnabled(enabled)', preview_view)
+        for path in ['BeautyEngine/FinalBeautyProcessor.swift', 'Camera/Capture/PhotoProcessingQueue.swift']:
+            self.assertNotRegex(code(path), r'FaceAnalysisDebug|previewDebug|skinImage')
+
     def test_contexts_requests_and_camera_session_are_long_lived(self):
         beauty = '\n'.join(p.read_text(encoding='utf-8') for p in (APP / 'BeautyEngine').rglob('*.swift'))
         self.assertNotRegex(beauty, r'\b(?:CIContext|MLModel|MTLCreateSystemDefaultDevice|DispatchQueue)\s*\(')

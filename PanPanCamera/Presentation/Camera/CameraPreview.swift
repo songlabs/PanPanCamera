@@ -9,6 +9,7 @@ struct CameraPreview: UIViewRepresentable {
     let beautyFrames: BeautyPreviewFrameStore
     let beautyConfiguration: BeautyConfiguration
     let isActive: Bool
+    var debugOverlayEnabled: Bool = false
 
     func makeUIView(context: Context) -> PreviewView {
         let view = PreviewView()
@@ -19,6 +20,7 @@ struct CameraPreview: UIViewRepresentable {
 
     func updateUIView(_ uiView: PreviewView, context: Context) {
         uiView.updateDevice(device)
+        uiView.updateDebugOverlay(enabled: debugOverlayEnabled)
         uiView.updateBeauty(frames: beautyFrames, configuration: beautyConfiguration,
                             isActive: isActive)
     }
@@ -50,15 +52,25 @@ final class PreviewView: UIView {
             beautySurface.configure(device: device)
             beautyRenderer = BeautyPreviewRenderer(device: device)
         }
-        if FaceAnalysisDebugOverlay.isEnabled {
-            faceOverlay = FaceAnalysisDebugOverlay(previewLayer: previewLayer)
-        }
         displayLink = CADisplayLink(target: self, selector: #selector(renderBeautyFrame))
         displayLink?.add(to: .main, forMode: .common)
         displayLink?.isPaused = true
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    func updateDebugOverlay(enabled: Bool) {
+        FaceAnalysisDebugMode.setEnabled(enabled)
+        let show = FaceAnalysisDebugOverlay.isEnabled
+        guard show != (faceOverlay != nil) else { return }
+        hideBeautyFrame()
+        if show {
+            faceOverlay = FaceAnalysisDebugOverlay(previewLayer: previewLayer)
+        } else {
+            faceOverlay?.detach()
+            faceOverlay = nil
+        }
+    }
 
     func updateDevice(_ device: AVCaptureDevice?) {
         guard let device else { return }
@@ -112,7 +124,10 @@ final class PreviewView: UIView {
         beautyIsActive = isActive
         displayLink?.isPaused = !isActive ||
             (configuration.isBypassed && !FaceAnalysisDebugOverlay.isEnabled) || beautyRenderer == nil
-        if changed { hideBeautyFrame() }
+        if changed {
+            hideBeautyFrame()
+            faceOverlay?.update(nil)
+        }
     }
 
     @objc private func renderBeautyFrame() {
@@ -125,7 +140,8 @@ final class PreviewView: UIView {
             rotationAngle: beautyRotationAngle,
             targetSize: beautySurface.metalLayer.drawableSize) { [weak self] success, geometry in
                 guard let self, self.beautyIsActive else { return }
-                self.faceOverlay?.update(geometry)
+                // Diagnostics are sampled at 8 Hz; keep the last UI snapshot between samples.
+                if let geometry { self.faceOverlay?.update(geometry) }
                 self.beautySurface.isHidden = !success ||
                     (self.beautyConfiguration.isBypassed && !FaceAnalysisDebugMode.isEnabled)
             }
@@ -144,7 +160,8 @@ final class PreviewView: UIView {
         observation = nil
         rotation = nil
         deviceID = nil
-        faceOverlay?.update(nil)
+        faceOverlay?.detach()
+        faceOverlay = nil
         previewLayer.session = nil
     }
 }

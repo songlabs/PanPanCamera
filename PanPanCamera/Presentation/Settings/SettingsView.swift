@@ -1,6 +1,7 @@
 import SwiftUI
 
 struct SettingsView: View {
+    @Binding var debugOverlayEnabled: Bool
     @AppStorage(AppLanguage.storageKey) private var appLanguage = AppLanguage.system
 
     var body: some View {
@@ -31,6 +32,16 @@ struct SettingsView: View {
                 .foregroundStyle(PanPanTheme.ink)
                 .accessibilityLabel(Text(L10n.language))
                 .accessibilityValue(Text(appLanguage.label))
+                #if DEBUG
+                Divider()
+                Toggle(isOn: $debugOverlayEnabled) {
+                    Text(L10n.testingGuides)
+                }
+                .onChange(of: debugOverlayEnabled) { _, enabled in
+                    FaceAnalysisDebugMode.setEnabled(enabled)
+                }
+                .accessibilityIdentifier("settings.testingGuides")
+                #endif
                 Divider()
                 Text(L10n.privacyTitle).font(.headline)
                 Text(L10n.privacyDetail).font(.subheadline)

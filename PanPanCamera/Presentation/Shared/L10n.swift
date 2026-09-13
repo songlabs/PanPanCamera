@@ -114,6 +114,7 @@ enum L10n: String, CaseIterable {
     case makeupBrowDetail = "makeup.brow.detail"
     case makeupStrengthRange = "makeup.strengthRange"
     case language = "settings.language"
+    case testingGuides = "settings.testingGuides"
     case languageSystem = "language.system"
     case languageJapanese = "language.japanese"
     case languageSimplifiedChinese = "language.simplifiedChinese"

@@ -18,16 +18,19 @@ struct BeautyProcessor: Sendable {
 
     func process(_ source: CIImage, analysis: FaceAnalysisResult?, configuration: BeautyConfiguration,
                  quality: BeautyProcessingQuality,
-                 diagnostics: PhotoCaptureDiagnostics = .disabled) throws -> CIImage {
+                 diagnostics: PhotoCaptureDiagnostics = .disabled,
+                 previewDebug: ((CIImage?, FaceCorrectionGeometryResult,
+                                 [FaceCorrectionGeometry.EyeAdjustment]) -> Void)? = nil) throws -> CIImage {
         dispatchPrecondition(condition: .notOnQueue(.main))
-        let showSkin = quality == .preview && FaceAnalysisDebugMode.skin
-        guard !configuration.isBypassed || showSkin else { return source }
+        // Observation only: Debug never enables an effect or builds an extra mask.
+        let debug = quality == .preview ? previewDebug : nil
+        guard !configuration.isBypassed else { return source }
         try AdaptiveSkinMaskGenerator.validate(source.extent)
         // Contract mismatch is a face-effect bypass, while a global filter is safe.
         let faces = analysis?.outcome == .analyzed && analysis?.imageSize == source.extent.size
             ? analysis?.faces ?? [] : []
         var foundation: SkinMaskResult?
-        if !configuration.isSkinBypassed || showSkin {
+        if !configuration.isSkinBypassed {
             do {
                 foundation = try diagnostics.measure("skin_mask_graph_and_samples") {
                     try makeSkinMask(source, faces, quality)
@@ -40,23 +43,20 @@ struct BeautyProcessor: Sendable {
             try SkinBeautyProcessor().process(source, faces: faces, foundation: foundation,
                 configuration: configuration, quality: quality)
         }
-        #if DEBUG
-        if showSkin, let foundation {
-            image = try CoreImageRendering.blend(CIImage(color: .green).cropped(to: source.extent),
-                over: image, mask: CoreImageRendering.grayMask(foundation.mask, scale: 0.65))
-        }
-        #endif
         let landmarkFaces = faces.filter { $0.landmarks.isAvailable }
         image = try diagnostics.measure("makeup_graph") {
             try makeup.makeOutput(source: image, faces: landmarkFaces, configuration: configuration.makeup) ?? image
         }
+        let geometry = !configuration.isFaceCorrectionBypassed || debug != nil
+            ? FaceCorrectionGeometry.result(faces: landmarkFaces, configuration: configuration, extent: source.extent) : .empty
+        let eyes = !configuration.isFaceCorrectionBypassed
+            ? FaceCorrectionGeometry.eyes(faces: landmarkFaces, configuration: configuration, extent: source.extent) : []
         if !configuration.isFaceCorrectionBypassed {
-            let warps = FaceCorrectionGeometry.warps(faces: landmarkFaces, configuration: configuration, extent: source.extent)
             image = try diagnostics.measure("face_graph") {
                 // Final maps belong only to this job. Preview retains at most one map.
                 let step = quality == .final ? FaceCorrectionPreviewStep() : faceCorrection
-                var shaped = try step.makeOutput(source: image, warps: warps) ?? image
-                for eye in FaceCorrectionGeometry.eyes(faces: landmarkFaces, configuration: configuration, extent: source.extent) {
+                var shaped = try step.makeOutput(source: image, warps: geometry.warps) ?? image
+                for eye in eyes {
                     shaped = try CoreImageRendering.filter("CIBumpDistortion", parameters: [
                         kCIInputImageKey: shaped, kCIInputCenterKey: CIVector(cgPoint: eye.center),
                         kCIInputRadiusKey: eye.radius, kCIInputScaleKey: eye.scale
@@ -65,6 +65,7 @@ struct BeautyProcessor: Sendable {
                 return shaped
             }
         }
+        debug?(foundation?.mask, geometry, eyes)
         return try diagnostics.measure("filter_graph") {
             try filter.makeOutput(source: image, configuration: configuration.filter) ?? image
         }

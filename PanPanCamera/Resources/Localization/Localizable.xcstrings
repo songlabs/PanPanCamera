@@ -1,6 +1,41 @@
 {
   "sourceLanguage": "ja",
   "strings": {
+    "settings.testingGuides": {
+      "extractionState": "manual",
+      "localizations": {
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "テスト補助線"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "测试辅助线"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "測試輔助線"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Debug Overlay"
+          }
+        },
+        "ko": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "테스트 가이드"
+          }
+        }
+      }
+    },
     "camera.photosProcessing": {
       "extractionState": "manual",
       "localizations": {

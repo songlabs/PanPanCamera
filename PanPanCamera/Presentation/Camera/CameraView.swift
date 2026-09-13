@@ -7,6 +7,7 @@ struct CameraView: View {
     @StateObject private var tools = CameraToolState()
     @State private var presentedPhoto: CapturedPhoto?
     @State private var shutterFlashTrigger: UInt64 = 0
+    @State private var debugOverlayEnabled = FaceAnalysisDebugMode.isEnabled
     @Environment(\.scenePhase) private var scenePhase
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     private let screenshot = ScreenshotConfiguration(arguments: ProcessInfo.processInfo.arguments)
@@ -99,7 +100,8 @@ struct CameraView: View {
         CameraPreview(session: camera.previewSession, device: camera.previewDevice,
                       beautyFrames: camera.beautyPreviewFrames,
                       beautyConfiguration: camera.beautyParameters.processingConfiguration,
-                      isActive: camera.state.status == .running)
+                      isActive: camera.state.status == .running,
+                      debugOverlayEnabled: debugOverlayEnabled)
             .ignoresSafeArea()
             .accessibilityLabel(Text(L10n.livePreview))
     }
@@ -233,7 +235,7 @@ struct CameraView: View {
                                   category: $tools.beautyCategory)
         case .filters: FilterPanel(parameters: $camera.beautyParameters)
         case .makeup: MakeupPanel(parameters: $camera.beautyParameters)
-        case .settings: SettingsView()
+        case .settings: SettingsView(debugOverlayEnabled: $debugOverlayEnabled)
         case .album: FeaturePlaceholderView(title: .album, detail: .albumDetail)
         case .aspectRatio: FeaturePlaceholderView(title: .aspectRatio, detail: .aspectRatioDetail, current: .nativeSensor)
         case .timer: FeaturePlaceholderView(title: .timer, detail: .timerDetail, current: .timerOff)

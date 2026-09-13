@@ -12,7 +12,7 @@ struct BeautyPreviewProcessor {
     }
 
     func previewResult(for frame: BeautyPreviewFrame, displayRotationAngle: CGFloat,
-                       targetSize: CGSize) throws -> BeautyPreviewProcessingResult {
+                       targetSize: CGSize, includeDebug: Bool = FaceAnalysisDebugMode.isEnabled) throws -> BeautyPreviewProcessingResult {
         dispatchPrecondition(condition: .notOnQueue(.main))
         guard targetSize.width >= 1, targetSize.height >= 1,
               targetSize.width.isFinite, targetSize.height.isFinite,
@@ -59,10 +59,51 @@ struct BeautyPreviewProcessor {
         let faces = FaceAnalysisCoordinates.map(analysis?.faces ?? [], by: map)
         let mapped = analysis.map { FaceAnalysisResult(timestamp: $0.timestamp, imageSize: targetSize,
             orientation: display, mirrored: frame.mirrored, faces: faces, outcome: $0.outcome) }
-        let debug = FaceAnalysisDebugMode.isEnabled ? FaceAnalysisDebugSnapshot(extent: target,
-            boxes: faces.map(\.boundingBox), rois: faces.compactMap { SkinFaceROI(face: $0)?.bounds }, points: faces.flatMap { $0.landmarks.points }) : nil
-        let output = try processor.process(image, analysis: mapped, configuration: frame.configuration, quality: .preview)
+        let usableFaces = mapped?.outcome == .analyzed ? faces : []
+        var debug: FaceAnalysisDebugSnapshot?
+        if includeDebug {
+            debug = FaceAnalysisDebugSnapshot(extent: target,
+                boxes: usableFaces.map(\.boundingBox), rois: usableFaces.compactMap { SkinFaceROI(face: $0)?.bounds },
+                points: usableFaces.flatMap { $0.landmarks.points },
+                contours: usableFaces.compactMap { $0.landmarks[.faceContour] },
+                configuration: frame.configuration, captureOrientation: frame.orientation,
+                displayOrientation: display, displayRotationAngle: displayRotationAngle, mirrored: frame.mirrored)
+            if frame.configuration.isBypassed {
+                debug?.geometry = FaceCorrectionGeometry.result(faces: usableFaces,
+                    configuration: frame.configuration, extent: target)
+            }
+        }
+        let observe: ((CIImage?, FaceCorrectionGeometryResult, [FaceCorrectionGeometry.EyeAdjustment]) -> Void)? =
+            debug == nil ? nil : { mask, geometry, eyes in
+                debug?.geometry = geometry
+                debug?.eyes = eyes
+                #if DEBUG
+                if FaceAnalysisDebugMode.skin, let mask {
+                    debug?.skinImage = try? Self.skinDebugImage(mask)
+                }
+                #endif
+            }
+        let output = try processor.process(image, analysis: mapped, configuration: frame.configuration,
+            quality: .preview, previewDebug: observe)
         return BeautyPreviewProcessingResult(image: output === image ? nil : output, analysisDebug: debug)
     }
 
+    #if DEBUG
+    /// Read back only a tiny version of the EXISTING scalar mask, never camera pixels.
+    /// Green alpha belongs to a CALayer above Preview, not the Beauty output image.
+    private static func skinDebugImage(_ mask: CIImage) throws -> CGImage? {
+        let scale = min(1, 160 / max(mask.extent.width, mask.extent.height))
+        let small = mask.transformed(by: CGAffineTransform(a: scale, b: 0, c: 0, d: scale,
+            tx: -mask.extent.minX * scale, ty: -mask.extent.minY * scale))
+        let colored = try CoreImageRendering.filter("CIColorMatrix", parameters: [
+            kCIInputImageKey: small,
+            "inputRVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputGVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputBVector": CIVector(x: 0, y: 0, z: 0, w: 0),
+            "inputAVector": CIVector(x: 0.35, y: 0, z: 0, w: 0),
+            "inputBiasVector": CIVector(x: 0, y: 1, z: 0, w: 0)
+        ], in: small.extent)
+        return CoreImageRendering.createCGImage(colored, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
+    }
+    #endif
 }

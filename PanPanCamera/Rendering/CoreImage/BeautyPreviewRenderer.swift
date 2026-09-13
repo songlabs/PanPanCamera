@@ -15,6 +15,7 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
     private let lock = NSLock()
     private var inFlight = false
     private var generation = 0
+    private var nextDebugTime: TimeInterval = 0 // renderer queue only
     #if DEBUG
     private var diagnosticSuccess: Bool?
     private var diagnosticTime: TimeInterval = -.infinity
@@ -33,8 +34,12 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
         queue.async { [self] in
             autoreleasepool {
                 do {
+                    let debugEnabled = FaceAnalysisDebugMode.isEnabled
+                    let now = debugEnabled ? ProcessInfo.processInfo.systemUptime : 0
+                    let includeDebug = debugEnabled && now >= nextDebugTime
+                    if includeDebug { nextDebugTime = now + 1.0 / 8.0 }
                     let result = try processor.previewResult(for: frame,
-                        displayRotationAngle: rotationAngle, targetSize: targetSize)
+                        displayRotationAngle: rotationAngle, targetSize: targetSize, includeDebug: includeDebug)
                     let analysisDebug = result.analysisDebug
                     guard let image = result.image else {
                         finish(token: token, success: false, analysisDebug: analysisDebug,
@@ -61,7 +66,10 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
                     }
                     commandBuffer.commit()
                 } catch {
-                    finish(token: token, success: false, analysisDebug: nil,
+                    let clearedDebug = FaceAnalysisDebugMode.isEnabled
+                        ? FaceAnalysisDebugSnapshot(extent: CGRect(origin: .zero, size: targetSize),
+                            boxes: [], rois: [], points: []) : nil
+                    finish(token: token, success: false, analysisDebug: clearedDebug,
                            completion: completion)
                 }
             }
@@ -106,6 +114,13 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
         #if DEBUG
         if report { print("BeautyStrength Preview render completed: success=\(success)") }
         #endif
-        DispatchQueue.main.async { completion(success, analysisDebug) }
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.lock.lock()
+            let stillCurrent = token == self.generation
+            self.lock.unlock()
+            guard stillCurrent else { return }
+            completion(success, analysisDebug)
+        }
     }
 }

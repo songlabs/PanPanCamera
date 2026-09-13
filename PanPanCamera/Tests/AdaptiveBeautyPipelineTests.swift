@@ -5,6 +5,75 @@ import XCTest
 @testable import PanPanCamera
 
 final class AdaptiveBeautyPipelineTests: XCTestCase {
+    func testPreviewDebugObservesOneExistingMaskAndLeavesPixelsUnchanged() async throws {
+        try await Task.detached {
+            let source = Self.source(in: CGRect(x: 0, y: 0, width: 128, height: 128))
+            let face = SkinTestFace.make()
+            let analysis = AnalysisFixture.result([face], size: source.extent.size)
+            let calls = PhotoProcessingTestValue(0)
+            let observed = PhotoProcessingTestValue(0)
+            let processor = BeautyProcessor(makeSkinMask: { image, faces, quality in
+                calls.update { $0 += 1 }
+                return try AdaptiveSkinMaskGenerator().makeMask(source: image, faces: faces, quality: quality)
+            })
+            let configuration = BeautyConfiguration(enabled: true, overallStrength: 1, brighteningStrength: 0.6,
+                faceOverallStrength: 1, faceWidthStrength: 0.4)
+            let plain = try processor.process(source, analysis: analysis, configuration: configuration, quality: .preview)
+            let debug = try processor.process(source, analysis: analysis, configuration: configuration, quality: .preview,
+                previewDebug: { mask, geometry, _ in
+                    observed.update { $0 += 1 }
+                    XCTAssertNotNil(mask)
+                    XCTAssertEqual(geometry.warps, FaceCorrectionGeometry.warps(faces: [face],
+                        configuration: configuration, extent: source.extent))
+                })
+            XCTAssertEqual(calls.value, 2, "Exactly one mask build per preview, including Debug ON")
+            XCTAssertEqual(observed.value, 1)
+            XCTAssertEqual(try ColorPipelineFixture.pixels(debug), try ColorPipelineFixture.pixels(plain))
+            _ = try processor.process(source, analysis: analysis, configuration: configuration, quality: .final,
+                previewDebug: { _, _, _ in XCTFail("Final must not publish Preview diagnostics") })
+            let bypassed = try processor.process(source, analysis: analysis, configuration: .disabled, quality: .preview,
+                previewDebug: { _, _, _ in XCTFail("Debug must not enable a bypassed pipeline") })
+            XCTAssertTrue(bypassed === source)
+            XCTAssertEqual(calls.value, 3)
+        }.value
+    }
+
+    func testPreviewDebugUsesPortraitMirrorAndAspectFillGeometryWithNoEffects() async throws {
+        try await Task.detached {
+            let buffer = try ColorPipelineFixture.buffer() // sensor-native 192 x 256
+            let face = SkinTestFace.make()
+            let point = try XCTUnwrap(face.landmarks[.leftEye]?.first)
+            let analysis = AnalysisFixture.result([face], size: CGSize(width: 192, height: 256))
+            let processor = BeautyPreviewProcessor()
+            let target = CGSize(width: 180, height: 320)
+            for orientation in FaceImageOrientation.allCases {
+                for mirror in [false, true] {
+                    let frame = BeautyPreviewFrame(pixelBuffer: buffer, orientation: .up, mirrored: mirror,
+                        analysis: analysis, configuration: .disabled)
+                    let off = try processor.previewResult(for: frame, displayRotationAngle: CGFloat(orientation.rawValue),
+                        targetSize: target, includeDebug: false)
+                    XCTAssertNil(off.analysisDebug)
+                    XCTAssertNil(off.image)
+                    let on = try processor.previewResult(for: frame, displayRotationAngle: CGFloat(orientation.rawValue),
+                        targetSize: target, includeDebug: true)
+                    let snapshot = try XCTUnwrap(on.analysisDebug)
+                    let rotatedSize = orientation == .right || orientation == .left
+                        ? CGSize(width: 256, height: 192) : CGSize(width: 192, height: 256)
+                    let p = FaceAnalysisCoordinates.reorientation(from: .up, sourceMirrored: false,
+                        to: orientation, mirrored: mirror).point(point)
+                    let scale = max(target.width / rotatedSize.width, target.height / rotatedSize.height)
+                    let expected = CGPoint(x: (p.x * rotatedSize.width * scale + (target.width - rotatedSize.width * scale) / 2) / target.width,
+                        y: (p.y * rotatedSize.height * scale + (target.height - rotatedSize.height * scale) / 2) / target.height)
+                    XCTAssertTrue(snapshot.points.contains { abs($0.x - expected.x) < 1e-8 && abs($0.y - expected.y) < 1e-8 })
+                    XCTAssertEqual(snapshot.mirrored, mirror)
+                    XCTAssertEqual(snapshot.extent.size, target)
+                    XCTAssertNil(snapshot.skinImage, "No extra skin processing when skin effects are OFF")
+                    XCTAssertNil(on.image, "Guides must stay outside the Beauty image")
+                }
+            }
+        }.value
+    }
+
     private static func sample(_ image: CIImage, _ point: CGPoint) -> Float {
         ProcessingTestPixels.floats(image, bounds: CGRect(x: floor(image.extent.minX + point.x * image.extent.width),
             y: floor(image.extent.minY + point.y * image.extent.height), width: 1, height: 1))[0]
