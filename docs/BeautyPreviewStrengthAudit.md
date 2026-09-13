@@ -1,5 +1,8 @@
 # Preview strength investigation
 
+> Historical implementation/performance record. The analysis and Beauty architecture below was superseded on 2026-09-13 by [FaceAnalysisArchitecture.md](FaceAnalysisArchitecture.md). Prior Vision/model/geometry descriptions and measurements do not describe the new pipeline. Current model assets and Apple/device acceptance remain blocked.
+
+
 ## 2026-09-11: Slim continuity repair (Apple/device acceptance pending)
 
 This section describes the repair against `4f2a64f4bc2d6089db1bb319c344bc4945b59899`.

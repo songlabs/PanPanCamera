@@ -1,4 +1,4 @@
-"""Run the actual Foundation pipeline XCTest sources with an installed host Swift SDK.
+"""Run the Foundation FaceAnalysis contract XCTest with an installed host Swift SDK.
 
 No Apple code is substituted. Core Image/Camera tests remain in the Xcode target.
 Requires a complete host Swift toolchain (including the C/Windows SDK on Windows).
@@ -10,31 +10,27 @@ import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
 SOURCES = (
-    'FaceTracking/FaceDetecting.swift',
-    'FaceTracking/FaceRegion.swift',
-    'FaceTracking/MockFaceDetector.swift',
-    'FaceTracking/FacialLandmarks.swift',
-    'FaceTracking/FaceLandmarkDetecting.swift',
-    'FaceTracking/MockFaceLandmarkDetector.swift',
-    'Rendering/ImageProcessingPipeline.swift',
-    'Rendering/CoreImage/SkinRetouchConfiguration.swift',
+    'FaceAnalysis/FaceCoordinates.swift',
+    'FaceAnalysis/FaceAnalysisCoordinates.swift',
+    'FaceAnalysis/FaceAnalysisResult.swift',
+    'FaceAnalysis/FaceAnalysisDelivery.swift',
+    'FaceAnalysis/Parsing/FaceSemanticMask.swift',
+    'FaceAnalysis/Tracking/FaceAnalysisSmoother.swift',
+    'BeautyEngine/Skin/FaceRegion.swift',
+    'BeautyEngine/Skin/SkinRetouchConfiguration.swift',
 )
 
 
 def main():
-    package = ROOT / '.verification/pipeline-tests'
+    package = ROOT / '.verification/face-analysis-tests'
     source_dir = package / 'Sources/PanPanCamera'
     test_dir = package / 'Tests/PanPanCameraTests'
     source_dir.mkdir(parents=True, exist_ok=True)
     test_dir.mkdir(parents=True, exist_ok=True)
     for source in SOURCES:
         shutil.copyfile(ROOT / 'PanPanCamera' / source, source_dir / Path(source).name)
-    shutil.copyfile(ROOT / 'PanPanCamera/Tests/ImageProcessingPipelineTests.swift',
-                    test_dir / 'ImageProcessingPipelineTests.swift')
-    shutil.copyfile(ROOT / 'PanPanCamera/Tests/SkinRetouchConfigurationTests.swift',
-                    test_dir / 'SkinRetouchConfigurationTests.swift')
-    shutil.copyfile(ROOT / 'PanPanCamera/Tests/FacialLandmarksTests.swift',
-                    test_dir / 'FacialLandmarksTests.swift')
+    for name in ('FaceAnalysisContractTests.swift', 'SkinRetouchConfigurationTests.swift'):
+        shutil.copyfile(ROOT / 'PanPanCamera/Tests' / name, test_dir / name)
     (package / 'Package.swift').write_text('''// swift-tools-version: 5.9
 import PackageDescription
 let package = Package(
@@ -47,7 +43,7 @@ let package = Package(
 ''', encoding='utf-8')
     result = subprocess.run(['swift', 'test', '--package-path', str(package), '--configuration', 'debug'])
     if result.returncode == 0:
-        print('PASS host Foundation pipeline/configuration/mock landmarks XCTest. Core Image, Vision and Apple/device acceptance were NOT run.')
+        print('PASS host Foundation analysis-contract/configuration XCTest. Core Image, Core ML and Apple/device acceptance were NOT run.')
     return result.returncode
 
 

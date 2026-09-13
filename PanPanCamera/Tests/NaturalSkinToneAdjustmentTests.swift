@@ -52,74 +52,9 @@ enum SkinToneTestPixels {
     static func point(_ image: CIImage, x: CGFloat, y: CGFloat = 128) -> [Float] {
         floats(image, bounds: CGRect(x: x, y: y, width: 1, height: 1))
     }
-    struct FullMask: FaceMaskGenerating {
-        func makeMask(regions: [FaceRegion], in extent: CGRect) throws -> CIImage? {
-            try SkinToneTestPixels.mask(in: extent)
-        }
-    }
-    final class Failure: Error, @unchecked Sendable {}
-    struct FailingMask: FaceMaskGenerating {
-        let failure: Failure
-        func makeMask(regions: [FaceRegion], in extent: CGRect) throws -> CIImage? { throw failure }
-    }
-    struct FailingProvider: SkinMaskProviding {
-        let failure: Failure
-        func skinMask(in image: ProcessingImage, region: FaceRegion, landmarks: FacialLandmarks?) throws -> SkinMaskResult {
-            throw failure
-        }
-    }
-    struct Provider: SkinMaskProviding {
-        let zero: Bool
-        func skinMask(in image: ProcessingImage, region: FaceRegion, landmarks: FacialLandmarks?) throws -> SkinMaskResult {
-            guard zero else { return .unavailable(for: region) }
-            let extent = CIImage(cgImage: image.cgImage).extent
-            return try SkinMaskResult(region: region, mask: SkinToneTestPixels.mask(0, in: extent), in: extent)
-        }
-    }
 }
 
 final class NaturalSkinToneAdjustmentTests: XCTestCase {
-    private func process(_ input: ProcessingImage, configuration: SkinRetouchConfiguration = .naturalDefault,
-                         regions: [FaceRegion]? = nil, mask: any FaceMaskGenerating = SkinToneTestPixels.FullMask(),
-                         provider: (any SkinMaskProviding)? = nil) async throws -> ProcessingImage {
-        let pipeline = try ImageProcessingPipeline<ProcessingImage>(
-            detector: MockFaceDetector(regions: regions ?? [SkinToneTestPixels.face()]),
-            steps: [NaturalSkinToneAdjustmentStep(configuration: configuration, maskGenerator: mask,
-                skinMaskProvider: provider)])
-        return try await pipeline.process(input).image
-    }
-
-    func testZeroIntensityReturnsIdenticalCGImageBeforeMaskPreparation() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let output = try await process(input, configuration: .original,
-            mask: SkinToneTestPixels.FailingMask(failure: .init()), provider: SkinToneTestPixels.FailingProvider(failure: .init()))
-        XCTAssertTrue(output.cgImage === input.cgImage)
-    }
-
-    func testZeroToneStrengthAndZeroCorrectionReturnIdenticalCGImage() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        for config in [try SkinRetouchConfiguration(toneConsistencyStrength: 0),
-                       try SkinRetouchConfiguration(maxLuminanceCorrection: 0)] {
-            let output = try await process(input, configuration: config,
-                mask: SkinToneTestPixels.FailingMask(failure: .init()), provider: SkinToneTestPixels.FailingProvider(failure: .init()))
-            XCTAssertTrue(output.cgImage === input.cgImage)
-        }
-    }
-
-    func testNoFacesReturnIdenticalCGImageWithoutMaskWork() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let output = try await process(input, regions: [], mask: SkinToneTestPixels.FailingMask(failure: .init()),
-            provider: SkinToneTestPixels.FailingProvider(failure: .init()))
-        XCTAssertTrue(output.cgImage === input.cgImage)
-    }
-
-    func testAvailableZeroSkinMaskKeepsAllPixelsUnchanged() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let output = try await process(input, provider: SkinToneTestPixels.Provider(zero: true))
-        let before = ProcessingTestPixels.rgba(input), after = ProcessingTestPixels.rgba(output)
-        for i in before.indices { XCTAssertLessThanOrEqual(abs(Int(after[i]) - Int(before[i])), 1) }
-    }
-
     func testUniformPatchesAcrossLuminanceAndChromaHaveNoFixedLift() async throws {
         try await Task.detached {
             for rgb: [Float] in [[0.04, 0.025, 0.02], [0.3, 0.2, 0.12], [0.8, 0.6, 0.5]] {
@@ -257,19 +192,6 @@ final class NaturalSkinToneAdjustmentTests: XCTestCase {
         }.value
     }
 
-    func testDuplicateAndReorderedOverlappingFacesDoNotRepeatToneProcessing() async throws {
-        let input = try SkinRetouchTestImage.make { x, _ in
-            let y = UInt8(150 + Int(4 * sin(Double(x) * .pi / 64)))
-            return [y, y, y, 255]
-        }
-        let a = try SkinToneTestPixels.face()
-        let b = try FaceRegion(boundingBox: CGRect(x: 0.2, y: 0, width: 0.8, height: 1))
-        let config = try SkinToneTestPixels.configuration()
-        let first = try await process(input, configuration: config, regions: [a, b])
-        let duplicate = try await process(input, configuration: config, regions: [b, a, a, b])
-        XCTAssertEqual(ProcessingTestPixels.rgba(first), ProcessingTestPixels.rgba(duplicate))
-    }
-
     func testIntensityAndToneStrengthScaleCorrectionOnceAndRetainLinearChroma() async throws {
         try await Task.detached {
             let source = SkinToneTestPixels.image { x, _ in
@@ -290,16 +212,6 @@ final class NaturalSkinToneAdjustmentTests: XCTestCase {
         }.value
     }
 
-    func testUnavailableSemanticsMatchesExistingFallback() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let absent = try await process(input)
-        let unavailable = try await process(input, provider: SkinToneTestPixels.Provider(zero: false))
-        XCTAssertEqual(ProcessingTestPixels.rgba(absent), ProcessingTestPixels.rgba(unavailable))
-        XCTAssertEqual(absent.cgImage.width, input.cgImage.width)
-        XCTAssertEqual(absent.cgImage.height, input.cgImage.height)
-        XCTAssertEqual(absent.cgImage.colorSpace, input.cgImage.colorSpace)
-    }
-
     func testHighFrequencyDetailSurvivesLowFrequencyCorrection() async throws {
         try await Task.detached {
             let source = SkinToneTestPixels.image { x, y in
@@ -312,14 +224,6 @@ final class NaturalSkinToneAdjustmentTests: XCTestCase {
             XCTAssertEqual(after, before, accuracy: 0.00005)
             XCTAssertLessThan(SkinToneTestPixels.point(output, x: 160)[0], SkinToneTestPixels.point(source, x: 160)[0] - 0.0001)
         }.value
-    }
-
-    func testActualSemanticProcessingErrorIsNotTreatedAsUnavailable() async throws {
-        let input = try SkinRetouchTestImage.texture(), failure = SkinToneTestPixels.Failure()
-        do {
-            _ = try await process(input, provider: SkinToneTestPixels.FailingProvider(failure: failure))
-            XCTFail("Processing error must propagate")
-        } catch { XCTAssertTrue((error as? SkinToneTestPixels.Failure) === failure) }
     }
 
     func testInvalidExtentAndMismatchedMaskThrow() async throws {

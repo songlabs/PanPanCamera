@@ -15,11 +15,11 @@ final class MakeupProcessingTests: XCTestCase {
             let step = MakeupProcessingStep()
             XCTAssertNil(try step.makeOutput(source: source, faces: [face()], configuration: config()))
             XCTAssertNil(try step.makeOutput(source: source, faces: [], configuration: config(1, 1, 1, 1)))
-            let missing = DetectedFace(boundingBox: face().boundingBox, confidence: 1, landmarks: [:])
+            let missing = AnalyzedFace(boundingBox: face().boundingBox, confidence: 1, landmarks: [:])
             XCTAssertNil(try step.makeOutput(source: source, faces: [missing], configuration: config(1, 1, 1, 1)))
-            var withoutMouth = face().landmarks
+            var withoutMouth = face().landmarks.regions
             withoutMouth.removeValue(forKey: .innerLips)
-            let partial = DetectedFace(boundingBox: face().boundingBox, confidence: 1, landmarks: withoutMouth)
+            let partial = AnalyzedFace(boundingBox: face().boundingBox, confidence: 1, landmarks: withoutMouth)
             XCTAssertNil(try step.makeOutput(source: source, faces: [partial], configuration: config(1)))
         }.value
     }
@@ -141,8 +141,8 @@ final class MakeupProcessingTests: XCTestCase {
                     pixel(shiftedOutput, at: point.applying(translation))[channel], accuracy: 0.0005)
             }
             let offset: CGFloat = 40.0 / 256
-            let moved = DetectedFace(boundingBox: face().boundingBox.offsetBy(dx: offset, dy: 0),
-                confidence: 1, landmarks: face().landmarks.mapValues { points in
+            let moved = AnalyzedFace(boundingBox: face().boundingBox.offsetBy(dx: offset, dy: 0),
+                confidence: 1, landmarks: face().landmarks.regions.mapValues { points in
                     points.map { CGPoint(x: $0.x + offset, y: $0.y) }
                 })
             let movedOutput = try XCTUnwrap(step.makeOutput(source: source, faces: [moved], configuration: config(1)))
@@ -171,7 +171,7 @@ final class MakeupProcessingTests: XCTestCase {
                     let exif = SilentFrameOrientation.exif(captureOrientation: orientation, mirrored: mirrored)
                     let transformedSource = source.oriented(exif)
                     let expected = original.oriented(exif)
-                    let faces = BeautyImageProcessor.reorientedFaces([originalFace], from: .up,
+                    let faces = BeautyTestHarness.reorientedFaces([originalFace], from: .up,
                         to: orientation, mirrored: mirrored)
                     let actual = try XCTUnwrap(step.makeOutput(source: transformedSource, faces: faces,
                         configuration: configuration))
@@ -208,7 +208,7 @@ final class MakeupProcessingTests: XCTestCase {
                 .cropped(to: CGRect(x: 77, y: 0, width: 8, height: 256))
                 .composited(over: solid(0.5, 0.35, 0.3)).cropped(to: extent)
             let primary = face()
-            let smallWithoutBrows = DetectedFace(boundingBox: CGRect(x: 0.02, y: 0.03, width: 0.06, height: 0.06),
+            let smallWithoutBrows = AnalyzedFace(boundingBox: CGRect(x: 0.02, y: 0.03, width: 0.06, height: 0.06),
                 confidence: 1, landmarks: [:])
             let step = MakeupProcessingStep()
             let once = try XCTUnwrap(step.makeOutput(source: source, faces: [primary],
@@ -237,14 +237,14 @@ final class MakeupProcessingTests: XCTestCase {
                component == 2 ? strength : 0, component == 3 ? strength : 0)
     }
 
-    private func face() -> DetectedFace {
+    private func face() -> AnalyzedFace {
         func oval(_ x: CGFloat, _ y: CGFloat, _ rx: CGFloat, _ ry: CGFloat) -> [CGPoint] {
             (0..<16).map { i in
                 let angle = CGFloat(i) / 16 * 2 * .pi
                 return CGPoint(x: x + cos(angle) * rx, y: y + sin(angle) * ry)
             }
         }
-        return DetectedFace(boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8),
+        return AnalyzedFace(boundingBox: CGRect(x: 0.1, y: 0.1, width: 0.8, height: 0.8),
             confidence: 1, landmarks: [
                 .leftEye: oval(0.32, 0.66, 0.065, 0.025),
                 .rightEye: oval(0.68, 0.66, 0.065, 0.025),

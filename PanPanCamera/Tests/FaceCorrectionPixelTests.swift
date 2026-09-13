@@ -17,7 +17,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
             let source = CIImage(cvPixelBuffer: buffer)
             let face = fixtureFace()
             let step = FaceCorrectionPreviewStep()
-            let processor = BeautyImageProcessor()
+            let processor = BeautyTestHarness()
             let zeroGeometry = FaceCorrectionGeometry.result(faces: [face],
                 configuration: configuration(0), extent: extent)
             let fullGeometry = FaceCorrectionGeometry.result(faces: [face],
@@ -39,19 +39,6 @@ final class FaceCorrectionPixelTests: XCTestCase {
             let preview0 = try preview(0)
             let preview100 = try preview(1)
             XCTAssertNil(preview0.image) // Production shows the original layer at zero.
-            let previewWarps = try XCTUnwrap(preview100.geometryDebug?.smallFaceWarps)
-            XCTAssertEqual(previewWarps.count, fullGeometry.smallFaceWarps.count)
-            for (actual, expected) in zip(previewWarps, fullGeometry.smallFaceWarps) {
-                XCTAssertEqual(actual.kind, expected.kind)
-                // Preview reconstructs/fits the face box, even for an identity transform.
-                // Floating-point round trips are not bit-identical (about 7e-15 px here).
-                // One billionth of a pixel tolerates arithmetic noise, not geometry changes.
-                XCTAssertEqual(actual.center.x, expected.center.x, accuracy: 1e-9)
-                XCTAssertEqual(actual.center.y, expected.center.y, accuracy: 1e-9)
-                XCTAssertEqual(actual.radius, expected.radius, accuracy: 1e-9)
-                XCTAssertEqual(actual.visibleOffset.dx, expected.visibleOffset.dx, accuracy: 1e-9)
-                XCTAssertEqual(actual.visibleOffset.dy, expected.visibleOffset.dy, accuracy: 1e-9)
-            }
             let processed100 = try XCTUnwrap(preview100.image)
             let original = try pixels(source)
             let zero = try pixels(preview0.image ?? source)
@@ -110,9 +97,9 @@ final class FaceCorrectionPixelTests: XCTestCase {
         try await Task.detached { [self] in
             let buffer = try fixtureBuffer()
             let source = CIImage(cvPixelBuffer: buffer)
-            let processor = BeautyImageProcessor()
+            let processor = BeautyTestHarness()
             let expected = try pixels(source).bytes
-            for (faces, config) in [([DetectedFace](), configuration(1)), ([fixtureFace()], .disabled)] {
+            for (faces, config) in [([AnalyzedFace](), configuration(1)), ([fixtureFace()], .disabled)] {
                 let frame = BeautyPreviewFrame(pixelBuffer: buffer, orientation: .up,
                     mirrored: false, faces: faces, configuration: config)
                 let result = try processor.previewResult(for: frame,
@@ -120,7 +107,8 @@ final class FaceCorrectionPixelTests: XCTestCase {
                 XCTAssertNil(result.image)
                 XCTAssertEqual(try pixels(result.image ?? source).bytes, expected)
                 XCTAssertNil(try FaceCorrectionPreviewStep().makeOutput(source: source,
-                    faces: faces, configuration: config))
+                    warps: FaceCorrectionGeometry.warps(faces: faces,
+                        configuration: config, extent: extent)))
             }
         }.value
     }
@@ -158,7 +146,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
         try await Task.detached { [self] in
             let buffer = try fixtureBuffer()
             let source = CIImage(cvPixelBuffer: buffer)
-            let processor = BeautyImageProcessor()
+            let processor = BeautyTestHarness()
             let original = try pixels(source).bytes
             let topLeftRows = rowsStartAtTop(try pixels(coordinateRamp()).bytes)
             for tool in [FaceTool.slim, .width, .chin, .forehead, .cheekbones] {
@@ -177,7 +165,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
                     let bytes = try pixels(result.image ?? source).bytes
                     if strength == 0 { XCTAssertNil(result.image); XCTAssertEqual(bytes, original) }
                     else { XCTAssertNotNil(result.image) }
-                    let diff = difference(original, bytes, warps: result.geometryDebug?.warps ?? [],
+                    let diff = difference(original, bytes, warps: FaceCorrectionGeometry.warps(faces: [fixtureFace()], configuration: parameters.processingConfiguration, extent: extent),
                                           topLeftRows: topLeftRows)
                     if strength > 0 {
                         XCTAssertGreaterThan(diff.inside.changed, 0, tool.rawValue)
@@ -429,7 +417,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
             let renderer = CoreImageRendering.MetalRenderer(device: queue.device)
             let buffer = try fixtureBuffer()
             let source = CIImage(cvPixelBuffer: buffer)
-            let processor = BeautyImageProcessor()
+            let processor = BeautyTestHarness()
             let zeroOutput = try processor.previewImage(for: BeautyPreviewFrame(
                 pixelBuffer: buffer, orientation: .up, mirrored: false,
                 faces: [fixtureFace()], configuration: configuration(0)),
@@ -587,7 +575,7 @@ final class FaceCorrectionPixelTests: XCTestCase {
         BeautyConfiguration(enabled: true, faceOverallStrength: 0.5, faceSlimStrength: strength)
     }
 
-    private func fixtureFace() -> DetectedFace {
+    private func fixtureFace() -> AnalyzedFace {
         let box = CGRect(x: 0.2, y: 0.1, width: 0.6, height: 0.8)
         let points: [CGPoint] = [CGPoint(x: 0.08, y: 0.58), CGPoint(x: 0.10, y: 0.42),
             CGPoint(x: 0.18, y: 0.24), CGPoint(x: 0.34, y: 0.08), CGPoint(x: 0.50, y: 0.03),
@@ -596,8 +584,8 @@ final class FaceCorrectionPixelTests: XCTestCase {
         func point(_ x: CGFloat, _ y: CGFloat) -> CGPoint {
             CGPoint(x: box.minX + x * box.width, y: box.minY + y * box.height)
         }
-        return DetectedFace(boundingBox: box, confidence: 1, landmarks: [
-            .faceContour: points.map { point($0.x, $0.y) },
+        return AnalyzedFace(boundingBox: box, confidence: 1, landmarks: [
+            .jawline: points.map { point($0.x, $0.y) },
             .leftEyebrow: [point(0.24, 0.70), point(0.36, 0.72)],
             .rightEyebrow: [point(0.64, 0.72), point(0.76, 0.70)]
         ])

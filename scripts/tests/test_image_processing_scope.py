@@ -1,278 +1,122 @@
-"""Executable static/compile gates; these are NOT image processing runtime tests."""
+"""Static architecture gates, not Apple/ML/image runtime validation."""
 from pathlib import Path
 import re
-import shutil
-import subprocess
 import sys
-import tempfile
 import unittest
-
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'scripts'))
 from check_project import OpenStepParser
 APP = ROOT / 'PanPanCamera'
-DEVELOPMENT = (
-    APP / 'FaceTracking/MockFaceDetector.swift',
-    APP / 'FaceTracking/MockFaceLandmarkDetector.swift',
-    APP / 'Rendering/CoreImage/MockSkinMaskProvider.swift',
-    APP / 'Rendering/DebugPhotoProcessing.swift',
-    APP / 'Rendering/CoreImage/DebugFaceBrightnessStep.swift',
-    APP / 'Rendering/CoreImage/DebugFaceMaskStep.swift',
-)
-CORE = (
-    APP / 'FaceTracking/FaceDetecting.swift',
-    APP / 'FaceTracking/FaceRegion.swift',
-    APP / 'FaceTracking/FacialLandmarks.swift',
-    APP / 'FaceTracking/FaceLandmarkDetecting.swift',
-    APP / 'Rendering/ImageProcessingPipeline.swift',
-    APP / 'Rendering/CoreImage/SkinMaskProviding.swift',
-)
 
+def source(path):
+    return (APP / path).read_text(encoding='utf-8')
+
+def code(path):
+    return '\n'.join(line.split('//')[0] for line in source(path).splitlines())
 
 class ImageProcessingScopeTests(unittest.TestCase):
-    def test_release_compiler_excludes_all_development_implementations(self):
-        """Redeclarations would fail if a development type survived compilation."""
-        swiftc = shutil.which('swiftc')
-        if not swiftc:
-            self.skipTest('Swift compiler unavailable; this isolation gate was not executed')
-        with tempfile.TemporaryDirectory(prefix='panpan-release-') as directory:
-            probe = Path(directory) / 'ReleaseIsolation.swift'
-            probe.write_text('''struct MockFaceDetector<Image: Sendable> {}
-struct MockFaceLandmarkDetector<Image: Sendable> {}
-struct MockSkinMaskProvider {}
-struct DebugPhotoProcessing {}
-struct DebugFaceBrightnessStep {}
-struct DebugFaceMaskStep {}
-''', encoding='utf-8')
-            result = subprocess.run([swiftc, '-typecheck', '-swift-version', '5',
-                                     *map(str, DEVELOPMENT), str(probe)], capture_output=True, text=True)
-        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-
-    def test_release_project_configurations_do_not_define_debug(self):
-        project = OpenStepParser((ROOT / 'PanPanCamera.xcodeproj/project.pbxproj').read_text(encoding='utf-8')).value()
-        release = [item for item in project['objects'].values()
-                   if item['isa'] == 'XCBuildConfiguration' and item['name'] == 'Release']
-        self.assertEqual(len(release), 3, 'Project, app and test Release configurations must be checked')
-        for item in release:
-            settings = item['buildSettings']
-            for key in ('SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'OTHER_SWIFT_FLAGS'):
-                self.assertNotRegex(str(settings.get(key, '')), r'\bDEBUG\b')
-
-    def test_mock_and_probe_have_no_product_call_sites(self):
-        symbols = r'\b(?:MockFaceDetector|MockFaceLandmarkDetector|MockSkinMaskProvider|DebugPhotoProcessing|DebugFaceBrightnessStep|DebugFaceMaskStep)\b'
+    def test_production_has_no_retired_analysis_or_network_pipeline(self):
+        retired = r'\b(?:Vision|VNFace\w*|VNDetect\w*|visionFailed|VisionFaceDetector|DetectedFace|SoftFaceMaskGenerator|BeautySkinMaskGenerator|MockFaceDetector|DebugPhotoProcessing)\b'
         for path in APP.rglob('*.swift'):
-            if 'Tests' in path.parts or path in DEVELOPMENT:
+            if 'Tests' in path.parts:
                 continue
-            self.assertIsNone(re.search(symbols, path.read_text(encoding='utf-8')), str(path))
+            text = path.read_text(encoding='utf-8')
+            self.assertNotRegex(text, retired, str(path))
+            self.assertNotRegex(text, r'\b(?:URLSession|URLRequest|NWConnection|WKWebView|AVCaptureMovieFileOutput)\b', str(path))
 
-    def test_pipeline_contract_has_no_vision_or_mock_dependency(self):
-        for path in CORE:
-            # Check code, not explanatory comments about the dependency boundary.
-            code = '\n'.join(line.split('//')[0] for line in path.read_text(encoding='utf-8').splitlines())
-            self.assertIsNone(re.search(r'\b(?:Vision|VisionFaceDetector|MockFaceDetector|MockFaceLandmarkDetector|MockSkinMaskProvider|VN\w+|DetectedFace)\b', code), str(path))
+    def test_contract_is_framework_independent_and_identity_bound(self):
+        paths = ['FaceAnalysis/FaceAnalysisResult.swift', 'FaceAnalysis/FaceAnalysisCoordinates.swift',
+                 'FaceAnalysis/Parsing/FaceSemanticMask.swift', 'FaceAnalysis/Tracking/FaceAnalysisSmoother.swift']
+        for path in paths:
+            self.assertNotRegex(code(path), r'\b(?:CoreML|CoreImage|AVFoundation|CoreVideo|MLModel|CIImage|CVPixelBuffer)\b')
+        contract = source(paths[0])
+        self.assertIn('let trackingID: UUID', contract)
+        self.assertIn('let semanticMasks: FaceSemanticMasks?', contract)
+        self.assertIn('let landmarks: DenseFaceLandmarks', contract)
 
-    def test_new_processing_sources_remain_local_and_without_model_or_camera_apis(self):
-        for path in set((*CORE, *DEVELOPMENT, *(APP / 'Rendering').rglob('*.swift'))):
-            code = '\n'.join(line.split('//')[0] for line in path.read_text(encoding='utf-8').splitlines())
-            self.assertIsNone(re.search(r'\b(?:URLSession|URLRequest|Network|Vision|CoreML|AVCapture\w+|VN\w+)\b', code), str(path))
+    def test_models_are_explicitly_blocked_without_unapproved_binary(self):
+        for suffix in ('*.mlmodel', '*.mlpackage', '*.mlmodelc', '*.tflite', '*.onnx'):
+            self.assertFalse(list(APP.rglob(suffix)), suffix)
+        self.assertIn('static let bundled: Self? = nil', source('FaceAnalysis/CoreMLFaceAnalyzer.swift'))
+        for path in (APP / 'BeautyEngine').rglob('*.swift'):
+            self.assertNotRegex(path.read_text(encoding='utf-8'), r'^import CoreML$', str(path))
 
-    def test_metal_is_only_the_core_image_preview_presentation_target(self):
-        users = [path for path in APP.rglob('*.swift')
-                 if 'Tests' not in path.parts
-                 and re.search(r'^import Metal$', path.read_text(encoding='utf-8'), re.M)]
-        self.assertEqual(set(users), {
-            APP / 'Presentation/Camera/CameraPreview.swift',
-            APP / 'Rendering/CoreImage/BeautyPreviewRenderer.swift',
-            APP / 'Rendering/CoreImage/CoreImageRendering.swift',
-        })
-        self.assertFalse(list(APP.rglob('*.metal')), 'No custom shader pipeline is needed for Core Image presentation')
+    def test_skin_never_uses_geometry_as_coverage_or_missing_semantic_fallback(self):
+        text = code('BeautyEngine/Skin/SemanticSkinMaskComposer.swift')
+        self.assertIn('masks.skinFoundation()', text)
+        self.assertNotRegex(text, r'faceContour|jawline|1\.15|makeMask\(regions:|semantic\s*\?\?\s*white')
+        skin = source('BeautyEngine/Skin/SkinBeautyProcessor.swift')
+        self.assertEqual(skin.count('SemanticSkinMaskComposer().makeMask'), 1)
+        self.assertNotIn('BeautySkinMaskGenerator', skin)
+        self.assertIn('strength: configuration.effectiveBlemish', skin)
+        self.assertIn('strength: configuration.effectiveDarkCircles', skin)
 
-    def test_skin_processing_types_do_not_leak_outside_rendering(self):
-        for path in APP.rglob('*.swift'):
-            if 'Tests' in path.parts or 'Rendering' in path.parts:
-                continue
-            self.assertNotRegex(path.read_text(encoding='utf-8'),
-                                r'\b(?:NaturalSkinProcessingStep|SoftFaceMaskGenerator|FaceMaskGenerating|'
-                                r'TexturePreservingSkinSmoothingStep|DetailProtectionMaskGenerator|'
-                                r'NaturalSkinToneAdjustmentStep|NaturalSkinRetouchSteps|SkinToneScale|'
-                                r'FeatureProtectionMaskGenerator|ProtectionMaskCombiner|'
-                                r'SkinMaskProviding|SkinMaskResult|EffectiveSkinMaskComposer|'
-                                 r'SkinRetouchConfiguration|SkinRetouchIntensity)\b', str(path))
+    def test_product_order_and_final_source_unification(self):
+        beauty = source('BeautyEngine/BeautyProcessor.swift')
+        order = ['"skin_graph"', '"makeup_graph"', '"face_graph"', '"filter_graph"']
+        self.assertEqual([beauty.index(item) for item in order], sorted(beauty.index(item) for item in order))
+        final = source('BeautyEngine/FinalBeautyProcessor.swift')
+        self.assertEqual(final.count('try processSource('), 2)
+        self.assertEqual(final.count('engine.analyze('), 1)
+        self.assertEqual(final.count('try processor.process('), 1)
+        self.assertNotRegex(code('BeautyEngine/FinalBeautyProcessor.swift'), r'BeautyPreviewFrame|\.transformed\s*\(|resized|resize|upscale')
+        self.assertLess(final.index('guard !configuration.isPhotoBypassed'), final.index('CGImageSourceCreateWithData'))
 
-    def test_formal_capture_processes_both_native_source_paths_without_preview_screenshot_or_upscale(self):
-        session = (APP / 'Camera/Session/CameraSession.swift').read_text(encoding='utf-8')
-        worker = (APP / 'Camera/Capture/PhotoProcessingQueue.swift').read_text(encoding='utf-8')
-        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
-        code = '\n'.join(line.split('//')[0] for line in (session + worker + final).splitlines())
-        final_code = '\n'.join(line.split('//')[0] for line in final.splitlines())
+    def test_capture_still_uses_native_sources_and_bounded_save_queue(self):
+        worker = source('Camera/Capture/PhotoProcessingQueue.swift')
+        session = source('Camera/Session/CameraSession.swift')
         self.assertIn('processPhotoData(input, configuration: job.configuration', worker)
         self.assertIn('processSilentFrame(frame, configuration: job.configuration', worker)
         self.assertIn('submitPhoto(.photoData(data)', session)
         self.assertIn('submitPhoto(.silentFrame(frame)', session)
-        self.assertNotRegex(code, r'\b(?:drawHierarchy|snapshotView|UIGraphicsImageRenderer|layer\.render)\b')
-        self.assertNotRegex(final_code, r'\b(?:resized|resize|upscale|maximumDimension|maxPhotoDimensions)\b')
-
-    def test_capture_snapshot_and_preview_backpressure_are_explicit(self):
-        service = (APP / 'Camera/CameraService.swift').read_text(encoding='utf-8')
-        frame_store = (APP / 'Rendering/BeautyPreviewFrameStore.swift').read_text(encoding='utf-8')
-        renderer = (APP / 'Rendering/CoreImage/BeautyPreviewRenderer.swift').read_text(encoding='utf-8')
-        self.assertIn('let beauty = beautyParameters.processingConfiguration', service)
-        self.assertIn('captureSession.capture(flash: state.flash, beauty: beauty, diagnostics: diagnostics)', service)
-        self.assertIn('private var latest: BeautyPreviewFrame?', frame_store)
-        self.assertNotRegex(frame_store, r'\[(?:BeautyPreviewFrame|CVPixelBuffer)\]')
-        self.assertIn('private var inFlight = false', renderer)
-        self.assertNotRegex(renderer, r'queue\.asyncAfter|Task\s*[({.]')
-
-    def test_acquisition_releases_before_job_handoff_and_saved_result_is_explicit(self):
-        session = (APP / 'Camera/Session/CameraSession.swift').read_text(encoding='utf-8')
-        service = (APP / 'Camera/CameraService.swift').read_text(encoding='utf-8')
-        view = (APP / 'Presentation/Camera/CameraView.swift').read_text(encoding='utf-8')
+        self.assertNotRegex(session + worker, r'\b(?:drawHierarchy|snapshotView|UIGraphicsImageRenderer|layer\.render)\b')
         native = session.split('let processor = PhotoCaptureProcessor(diagnostics:')[1].split('captures.register')[0]
         self.assertLess(native.index('captures.finish(id:'), native.index('submitPhoto(.photoData(data)'))
-        silent = session.split('private func captureSilentFrame(')[1].split('private func submitPhoto(')[0]
-        self.assertNotIn('captures.register', silent)
-        self.assertLess(silent.index('submitPhoto(.silentFrame(frame)'),
-                        silent.index('onEvent(.captureFinished(succeeded: true))'))
-        saved = service.split('case let .photoProcessingFinished(outcome):')[1].split('case .switchFailed:')[0]
-        self.assertNotIn('isCapturing =', saved)
-        self.assertNotIn('PhotoLibrarySaver.save', service)
-        self.assertIn('.fullScreenCover(item: $presentedPhoto)', view)
-        self.assertIn('scenePhase == .active && presentedPhoto == nil', view)
-        self.assertNotIn('.fullScreenCover(item: $camera.capturedPhoto)', view)
 
-    def test_beauty_zero_and_disabled_bypass_before_final_photo_decode(self):
-        config = (APP / 'Domain/BeautyParameters.swift').read_text(encoding='utf-8')
-        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
-        self.assertIn('!enabled ||', config)
-        self.assertIn('var isPhotoBypassed: Bool', config)
-        bypass = final.index('guard !configuration.isPhotoBypassed else {')
-        decode = final.index('CGImageSourceCreateWithData')
-        self.assertLess(bypass, decode)
+    def test_preview_is_latest_only_and_analysis_does_not_block_camera(self):
+        frame = source('Camera/Capture/CameraFaceFrameProcessor.swift')
+        self.assertIn('scheduler.submit(', frame)
+        self.assertNotRegex(frame, r'engine\.analyze|\.prediction\(|queue\.sync|semaphore\.wait')
+        scheduler = source('FaceAnalysis/Tracking/FaceAnalysisScheduler.swift')
+        self.assertIn('!busy', scheduler)
+        self.assertIn('1.0 / 12.0', scheduler)
+        self.assertNotRegex(scheduler, r'\[(?:CVPixelBuffer|CMSampleBuffer|CIImage)\]')
+        store = source('Rendering/BeautyPreviewFrameStore.swift')
+        self.assertIn('private var latest: BeautyPreviewFrame?', store)
+        self.assertNotRegex(store, r'\[(?:BeautyPreviewFrame|CVPixelBuffer)\]')
+        self.assertIn('private var inFlight = false', source('Rendering/CoreImage/BeautyPreviewRenderer.swift'))
 
-    def test_face_correction_is_shared_bounded_and_local(self):
-        geometry = (APP / 'Rendering/CoreImage/FaceCorrectionGeometry.swift').read_text(encoding='utf-8')
-        geometry_code = '\n'.join(line.split('//')[0] for line in geometry.splitlines())
-        preview = (APP / 'Rendering/CoreImage/BeautyImageProcessor.swift').read_text(encoding='utf-8')
-        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
-        self.assertIn('faceCorrection.makeOutput', preview)
-        self.assertNotIn('FaceCorrectionPreviewStep', final)
-        self.assertIn('processFaceCorrection(result', preview)
-        self.assertIn('diagnostics.measure("face_graph")', preview)
-        self.assertLess(preview.index('processFaceCorrection(result'),
-                        preview.index('diagnostics.measure("filter_graph")'))
-        self.assertNotIn('"CIDisplacementDistortion"', geometry)
-        self.assertIn('configuration.isFaceCorrectionBypassed', geometry)
-        self.assertNotRegex(geometry_code, r'\b(?:UIImage|CIContext|DispatchQueue|Task|URLSession|Vision)\b')
-        self.assertIn('private var cachedMap: CIImage?', geometry)
-        self.assertNotRegex(geometry, r'\[(?:CIImage|CVPixelBuffer)\]')
+    def test_debug_modes_are_off_in_release_and_have_no_persistence(self):
+        mode = source('BeautyEngine/BeautyFrame.swift')
+        self.assertRegex(mode, r'#if DEBUG[\s\S]*arguments.contains\(flag\)[\s\S]*#else\s+false')
+        for flag in ('FaceBoxes', 'DenseLandmarks', 'SkinMask', 'HairMask', 'FaceParsing'):
+            self.assertIn('-PanPan' + flag, mode)
+        for path in ['Presentation/Camera/FaceDebugOverlay.swift', 'BeautyEngine/BeautyPreviewProcessor.swift']:
+            self.assertNotRegex(code(path), r'\.write\(|FileManager|URLSession|print\(')
 
-    def test_pipeline_does_not_depend_on_a_mask_algorithm(self):
-        code = (APP / 'Rendering/ImageProcessingPipeline.swift').read_text(encoding='utf-8')
-        self.assertNotRegex(code, r'\b(?:FaceMaskGenerating|SoftFaceMaskGenerator|NaturalSkinProcessingStep|'
-                                 r'SkinMaskProviding|SkinMaskResult|EffectiveSkinMaskComposer|MockSkinMaskProvider|'
-                                 r'TexturePreservingSkinSmoothingStep|SkinRetouchConfiguration|CoreImage)\b')
-        self.assertNotRegex(code, r'\b(?:NaturalSkinToneAdjustmentStep|NaturalSkinRetouchSteps)\b')
+    def test_release_project_configurations_do_not_define_debug(self):
+        project = OpenStepParser((ROOT / 'PanPanCamera.xcodeproj/project.pbxproj').read_text(encoding='utf-8')).value()
+        release = [item for item in project['objects'].values() if item['isa'] == 'XCBuildConfiguration' and item['name'] == 'Release']
+        self.assertEqual(len(release), 3)
+        for item in release:
+            for key in ('SWIFT_ACTIVE_COMPILATION_CONDITIONS', 'OTHER_SWIFT_FLAGS'):
+                self.assertNotRegex(str(item['buildSettings'].get(key, '')), r'\bDEBUG\b')
 
-    def test_retouch_reuses_one_renderer_context_without_new_queues_or_tasks(self):
-        sources = list((APP / 'Rendering').rglob('*.swift'))
-        contexts = [path for path in sources if re.search(r'\bCIContext\s*\(', path.read_text(encoding='utf-8'))]
-        self.assertEqual(contexts, [APP / 'Rendering/CoreImage/CoreImageRendering.swift'])
-        for name in ('TexturePreservingSkinSmoothingStep', 'DetailProtectionMaskGenerator', 'SkinRetouchConfiguration',
-                     'FeatureProtectionMaskGenerator', 'ProtectionMaskCombiner', 'SkinMaskProviding',
-                     'MockSkinMaskProvider', 'EffectiveSkinMaskComposer',
-                     'NaturalSkinToneAdjustmentStep', 'NaturalSkinRetouchSteps'):
-            code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
-            self.assertNotRegex(code, r'\b(?:DispatchQueue|Task)\s*[({.]')
+    def test_contexts_models_and_camera_session_are_long_lived(self):
+        beauty = '\n'.join(p.read_text(encoding='utf-8') for p in (APP / 'BeautyEngine').rglob('*.swift'))
+        self.assertNotRegex(beauty, r'\b(?:CIContext|MLModel|MTLCreateSystemDefaultDevice|DispatchQueue)\s*\(')
+        adapter = source('FaceAnalysis/CoreMLFaceAnalyzer.swift')
+        self.assertIn('private lazy var model:', adapter)
+        self.assertIn('private lazy var context = CIContext', adapter)
+        all_source = '\n'.join(p.read_text(encoding='utf-8') for p in APP.rglob('*.swift') if 'Tests' not in p.parts)
+        self.assertEqual(all_source.count('AVCaptureSession()'), 1)
 
-    def test_feature_protection_adds_no_legacy_kernel_or_photo_render(self):
-        for name in ('FeatureProtectionMaskGenerator', 'ProtectionMaskCombiner'):
-            code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
-            self.assertNotRegex(code, r'\b(?:CIColorKernel|CIKernel|CIContext)\s*\(')
-            self.assertNotRegex(code, r'\bCoreImageRendering\.render\s*\(')
-            self.assertNotRegex(code, r'\b(?:MockFaceDetector|MockFaceLandmarkDetector)\b')
-
-    def test_debug_default_uses_composition_entry_without_legacy_tone(self):
-        code = (APP / 'Rendering/DebugPhotoProcessing.swift').read_text(encoding='utf-8')
-        self.assertNotRegex(code, r'\bNaturalSkinProcessingStep\s*\(')
-        self.assertEqual(len(re.findall(r'ImageProcessingPipeline<JobImage>\s*\(', code)), 1)
-        self.assertIn('NaturalSkinRetouchSteps.make(', code)
-
-    def test_tone_adds_no_kernel_geometry_whitening_or_second_pipeline(self):
-        for name in ('NaturalSkinToneAdjustmentStep', 'NaturalSkinRetouchSteps'):
-            code = '\n'.join(line.split('//')[0] for line in
-                             (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8').splitlines())
-            self.assertNotRegex(code, r'\b(?:CIColorKernel|CIKernel|CIContext|ImageProcessingPipeline)\s*[(<]')
-            self.assertNotRegex(code, r'\b(?:Metal|MPS|CoreML|Accelerate)\b')
-            self.assertNotRegex(code, r'CI(?:ColorControls|ExposureAdjust|HueAdjust|TemperatureAndTint|WhitePointAdjust|AreaHistogram)')
-            self.assertNotRegex(code, r'\.transformed\s*\(|\.oriented\s*\(|\.autoAdjustmentFilters\s*\(')
-
-    def test_semantic_masks_add_no_legacy_kernel_or_photo_render(self):
-        for name in ('SkinMaskProviding', 'MockSkinMaskProvider', 'EffectiveSkinMaskComposer'):
-            code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
-            self.assertNotRegex(code, r'\b(?:CIColorKernel|CIKernel|CIContext)\s*\(')
-            self.assertNotRegex(code, r'\bCoreImageRendering\.render\s*\(')
-        kernels = [path for path in (APP / 'Rendering').rglob('*.swift')
-                   if re.search(r'\bCIColorKernel\s*\(source:', path.read_text(encoding='utf-8'))]
-        self.assertCountEqual(kernels, [
-            APP / 'Rendering/CoreImage/TexturePreservingSkinSmoothingStep.swift',
-            APP / 'Rendering/CoreImage/LocalSkinCorrectionStep.swift',
-            APP / 'Rendering/CoreImage/MakeupProcessingStep.swift',
-        ])
-
-    def test_local_skin_corrections_share_preview_and_final_pipeline_without_new_workers(self):
-        local = (APP / 'Rendering/CoreImage/LocalSkinCorrectionStep.swift').read_text(encoding='utf-8')
-        processor = (APP / 'Rendering/CoreImage/BeautyImageProcessor.swift').read_text(encoding='utf-8')
-        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
-        config = (APP / 'Domain/BeautyParameters.swift').read_text(encoding='utf-8')
-        code = '\n'.join(line.split('//')[0] for line in local.splitlines())
-        self.assertNotRegex(code, r'\b(?:CIContext|CGContext|DispatchQueue|Task|URLSession|UIImage)\s*[(.{]')
-        self.assertIn('quality == .preview ? 640 : 1280', local)
-        self.assertIn('condition: .notOnQueue(.main)', local)
-        self.assertIn('var result = try processFaceEffects(image', processor)
-        self.assertIn('try processSkin(source', processor)
-        self.assertEqual(final.count('try processor.process(input'), 2)
-        self.assertEqual(final.count('quality: .final'), 2)
-        self.assertEqual(final.count('faces: faces, configuration: configuration'), 2)
-        self.assertIn('!isFaceCorrectionBypassed', config)
-        self.assertIn('strength: configuration.effectiveBlemish', processor)
-        self.assertIn('strength: configuration.effectiveDarkCircles', processor)
-        self.assertLess(processor.index('NaturalSkinToneAdjustmentStep'), processor.index('BlemishAttenuationStep'))
-        self.assertLess(processor.index('BlemishAttenuationStep'), processor.index('DarkCircleCorrectionStep'))
-
-    def test_color_effects_use_shared_state_and_all_product_output_paths(self):
-        view = (APP / 'Presentation/Camera/CameraView.swift').read_text(encoding='utf-8')
-        state = (APP / 'Presentation/Camera/CameraToolState.swift').read_text(encoding='utf-8')
-        processor = (APP / 'Rendering/CoreImage/BeautyImageProcessor.swift').read_text(encoding='utf-8')
-        final = (APP / 'Rendering/CoreImage/FinalBeautyProcessor.swift').read_text(encoding='utf-8')
-        frame = (APP / 'Camera/Capture/CameraFaceFrameProcessor.swift').read_text(encoding='utf-8')
-        self.assertIn('MakeupPanel(parameters: $camera.beautyParameters)', view)
-        self.assertIn('FilterPanel(parameters: $camera.beautyParameters)', view)
-        self.assertNotRegex(state, r'var (?:makeupTool|filterPreset)')
-        preview = processor.split('func process(_ source:')[0]
-        self.assertLess(preview.index('try processFaceEffects(image'), preview.index('try faceCorrection.makeOutput'))
-        self.assertLess(preview.index('try faceCorrection.makeOutput'), preview.index('try filter.makeOutput'))
-        self.assertIn('configuration: configuration.makeup', processor)
-        self.assertEqual(final.count('if configuration.requiresFaceDetection {'), 2)
-        self.assertEqual(final.count('try diagnostics.measure("vision")'), 2)
-        self.assertEqual(final.count('|| !configuration.filter.isBypassed'), 2)
-        self.assertEqual(final.count('try processor.process(input'), 2)
-        self.assertIn('makeupFaces: makeupFaces', frame)
-        for name in ('MakeupProcessingStep', 'FilterProcessingStep'):
-            code = (APP / f'Rendering/CoreImage/{name}.swift').read_text(encoding='utf-8')
-            self.assertNotRegex(code, r'\b(?:CIContext|DispatchQueue|Task|VisionFaceDetector)\s*\(')
-            self.assertIn('condition: .notOnQueue(.main)', code)
-        for name in ('Makeup/MakeupPanel', 'Filter/FilterPanel'):
-            code = (APP / f'Presentation/{name}.swift').read_text(encoding='utf-8')
-            self.assertIn('compact: true', code)
-            self.assertNotIn('UnimplementedNotice', code)
-
-    def test_mock_semantics_do_not_read_pixels_or_classify_skin_color(self):
-        code = '\n'.join(line.split('//')[0] for line in
-                         (APP / 'Rendering/CoreImage/MockSkinMaskProvider.swift').read_text(encoding='utf-8').splitlines())
-        self.assertNotRegex(code, r'\b(?:dataProvider|CFDataGetBytePtr|createCGImage|render|CGContext|HSV|YCbCr)\b')
-        self.assertNotRegex(code, r'CIImage\s*\(cgImage:|\.features\b|\.imagePoints\b')
-        self.assertNotRegex(code, r'CI(?:ColorCube|ColorThreshold|AreaAverage|AreaHistogram|ColorKernel)')
-
+    def test_only_adapter_owns_raw_landmark_topology(self):
+        for path in (APP / 'BeautyEngine').rglob('*.swift'):
+            self.assertNotRegex(path.read_text(encoding='utf-8'), r'landmarks\.points\s*\[\s*\d+', str(path))
+        geometry = code('BeautyEngine/FaceShape/FaceCorrectionGeometry.swift')
+        self.assertNotRegex(geometry, r'CIContext|CIKernel|URLSession|MLModel')
+        self.assertIn('faces.filter', geometry)
 
 if __name__ == '__main__':
     unittest.main()

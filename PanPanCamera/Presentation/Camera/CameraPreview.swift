@@ -41,7 +41,7 @@ final class PreviewView: UIView {
     private var beautyIsActive = false
     private var beautyRotationAngle: CGFloat = 0
     private var displayLink: CADisplayLink?
-    private var faceOverlay: FaceGeometryDebugOverlay?
+    private var faceOverlay: FaceAnalysisDebugOverlay?
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -50,8 +50,8 @@ final class PreviewView: UIView {
             beautySurface.configure(device: device)
             beautyRenderer = BeautyPreviewRenderer(device: device)
         }
-        if FaceGeometryDebugOverlay.isEnabled {
-            faceOverlay = FaceGeometryDebugOverlay(previewLayer: previewLayer)
+        if FaceAnalysisDebugOverlay.isEnabled {
+            faceOverlay = FaceAnalysisDebugOverlay(previewLayer: previewLayer)
         }
         displayLink = CADisplayLink(target: self, selector: #selector(renderBeautyFrame))
         displayLink?.add(to: .main, forMode: .common)
@@ -111,13 +111,13 @@ final class PreviewView: UIView {
         beautyConfiguration = configuration
         beautyIsActive = isActive
         displayLink?.isPaused = !isActive ||
-            (configuration.isBypassed && !FaceGeometryDebugOverlay.isEnabled) || beautyRenderer == nil
+            (configuration.isBypassed && !FaceAnalysisDebugOverlay.isEnabled) || beautyRenderer == nil
         if changed { hideBeautyFrame() }
     }
 
     @objc private func renderBeautyFrame() {
         guard beautyIsActive,
-              (!beautyConfiguration.isBypassed || FaceGeometryDebugOverlay.isEnabled),
+              (!beautyConfiguration.isBypassed || FaceAnalysisDebugOverlay.isEnabled),
               let beautyFrames, let beautyRenderer,
               beautySurface.metalLayer.drawableSize.width >= 1,
               beautySurface.metalLayer.drawableSize.height >= 1 else { return }
@@ -126,7 +126,8 @@ final class PreviewView: UIView {
             targetSize: beautySurface.metalLayer.drawableSize) { [weak self] success, geometry in
                 guard let self, self.beautyIsActive else { return }
                 self.faceOverlay?.update(geometry)
-                self.beautySurface.isHidden = !success || self.beautyConfiguration.isBypassed
+                self.beautySurface.isHidden = !success ||
+                    (self.beautyConfiguration.isBypassed && !FaceAnalysisDebugMode.isEnabled)
             }
     }
 

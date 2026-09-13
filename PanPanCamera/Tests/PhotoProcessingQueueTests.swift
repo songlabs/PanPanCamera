@@ -294,21 +294,20 @@ final class PhotoProcessingQueueTests: XCTestCase {
         XCTAssertEqual(worker.pendingCount, 0)
     }
 
-    func testVisionAndRenderFailuresReleaseCapacityAndNextJobCanSave() async throws {
-        enum InjectedFailure: Error { case vision }
+    func testAnalysisBypassAndRenderFailureReleaseCapacityAndNextJobCanSave() async throws {
         let data = try await Task.detached { try PhotoProcessingTestFixture.data() }.value
-        let visionFailure = FinalBeautyProcessor(detectPhotoFaces: { _, _ in throw InjectedFailure.vision })
+        let analysisFailure = FinalBeautyProcessor(engine: FaceAnalysisEngine(makeAnalyzer: { FixtureFaceAnalyzer(failure: true) }))
         let renderFailure = FinalBeautyProcessor(renderImage: { _, _, _ in nil })
         let count = PhotoProcessingTestValue(0)
         let saveCount = PhotoProcessingTestValue(0)
         let results = PhotoProcessingTestValue<[Bool]>([])
-        let done = expectation(description: "Vision failure, render failure, success")
+        let done = expectation(description: "Analysis bypass, render failure, success")
         done.expectedFulfillmentCount = 3
         let worker = PhotoProcessingQueue(process: { job in
             guard case let .photoData(bytes) = job.source else { return nil }
             switch count.update({ $0 += 1; return $0 }) {
             case 1:
-                return visionFailure.processPhotoData(bytes, configuration: job.configuration).flatMap(CapturedPhoto.init(data:))
+                return analysisFailure.processPhotoData(bytes, configuration: job.configuration).flatMap(CapturedPhoto.init(data:))
             case 2:
                 return renderFailure.processPhotoData(bytes, configuration: job.configuration).flatMap(CapturedPhoto.init(data:))
             default: return CapturedPhoto(data: bytes)
@@ -324,8 +323,8 @@ final class PhotoProcessingQueueTests: XCTestCase {
         XCTAssertTrue(worker.enqueue(job(data, configuration: .init(enabled: true, filter: .init(preset: .warm, intensity: 1)))))
         XCTAssertTrue(worker.enqueue(job(data)))
         await fulfillment(of: [done], timeout: 10)
-        XCTAssertEqual(results.value, [false, false, true])
-        XCTAssertEqual(saveCount.value, 1)
+        XCTAssertEqual(results.value, [true, false, true])
+        XCTAssertEqual(saveCount.value, 2)
         XCTAssertTrue(worker.canAcceptJob)
         XCTAssertEqual(worker.pendingCount, 0)
     }

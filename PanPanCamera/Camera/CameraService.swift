@@ -7,7 +7,7 @@ import Combine
 final class CameraService: ObservableObject {
     @Published private(set) var state = CameraState()
     @Published private(set) var previewDevice: AVCaptureDevice?
-    @Published private(set) var faceDetection: FaceDetectionFrame?
+    @Published private(set) var faceDetection: FaceAnalysisResult?
     @Published private(set) var isFaceDetectionAvailable = false
     @Published private(set) var capturedPhoto: CapturedPhoto?
     @Published private(set) var photoProcessingState = PhotoProcessingState(maximumPendingCount: 3)

@@ -1,3 +1,3 @@
 # Skin
 
-Reserved for future on-device skin processing. No implementation in 0.1. UI drafts live in `Domain/BeautyParameters.swift`; they do not alter preview or capture data.
+SemanticSkinMaskComposer builds one semantic skin foundation, excluding protected classes and preserving detail. SkinBeautyProcessor reuses it for smoothing, brightening, tone, blemish and dark-circle processing. Detector boxes only choose frequency scale; no box or contour generates skin. Missing parsing bypasses Skin. Models and device acceptance remain blocked; see [architecture](../../../docs/FaceAnalysisArchitecture.md).

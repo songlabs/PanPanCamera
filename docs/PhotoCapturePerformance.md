@@ -1,5 +1,8 @@
 # Capture responsiveness and final-photo diagnostics
 
+> Historical implementation/performance record. The analysis and Beauty architecture below was superseded on 2026-09-13 by [FaceAnalysisArchitecture.md](FaceAnalysisArchitecture.md). Prior Vision/model/geometry descriptions and measurements do not describe the new pipeline. Current model assets and Apple/device acceptance remain blocked.
+
+
 ## Phase 2 baseline and confirmed cause
 
 Investigation and implementation started from clean `main` and freshly fetched

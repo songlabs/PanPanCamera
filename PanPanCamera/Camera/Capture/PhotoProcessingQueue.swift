@@ -55,7 +55,7 @@ final class PhotoProcessingQueue: @unchecked Sendable {
         let captureID: UUID
         let diagnostics: PhotoCaptureDiagnostics
         // Encoded bytes + bounded display thumbnail only; never native input,
-        // BeautyConfiguration, CI graphs, Vision observations or masks.
+        // BeautyConfiguration, CI graphs, analysis results or masks.
         let photo: CapturedPhoto?
     }
 

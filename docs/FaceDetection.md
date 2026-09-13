@@ -1,5 +1,8 @@
 # Vision face detection
 
+> Historical implementation/performance record. The analysis and Beauty architecture below was superseded on 2026-09-13 by [FaceAnalysisArchitecture.md](FaceAnalysisArchitecture.md). Prior Vision/model/geometry descriptions and measurements do not describe the new pipeline. Current model assets and Apple/device acceptance remain blocked.
+
+
 ## Repository investigation
 
 The implementation began from a clean `main` checkout at `483fa1a`. There was one

@@ -9,7 +9,7 @@ enum CameraSessionEvent {
     case photoProcessingStateChanged(PhotoProcessingState)
     case captureBacklogFull
     case switchFailed
-    case faceDetection(FaceDetectionDelivery?)
+    case faceDetection(FaceAnalysisDelivery?)
     case faceDetectionAvailability(Bool)
 }
 
@@ -31,7 +31,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     private let output = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
     private let videoQueue = DispatchQueue(label: "camera.panpan.faces", qos: .utility)
-    private let faceDetector = VisionFaceDetector()
+    private let faceAnalysisEngine = FaceAnalysisEngine()
     private let frameStore = SilentFrameStore()
     let beautyPreviewFrames = BeautyPreviewFrameStore()
     private let beautyConfiguration = BeautyConfigurationStore()
@@ -59,7 +59,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     }
 
     deinit {
-        faceProcessor?.delivery.invalidate()
+        faceProcessor?.invalidate()
         queue.async { [videoOutput] in videoOutput.setSampleBufferDelegate(nil, queue: nil) }
         observers.forEach(NotificationCenter.default.removeObserver)
     }
@@ -370,7 +370,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
             videoOutputReady = false
             return
         }
-        // Vision receives sensor-native orientation; only Preview/photos are mirrored.
+        // Analysis receives sensor-native orientation; only Preview/photos are mirrored.
         connection.videoRotationAngle = 0
         if connection.isVideoMirroringSupported {
             connection.automaticallyAdjustsVideoMirroring = false
@@ -393,7 +393,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
         stopFaceDetection()
         // Replacing the immutable delegate also rejects queued buffers from the old input.
         let processor = CameraFaceFrameProcessor(device: device, orientation: orientation,
-                                                 detector: faceDetector, frameStore: frameStore,
+                                                 engine: faceAnalysisEngine, frameStore: frameStore,
                                                  previewFrameStore: beautyPreviewFrames,
                                                  beautyConfiguration: beautyConfiguration) { [weak self] delivery in
             self?.onEvent(.faceDetection(delivery))
@@ -405,7 +405,7 @@ final class CameraSession: CameraSessionControlling, @unchecked Sendable {
     private func stopFaceDetection() {
         frameStore.clear()
         beautyPreviewFrames.clear()
-        faceProcessor?.delivery.invalidate()
+        faceProcessor?.invalidate()
         faceProcessor = nil
         videoOutput.setSampleBufferDelegate(nil, queue: nil)
         onEvent(.faceDetection(nil))

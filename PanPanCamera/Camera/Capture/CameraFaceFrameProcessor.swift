@@ -1,5 +1,6 @@
 import AVFoundation
 import ImageIO
+import CoreImage
 
 enum SilentCaptureStrategy: Equatable {
     case suppressedPhotoOutput
@@ -63,30 +64,26 @@ final class SilentFrameStore: @unchecked Sendable {
 /// An immutable delegate context per camera/orientation/activation generation. Replaced
 /// delegates invalidate their mailbox; late buffers/results can never become a new generation.
 final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate {
-    let delivery = FaceDetectionDelivery()
+    let delivery = FaceAnalysisDelivery()
     let deviceID: String
     let orientation: FaceImageOrientation
-    private let detector: VisionFaceDetector
+    private let scheduler: FaceAnalysisScheduler
     private let frameStore: SilentFrameStore
     private let previewFrameStore: BeautyPreviewFrameStore
     private let beautyConfiguration: BeautyConfigurationStore
     private let position: CameraPosition
     private let device: AVCaptureDevice
-    private let onResult: (FaceDetectionDelivery) -> Void
-    private var latestFaces: [DetectedFace] = []
-    private var latestFaceTime: TimeInterval = -.infinity
-    private var slimSmoother = PreviewSlimLandmarkSmoother()
-    private var makeupSmoother = PreviewSlimLandmarkSmoother(includesAllFeatures: true)
+    private let onResult: (FaceAnalysisDelivery) -> Void
 
-    init(device: AVCaptureDevice, orientation: FaceImageOrientation, detector: VisionFaceDetector,
+    init(device: AVCaptureDevice, orientation: FaceImageOrientation, engine: FaceAnalysisEngine,
          frameStore: SilentFrameStore, previewFrameStore: BeautyPreviewFrameStore,
          beautyConfiguration: BeautyConfigurationStore,
-         onResult: @escaping (FaceDetectionDelivery) -> Void) {
+         onResult: @escaping (FaceAnalysisDelivery) -> Void) {
         self.device = device
         self.deviceID = device.uniqueID
         self.position = device.position == .front ? .front : .back
         self.orientation = orientation
-        self.detector = detector
+        self.scheduler = FaceAnalysisScheduler(engine: engine)
         self.frameStore = frameStore
         self.previewFrameStore = previewFrameStore
         self.beautyConfiguration = beautyConfiguration
@@ -118,56 +115,29 @@ final class CameraFaceFrameProcessor: NSObject, AVCaptureVideoDataOutputSampleBu
                                                 mirrored: position == .front, metadata: metadata))
                 publishPreview(buffer, at: start)
             }
-            guard delivery.begin(at: start) else { return }
-            let size = buffer.map {
-                CGSize(width: CGFloat(CVPixelBufferGetWidth($0)), height: CGFloat(CVPixelBufferGetHeight($0)))
-            } ?? .zero
-            var faces: [DetectedFace] = []
-            var outcome = FaceDetectionFrame.Outcome.missingPixelBuffer
-            latestFaceTime = start
             if let buffer {
-                do {
-                    faces = try detector.detect(buffer, orientation: orientation)
-                    latestFaces = faces
-                    outcome = .detected
-                } catch {
-                    // A failed frame clears old faces; later frames may retry. No face data is logged.
-                    latestFaces = []
-                    outcome = .visionFailed
+                let image = FaceImageNormalization.normalize(CIImage(cvPixelBuffer: buffer),
+                    exif: SilentFrameOrientation.exif(captureOrientation: orientation, mirrored: false))
+                scheduler.submit(image, timestamp: start, orientation: orientation, mirrored: false) { [weak self] result in
+                    guard let self else { return }
+                    if self.delivery.complete(result) { self.onResult(self.delivery) }
                 }
-            } else {
-                latestFaces = []
             }
-            // Reset immediately even if the renderer misses the empty detection frame.
-            if latestFaces.isEmpty {
-                slimSmoother.reset()
-                makeupSmoother.reset()
-            }
-            if let buffer { publishPreview(buffer, at: ProcessInfo.processInfo.systemUptime) }
-            let frame = FaceDetectionFrame(faces: faces, orientation: orientation, deviceID: deviceID,
-                                           pixelSize: size,
-                                           timestamp: CMTimeGetSeconds(CMSampleBufferGetPresentationTimeStamp(sampleBuffer)),
-                                           outcome: outcome)
-            if delivery.complete(frame, at: ProcessInfo.processInfo.systemUptime) { onResult(delivery) }
         }
+    }
+
+    func invalidate() {
+        scheduler.invalidate()
+        delivery.invalidate()
     }
 
     private func publishPreview(_ buffer: CVPixelBuffer, at time: TimeInterval) {
         let configuration = beautyConfiguration.snapshot()
-        guard !configuration.isBypassed || FaceGeometryDebugMode.isEnabled else {
+        guard !configuration.isBypassed || FaceAnalysisDebugMode.isEnabled else {
             previewFrameStore.clear()
             return
         }
-        let slimFaces = slimSmoother.update(faces: latestFaces, observationTime: latestFaceTime, time: time)
-        let makeupFaces: [DetectedFace]
-        if configuration.makeup.isBypassed {
-            makeupSmoother.reset()
-            makeupFaces = []
-        } else {
-            makeupFaces = makeupSmoother.update(faces: latestFaces, observationTime: latestFaceTime, time: time)
-        }
         previewFrameStore.replace(BeautyPreviewFrame(pixelBuffer: buffer, orientation: orientation,
-            mirrored: position == .front, faces: latestFaces,
-            configuration: configuration, slimFaces: slimFaces, makeupFaces: makeupFaces))
+            mirrored: position == .front, analysis: scheduler.snapshot(at: time), configuration: configuration))
     }
 }

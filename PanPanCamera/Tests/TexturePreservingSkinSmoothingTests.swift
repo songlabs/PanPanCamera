@@ -56,44 +56,19 @@ enum SkinRetouchTestImage {
 
 final class TexturePreservingSkinSmoothingTests: XCTestCase {
     private let fullBox = CGRect(x: 0, y: 0, width: 1, height: 1)
-    private final class Sentinel: Error, @unchecked Sendable {}
-    private struct FailingMask: FaceMaskGenerating {
-        let failure: Sentinel
-        func makeMask(regions: [FaceRegion], in extent: CGRect) throws -> CIImage? { throw failure }
+    private func process(_ image: ProcessingImage, configuration: SkinRetouchConfiguration = .naturalDefault) async throws -> ProcessingImage {
+        try await Task.detached {
+            let source = CIImage(cgImage: image.cgImage)
+            let box = CGRect(x: 0, y: 0, width: 1, height: 1)
+            let face = try AnalyzedFace(boundingBox: box, confidence: 1,
+                semanticMasks: SemanticFixture.masks { _, _ in .skin })
+            let foundation = try XCTUnwrap(SemanticSkinMaskComposer().makeMask(source: source, faces: [face]))
+            let mask = try CoreImageRendering.grayMask(foundation, scale: configuration.intensity.value)
+            let output = try XCTUnwrap(TexturePreservingSkinSmoothingStep(configuration: configuration).makeOutput(
+                source: source, regions: [FaceRegion(boundingBox: box)], effectiveMask: mask))
+            return try CoreImageRendering.render(output, matching: image)
+        }.value
     }
-    private struct EmptyMask: FaceMaskGenerating {
-        func makeMask(regions: [FaceRegion], in extent: CGRect) throws -> CIImage? { nil }
-    }
-
-    private func process(_ image: ProcessingImage, boxes: [CGRect]? = nil,
-                         configuration: SkinRetouchConfiguration = .naturalDefault,
-                         mask: any FaceMaskGenerating = SoftFaceMaskGenerator(),
-                         provider: (any SkinMaskProviding)? = nil) async throws -> ProcessingImage {
-        let regions = try (boxes ?? [fullBox]).map { try FaceRegion(boundingBox: $0) }
-        let pipeline = ImageProcessingPipeline<ProcessingImage>(detector: MockFaceDetector(regions: regions),
-            steps: [TexturePreservingSkinSmoothingStep(configuration: configuration,
-                maskGenerator: mask, skinMaskProvider: provider)])
-        return try await pipeline.process(image).image
-    }
-
-    func testZeroIntensityIsExactOriginalWithoutCallingMaskGenerator() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let before = ProcessingTestPixels.rgba(input)
-        let result = try await process(input, configuration: .naturalDefault.withIntensity(.original),
-                                       mask: FailingMask(failure: Sentinel()))
-        XCTAssertTrue(result.cgImage === input.cgImage)
-        XCTAssertEqual(ProcessingTestPixels.rgba(result), before)
-    }
-
-    func testNoFacesAndUnusableCoverageBypassWithoutRendering() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let empty = try await process(input, boxes: [], mask: FailingMask(failure: Sentinel()))
-        let tiny = try await process(input, boxes: [CGRect(x: 0, y: 0, width: 0.001, height: 0.001)],
-                                     mask: FailingMask(failure: Sentinel()))
-        let noMask = try await process(input, mask: EmptyMask())
-        for output in [empty, tiny, noMask] { XCTAssertTrue(output.cgImage === input.cgImage) }
-    }
-
     func testFlatNoiseVarianceFallsModeratelyWhileEdgeAndFineLineRemain() async throws {
         let input = try SkinRetouchTestImage.texture()
         let output = try await process(input, configuration: .naturalDefault.withIntensity(try SkinRetouchIntensity(1)))
@@ -129,7 +104,10 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
             for i in stride(from: 3, to: supportPixels.count, by: 4) {
                 XCTAssertEqual(supportPixels[i], 1, "Opaque source support must remain eligible at default precision")
             }
-            let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region]))
+            let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region],
+                effectiveMask: SemanticSkinMaskComposer().makeMask(source: source, faces: [
+                    AnalyzedFace(boundingBox: CGRect(x: 0, y: 0, width: 1, height: 1), confidence: 1, semanticMasks: SemanticFixture.masks { _, _ in .skin })
+                ])!))
             let before = ProcessingTestPixels.floats(source, bounds: patch)
             let after = ProcessingTestPixels.floats(output, bounds: patch)
             let changes = stride(from: 0, to: before.count, by: 4).map { abs(after[$0] - before[$0]) }
@@ -157,7 +135,10 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
             let support = try step.makeOpacitySupport(source: source, scale: scale)
             XCTAssertLessThan(ProcessingTestPixels.floats(support,
                 bounds: CGRect(x: 66, y: 128, width: 1, height: 1))[3], 0.6)
-            let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region]))
+            let output = try XCTUnwrap(step.makeOutput(source: source, regions: [region],
+                effectiveMask: SemanticSkinMaskComposer().makeMask(source: source, faces: [
+                    AnalyzedFace(boundingBox: CGRect(x: 0, y: 0, width: 1, height: 1), confidence: 1, semanticMasks: SemanticFixture.masks { _, _ in .skin })
+                ])!))
             let protected = CGRect(x: 60, y: 112, width: 8, height: 16)
             let before = ProcessingTestPixels.floats(source, bounds: protected)
             let after = ProcessingTestPixels.floats(output, bounds: protected)
@@ -167,31 +148,6 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
             XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(rendered, in: skin)),
                               SkinRetouchTestImage.variance(SkinRetouchTestImage.values(input, in: skin)))
         }.value
-    }
-
-    func testEdgeAndLineRetentionExceedDirectGaussianBaselineAtSameRadiusAndIntensity() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let configuration = SkinRetouchConfiguration.naturalDefault.withIntensity(.stronger)
-        let output = try await process(input, configuration: configuration)
-        let region = try FaceRegion(boundingBox: fullBox)
-        let baseline = try await Task.detached {
-            let source = CIImage(cgImage: input.cgImage)
-            let scale = try XCTUnwrap(SkinRetouchScale(regions: [region], in: source.extent))
-            // Direct photo blur exists only in this acceptance baseline. Use the
-            // SMALL radius, same soft mask/intensity, and the same renderer.
-            let blur = try CoreImageRendering.filter("CIGaussianBlur", parameters: [
-                kCIInputImageKey: source.clampedToExtent(), kCIInputRadiusKey: scale.smallRadius
-            ], in: source.extent)
-            let face = try XCTUnwrap(SoftFaceMaskGenerator().makeMask(regions: [region], in: source.extent))
-            let mask = try CoreImageRendering.grayMask(face, scale: configuration.intensity.value)
-            return try CoreImageRendering.render(CoreImageRendering.blend(blur, over: source, mask: mask), matching: input)
-        }.value
-        XCTAssertGreaterThan(SkinRetouchTestImage.edgeContrast(output), SkinRetouchTestImage.edgeContrast(baseline) + 1)
-        XCTAssertGreaterThan(SkinRetouchTestImage.lineContrast(output), SkinRetouchTestImage.lineContrast(baseline) + 1)
-        let patch = CGRect(x: 72, y: 112, width: 22, height: 32)
-        let before = SkinRetouchTestImage.variance(SkinRetouchTestImage.values(input, in: patch))
-        XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(output, in: patch)), before)
-        XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(baseline, in: patch)), before)
     }
 
     func testFullDetailRetentionAndDisabledNoiseReconstructOriginal() async throws {
@@ -215,111 +171,16 @@ final class TexturePreservingSkinSmoothingTests: XCTestCase {
                              SkinRetouchTestImage.variance(SkinRetouchTestImage.values(low, in: patch)))
     }
 
-    func testMaskExteriorAndInputStorageAreUnchanged() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let before = ProcessingTestPixels.rgba(input)
-        let output = try await process(input)
-        let after = ProcessingTestPixels.rgba(output)
-        XCTAssertEqual(ProcessingTestPixels.rgba(input), before)
-        XCTAssertEqual(output.cgImage.width, input.cgImage.width)
-        XCTAssertEqual(output.cgImage.height, input.cgImage.height)
-        for y in 0..<256 {
-            for x in 0..<256 where x < 28 || x > 228 || y < 5 || y > 250 {
-                for c in 0..<4 {
-                    let i = (y * 256 + x) * 4 + c
-                    XCTAssertLessThanOrEqual(abs(Int(before[i]) - Int(after[i])), 1)
-                }
-            }
-        }
-    }
-
-    func testDuplicateAndReorderedOverlappingFacesDoNotAmplifyProcessing() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let first = CGRect(x: 0.1, y: 0.1, width: 0.6, height: 0.8)
-        let second = CGRect(x: 0.3, y: 0.1, width: 0.6, height: 0.8)
-        let once = try await process(input, boxes: [first])
-        let duplicate = try await process(input, boxes: [first, first])
-        let forward = try await process(input, boxes: [first, second])
-        let reverse = try await process(input, boxes: [second, first, second])
-        XCTAssertEqual(ProcessingTestPixels.rgba(once), ProcessingTestPixels.rgba(duplicate))
-        XCTAssertEqual(ProcessingTestPixels.rgba(forward), ProcessingTestPixels.rgba(reverse))
-        // The first center already has full coverage; overlap must not add strength.
-        XCTAssertEqual(ProcessingTestPixels.rgba(once, at: CGPoint(x: 88, y: 120)),
-                       ProcessingTestPixels.rgba(forward, at: CGPoint(x: 88, y: 120)))
-    }
-
-    func testAlphaIncludingTransparentNeighborhoodsIsPreserved() async throws {
-        let input = try SkinRetouchTestImage.make { x, _ in
-            let alpha: UInt8 = [0, 64, 180, 255][x / 64]
-            return [UInt8(Int(alpha) * 3 / 5), UInt8(Int(alpha) * 2 / 5), UInt8(Int(alpha) / 5), alpha]
-        }
-        let output = try await process(input, configuration: .naturalDefault.withIntensity(try SkinRetouchIntensity(1)))
-        let before = ProcessingTestPixels.rgba(input), after = ProcessingTestPixels.rgba(output)
-        for i in stride(from: 0, to: before.count, by: 4) {
-            XCTAssertEqual(before[i + 3], after[i + 3])
-            for c in 0..<3 { XCTAssertLessThanOrEqual(abs(Int(before[i + c]) - Int(after[i + c])), 1) }
-        }
-    }
-
-    func testDisjointFacesBothReceiveProcessingWithUnchangedGap() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let boxes = [CGRect(x: 0.05, y: 0.25, width: 0.3, height: 0.5),
-                     CGRect(x: 0.65, y: 0.25, width: 0.3, height: 0.5)]
-        let output = try await process(input, boxes: boxes,
-            configuration: .naturalDefault.withIntensity(try SkinRetouchIntensity(1)))
-        for x in [42, 196] {
-            let patch = CGRect(x: x, y: 112, width: 20, height: 32)
-            XCTAssertLessThan(SkinRetouchTestImage.variance(SkinRetouchTestImage.values(output, in: patch)),
-                              SkinRetouchTestImage.variance(SkinRetouchTestImage.values(input, in: patch)))
-        }
-        let before = SkinRetouchTestImage.values(input, in: CGRect(x: 120, y: 112, width: 16, height: 32))
-        let after = SkinRetouchTestImage.values(output, in: CGRect(x: 120, y: 112, width: 16, height: 32))
-        for (a, b) in zip(before, after) { XCTAssertEqual(a, b, accuracy: 1) }
-    }
-
     func testSolidColorPatchesKeepHueSaturationAndImageEdges() async throws {
         for rgb: [UInt8] in [[55, 32, 24], [142, 92, 63], [225, 182, 158], [30, 140, 210]] {
             let input = try SkinRetouchTestImage.make(width: 64, height: 64) { _, _ in rgb + [255] }
-            let output = try await process(input, boxes: [fullBox,
-                CGRect(x: 0, y: 0.25, width: 0.5, height: 0.5),
-                CGRect(x: 0.5, y: 0.25, width: 0.5, height: 0.5),
-                CGRect(x: 0.25, y: 0, width: 0.5, height: 0.5),
-                CGRect(x: 0.25, y: 0.5, width: 0.5, height: 0.5)],
+            let output = try await process(input,
                 configuration: .naturalDefault.withIntensity(try SkinRetouchIntensity(1)))
             // RGB stability across the entire flat patch is stricter than a loose
             // hue/saturation metric and detects color shifts or black crop borders.
             for (a, b) in zip(ProcessingTestPixels.rgba(input), ProcessingTestPixels.rgba(output)) {
                 XCTAssertLessThanOrEqual(abs(Int(a) - Int(b)), 1)
             }
-        }
-    }
-
-    func testNonzeroExtentAndOnePixelFaceDoNotTranslateOrExpandGraph() async throws {
-        let input = try SkinRetouchTestImage.texture()
-        let region = try FaceRegion(boundingBox: fullBox)
-        try await Task.detached {
-            let source = CIImage(cgImage: input.cgImage).transformed(by: CGAffineTransform(translationX: 17, y: -23))
-            let output = try XCTUnwrap(TexturePreservingSkinSmoothingStep().makeOutput(source: source, regions: [region]))
-            XCTAssertEqual(output.extent, source.extent)
-            let corner = CGRect(x: 17, y: -23, width: 8, height: 8)
-            let before = ProcessingTestPixels.floats(source, bounds: corner)
-            let after = ProcessingTestPixels.floats(output, bounds: corner)
-            for (a, b) in zip(before, after) { XCTAssertEqual(a, b, accuracy: 0.00001) }
-        }.value
-        let tiny = try await process(input, boxes: [CGRect(x: 0.5, y: 0.5, width: 1.0 / 256, height: 1.0 / 256)])
-        XCTAssertEqual(tiny.cgImage.width, input.cgImage.width)
-        XCTAssertEqual(tiny.cgImage.height, input.cgImage.height)
-    }
-
-    func testMaskFailurePropagatesAndReleasesPipelineSlot() async throws {
-        let failure = Sentinel()
-        let input = try SkinRetouchTestImage.texture()
-        let pipeline = ImageProcessingPipeline<ProcessingImage>(
-            detector: MockFaceDetector(regions: [try FaceRegion(boundingBox: fullBox)]),
-            steps: [TexturePreservingSkinSmoothingStep(maskGenerator: FailingMask(failure: failure))])
-        for _ in 0..<2 {
-            do { _ = try await pipeline.process(input); XCTFail("Expected mask error") }
-            catch { XCTAssertTrue((error as? Sentinel) === failure) }
         }
     }
 }

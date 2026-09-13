@@ -1,5 +1,8 @@
 # Makeup and filters: implementation and acceptance boundary
 
+> Historical implementation/performance record. The analysis and Beauty architecture below was superseded on 2026-09-13 by [FaceAnalysisArchitecture.md](FaceAnalysisArchitecture.md). Prior Vision/model/geometry descriptions and measurements do not describe the new pipeline. Current model assets and Apple/device acceptance remain blocked.
+
+
 Investigated baseline: `main` at `f7ed3398382e784ed91e4df2e2f7f49ad29ef594`, clean and equal to fetched `origin/main`.
 The original panels only selected `CameraToolState.makeupTool` / `filterPreset` and displayed unimplemented notices.
 There was no color-effect configuration or renderer call from either camera output path.

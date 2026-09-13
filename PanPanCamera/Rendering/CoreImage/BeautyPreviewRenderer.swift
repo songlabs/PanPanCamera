@@ -6,7 +6,7 @@ import QuartzCore
 /// Latest-only Core Image renderer. Camera frame delivery already drops late frames;
 /// this additional one-command-buffer gate prevents display work from queuing.
 final class BeautyPreviewRenderer: @unchecked Sendable {
-    private let processor = BeautyImageProcessor()
+    private let processor = BeautyPreviewProcessor()
     private let queue = DispatchQueue(label: "camera.panpan.beauty-preview", qos: .userInteractive)
     private let commandQueue: MTLCommandQueue
     // Accessed only on queue; context creation stays off the main thread.
@@ -27,7 +27,7 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
 
     func requestFrame(from store: BeautyPreviewFrameStore, layer: CAMetalLayer,
                       rotationAngle: CGFloat, targetSize: CGSize,
-                      completion: @escaping (Bool, FaceGeometryDebugSnapshot?) -> Void) {
+                      completion: @escaping (Bool, FaceAnalysisDebugSnapshot?) -> Void) {
         guard let token = begin() else { return }
         guard let frame = store.take() else { cancelReservation(); return }
         queue.async { [self] in
@@ -35,15 +35,15 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
                 do {
                     let result = try processor.previewResult(for: frame,
                         displayRotationAngle: rotationAngle, targetSize: targetSize)
-                    let geometryDebug = result.geometryDebug
+                    let analysisDebug = result.analysisDebug
                     guard let image = result.image else {
-                        finish(token: token, success: false, geometryDebug: geometryDebug,
+                        finish(token: token, success: false, analysisDebug: analysisDebug,
                                completion: completion)
                         return
                     }
                     guard let drawable = layer.nextDrawable(),
                           let commandBuffer = commandQueue.makeCommandBuffer() else {
-                        finish(token: token, success: false, geometryDebug: geometryDebug,
+                        finish(token: token, success: false, analysisDebug: analysisDebug,
                                completion: completion)
                         return
                     }
@@ -56,12 +56,12 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
                     commandBuffer.present(drawable)
                     commandBuffer.addCompletedHandler { [weak self] buffer in
                         self?.finish(token: token, success: buffer.status == .completed,
-                                     geometryDebug: geometryDebug,
+                                     analysisDebug: analysisDebug,
                                      completion: completion)
                     }
                     commandBuffer.commit()
                 } catch {
-                    finish(token: token, success: false, geometryDebug: nil,
+                    finish(token: token, success: false, analysisDebug: nil,
                            completion: completion)
                 }
             }
@@ -89,8 +89,8 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
     }
 
     private func finish(token: Int, success: Bool,
-                        geometryDebug: FaceGeometryDebugSnapshot?,
-                        completion: @escaping (Bool, FaceGeometryDebugSnapshot?) -> Void) {
+                        analysisDebug: FaceAnalysisDebugSnapshot?,
+                        completion: @escaping (Bool, FaceAnalysisDebugSnapshot?) -> Void) {
         lock.lock()
         inFlight = false
         let current = token == generation
@@ -106,6 +106,6 @@ final class BeautyPreviewRenderer: @unchecked Sendable {
         #if DEBUG
         if report { print("BeautyStrength Preview render completed: success=\(success)") }
         #endif
-        DispatchQueue.main.async { completion(success, geometryDebug) }
+        DispatchQueue.main.async { completion(success, analysisDebug) }
     }
 }

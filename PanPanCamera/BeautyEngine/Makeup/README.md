@@ -1,5 +1,3 @@
 # Makeup
 
-Product makeup is implemented by `Rendering/CoreImage/MakeupProcessingStep.swift`,
-using the existing Vision landmarks and shared Preview/final processing configuration.
-See [implementation and acceptance boundaries](../../../docs/MakeupAndFilters.md).
+MakeupProcessingStep consumes typed, normalized dense landmark regions and the shared BeautyConfiguration. Lip/blush/eye/brow compose after Skin and before Shape for both Preview and Final. Its cache retains only geometry. No landmarks means bypass. See [architecture and model blocker](../../../docs/FaceAnalysisArchitecture.md).
