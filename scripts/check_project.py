@@ -97,13 +97,15 @@ def check_sources():
     sources = [p for p in (ROOT / 'PanPanCamera').rglob('*.swift') if 'Tests' not in p.parts]
     hardcoded = re.compile(r'\b(?:Text|Button|Label|Toggle|Picker|Slider|ProgressView|Section)\s*\(\s*"|\.(?:navigationTitle|accessibilityLabel|accessibilityHint|accessibilityValue|alert)\s*\(\s*"')
     forbidden_import = re.compile(r'^(?:@preconcurrency )?import\s+(?:CoreML|PhotosUI)\b', re.M)
-    allowed_imports = {'Foundation', 'SwiftUI', 'AVFoundation', 'Combine', 'UIKit', 'ImageIO', 'Vision', 'CoreVideo', 'CoreImage', 'Photos', 'Metal', 'QuartzCore'}
+    allowed_imports = {'Foundation', 'SwiftUI', 'AVFoundation', 'Combine', 'UIKit', 'ImageIO', 'Vision', 'CoreVideo', 'CoreImage', 'Photos', 'Metal', 'QuartzCore', 'StoreKit'}
     for path in sources:
         text = path.read_text(encoding='utf-8')
         require(not hardcoded.search(text), f'UI literal outside localization adapter: {path.name}')
         require(not forbidden_import.search(text), f'Out-of-scope rendering/library import: {path.name}')
         imports = set(re.findall(r'^(?:@preconcurrency )?import (\w+)', text, re.M))
         require(imports <= allowed_imports, f'Unexpected dependency: {path.name}: {imports - allowed_imports}')
+        require('StoreKit' not in imports or path.name == 'BeautyFrame.swift',
+                f'StoreKit must stay in the testing availability gate: {path.name}')
         module = path.relative_to(ROOT / 'PanPanCamera').parts[0]
         if module in {'Camera', 'FaceAnalysis'}:
             require('SwiftUI' not in imports and not re.search(r'\b(?:L10n|Presentation)\b', text),

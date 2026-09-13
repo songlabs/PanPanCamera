@@ -91,11 +91,22 @@ class ImageProcessingScopeTests(unittest.TestCase):
         self.assertNotRegex(store, r'\[(?:BeautyPreviewFrame|CVPixelBuffer)\]')
         self.assertIn('private var inFlight = false', source('Rendering/CoreImage/BeautyPreviewRenderer.swift'))
 
-    def test_debug_modes_are_off_in_release_and_have_no_persistence(self):
+    def test_testing_guides_require_availability_and_manual_opt_in_without_persistence(self):
         mode = source('BeautyEngine/BeautyFrame.swift')
-        self.assertRegex(mode, r'#if DEBUG[\s\S]*arguments.contains\(flag\)[\s\S]*#else\s+false')
-        for flag in ('FaceBoxes', 'VisionLandmarks', 'SkinMask', 'FaceROI'):
-            self.assertIn('-PanPan' + flag, mode)
+        self.assertRegex(mode, r'#if DEBUG\s+true\s+#else\s+false')
+        self.assertIn('private var manual = false', mode)
+        self.assertIn('return available && manual', mode)
+        self.assertIn('manual = available && value', mode)
+        self.assertIn('State(available: isDevelopmentBuild)', mode)
+        self.assertIn('try await AppTransaction.shared', mode)
+        self.assertIn('if case .verified(let transaction) = result', mode)
+        self.assertIn('isDebugBuild || environment == .sandbox', mode)
+        self.assertNotRegex(mode, r'AppStorage|UserDefaults|appStoreReceiptURL|sandboxReceipt|AppTransaction.refresh')
+        self.assertRegex(mode, r'else\s*\{\s*available = false\s*\}\s*\}\s*catch\s*\{\s*available = false')
+        self.assertNotIn('#if DEBUG', source('BeautyEngine/BeautyPreviewProcessor.swift'))
+        for path in ['Presentation/Camera/CameraPreview.swift', 'Rendering/CoreImage/BeautyPreviewRenderer.swift',
+                     'Camera/Capture/CameraFaceFrameProcessor.swift']:
+            self.assertNotIn('resolveAvailability', source(path))
         for path in ['Presentation/Camera/FaceDebugOverlay.swift', 'BeautyEngine/BeautyPreviewProcessor.swift']:
             self.assertNotRegex(code(path), r'\.write\(|FileManager|URLSession|print\(')
 
@@ -122,7 +133,8 @@ class ImageProcessingScopeTests(unittest.TestCase):
         self.assertIn('container.removeFromSuperlayer()', overlay)
         self.assertNotRegex(overlay, r'VN\w*Request|\.makeMask\(|layer\.render|\.blend\(')
         settings = source('Presentation/Settings/SettingsView.swift')
-        self.assertRegex(settings, r'#if DEBUG\s+Divider\(\)\s+Toggle\(')
+        self.assertRegex(settings, r'if testingGuidesAvailable\s*\{\s+Divider\(\)\s+Toggle\(')
+        self.assertIn('await FaceAnalysisDebugMode.resolveAvailability()', settings)
         camera = source('Presentation/Camera/CameraView.swift')
         self.assertIn('SettingsView(debugOverlayEnabled: $debugOverlayEnabled)', camera)
         preview_view = source('Presentation/Camera/CameraPreview.swift')

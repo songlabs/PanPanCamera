@@ -1,8 +1,38 @@
 import Foundation
+import StoreKit
 import XCTest
 @testable import PanPanCamera
 
 final class FaceAnalysisContractTests: XCTestCase {
+    func testTestingGuidesAvailabilityAllowsDebugAndVerifiedSandboxOnly() {
+        for environment: AppStore.Environment? in [nil, .production, .sandbox, .xcode] {
+            XCTAssertTrue(FaceAnalysisDebugMode.permitsGuides(isDebugBuild: true, environment: environment))
+        }
+        XCTAssertTrue(FaceAnalysisDebugMode.permitsGuides(isDebugBuild: false, environment: .sandbox))
+        for environment: AppStore.Environment? in [nil, .production, .xcode] {
+            XCTAssertFalse(FaceAnalysisDebugMode.permitsGuides(isDebugBuild: false, environment: environment))
+        }
+    }
+
+    func testTestingGuidesDefaultOffAndUnavailableEnvironmentCannotEnableThem() {
+        let state = FaceAnalysisDebugMode.State(available: false)
+        XCTAssertFalse(state.snapshot())
+        state.setEnabled(true)
+        XCTAssertFalse(state.snapshot())
+        state.setAvailable(true)
+        XCTAssertFalse(state.snapshot(), "Discovering TestFlight must not enable guides")
+        state.setEnabled(true)
+        XCTAssertTrue(state.snapshot())
+        state.setEnabled(false)
+        XCTAssertFalse(state.snapshot())
+        state.setEnabled(true)
+        state.setAvailable(false)
+        XCTAssertFalse(state.snapshot())
+        state.setAvailable(true)
+        XCTAssertFalse(state.snapshot(), "Availability changes must not restore an enabled state")
+        XCTAssertFalse(FaceAnalysisDebugMode.State(available: true).snapshot(), "DEBUG also starts OFF")
+    }
+
     func testOrientationRoundTripsAndMirrorOccursOnce() {
         let point = CGPoint(x: 0.17, y: 0.73)
         for source in FaceImageOrientation.allCases {

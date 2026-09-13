@@ -77,18 +77,15 @@ struct BeautyPreviewProcessor {
             debug == nil ? nil : { mask, geometry, eyes in
                 debug?.geometry = geometry
                 debug?.eyes = eyes
-                #if DEBUG
                 if FaceAnalysisDebugMode.skin, let mask {
                     debug?.skinImage = try? Self.skinDebugImage(mask)
                 }
-                #endif
             }
         let output = try processor.process(image, analysis: mapped, configuration: frame.configuration,
             quality: .preview, previewDebug: observe)
         return BeautyPreviewProcessingResult(image: output === image ? nil : output, analysisDebug: debug)
     }
 
-    #if DEBUG
     /// Read back only a tiny version of the EXISTING scalar mask, never camera pixels.
     /// Green alpha belongs to a CALayer above Preview, not the Beauty output image.
     private static func skinDebugImage(_ mask: CIImage) throws -> CGImage? {
@@ -105,5 +102,4 @@ struct BeautyPreviewProcessor {
         ], in: small.extent)
         return CoreImageRendering.createCGImage(colored, colorSpace: CGColorSpace(name: CGColorSpace.sRGB))
     }
-    #endif
 }
