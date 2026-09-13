@@ -228,7 +228,9 @@ final class NaturalSkinToneAdjustmentTests: XCTestCase {
 
     func testInvalidExtentAndMismatchedMaskThrow() async throws {
         try await Task.detached {
-            let step = NaturalSkinToneAdjustmentStep(), face = try SkinToneTestPixels.face()
+            let configuration = try SkinToneTestPixels.configuration()
+            let step = NaturalSkinToneAdjustmentStep(configuration: configuration)
+            let face = try SkinToneTestPixels.face()
             let infinite = CIImage(color: CIColor(red: 0.3, green: 0.3, blue: 0.3))
             XCTAssertThrowsError(try step.makeOutput(source: infinite, regions: [face], effectiveSkinMask: SkinToneTestPixels.mask()))
             XCTAssertThrowsError(try step.makeOutput(source: SkinToneTestPixels.wave(), regions: [face],
