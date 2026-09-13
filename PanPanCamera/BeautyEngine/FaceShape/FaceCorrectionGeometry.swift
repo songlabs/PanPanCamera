@@ -237,7 +237,7 @@ enum FaceCorrectionGeometry {
         points.min {
             squaredDistance(relative($0, in: box), target) <
                 squaredDistance(relative($1, in: box), target)
-        } ?? box.center
+        } ?? CGPoint(x: box.midX, y: box.midY)
     }
 
     private static func average(_ points: [CGPoint]) -> CGPoint? {

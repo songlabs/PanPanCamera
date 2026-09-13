@@ -113,10 +113,16 @@ struct SkinFaceROI: Equatable, Sendable {
         guard !bounds.isEmpty, !bounds.isNull else { return nil }
         // Below each eye, outward from the nose and above the lips. A third patch
         // is on the upper bridge, avoiding nostrils. No box-only sampling fallback.
-        sampleCenters = [a, b].map { eye in
-            CGPoint(x: eye.x - up.x * distance * 0.48 + (eye.x - eyeMid.x) * 0.12,
-                    y: eye.y - up.y * distance * 0.48 + (eye.y - eyeMid.y) * 0.12)
-        } + [CGPoint(x: eyeMid.x - up.x * distance * 0.24, y: eyeMid.y - up.y * distance * 0.24)]
+        let cheekCenters: [CGPoint] = [a, b].map { eye -> CGPoint in
+            let cheekX: CGFloat = eye.x - up.x * distance * 0.48
+            let cheekY: CGFloat = eye.y - up.y * distance * 0.48
+            let outwardX: CGFloat = (eye.x - eyeMid.x) * 0.12
+            let outwardY: CGFloat = (eye.y - eyeMid.y) * 0.12
+            return CGPoint(x: cheekX + outwardX, y: cheekY + outwardY)
+        }
+        let bridgeCenter: CGPoint = CGPoint(x: eyeMid.x - up.x * distance * 0.24,
+                                            y: eyeMid.y - up.y * distance * 0.24)
+        sampleCenters = cheekCenters + [bridgeCenter]
         sampleSide = min(box.width, box.height) * 0.07
     }
 }
